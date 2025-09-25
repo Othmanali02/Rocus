@@ -11,7 +11,7 @@
 
     <!-- Search Container -->
     <div class="search-container">
-      <input type="text" class="search-input" placeholder="Search nodes..." @input="performSearch($event.target.value)">
+      <input type="text" class="search-input" placeholder="Search clusters..." @input="performSearch($event.target.value)">
       <button class="settings-btn" @click="toggleSettings">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="12" cy="12" r="3"></circle>
@@ -25,7 +25,15 @@
     <!-- Control Buttons -->
     <div class="controls">
       <button class="control-btn" @click="resetView">Reset View</button>
-      <button class="control-btn" @click="regenerateData">New Layout</button>
+      <button class="control-btn" @click="refreshData">Refresh Data</button>
+    </div>
+
+    <!-- Loading Indicator -->
+    <div v-if="isLoading" class="loading-overlay">
+      <div class="loading-spinner">
+        <div class="spinner"></div>
+        <p>Loading clusters...</p>
+      </div>
     </div>
 
     <!-- Settings Popup -->
@@ -62,6 +70,12 @@
           <input type="checkbox" v-model="showConnections" @change="toggleConnections">
         </div>
 
+        <div class="setting-group">
+          <label>Similarity Threshold:</label>
+          <input type="range" min="0.3" max="0.9" step="0.05" v-model="settings.similarityThreshold" @input="updateConnections">
+          <span>{{ settings.similarityThreshold }}</span>
+        </div>
+
         <div class="settings-actions">
           <button class="reset-btn" @click="resetSettings">Reset to Default</button>
         </div>
@@ -71,27 +85,37 @@
     <!-- Node Detail Popup -->
     <div class="node-popup" v-if="selectedNode" :style="nodePopupStyle" @click.stop>
       <div class="popup-header">
-        <h4>{{ selectedNode.name }}</h4>
+        <h4>{{ selectedNode.topic }}</h4>
         <button class="popup-close" @click="closeNodePopup">&times;</button>
       </div>
-      <div class="popup-content">
+      <div class="popup-content" v-if="!loadingNodeDetails">
         <div class="popup-field">
-          <strong>Category:</strong> {{ selectedNode.category }}
+          <strong>Cluster ID:</strong> {{ selectedNode.cluster_id }}
         </div>
         <div class="popup-field">
-          <strong>Size:</strong> {{ selectedNode.size.toFixed(1) }}
+          <strong>Websites:</strong> {{ selectedNode.website_count }}
+        </div>
+        <div class="popup-field" v-if="nodeDetails">
+          <strong>Description:</strong> {{ nodeDetails.ai_summary?.summary || 'No description available' }}
         </div>
         <div class="popup-field">
-          <strong>Description:</strong> {{ selectedNode.metadata.description }}
-        </div>
-        <div class="popup-field">
-          <strong>Tags:</strong>
-          <div class="tags">
-            <span v-for="tag in selectedNode.metadata.tags" :key="tag" class="tag">{{ tag }}</span>
+          <strong>Website List:</strong>
+          <div class="website-list">
+            <div v-for="website in selectedNode.websites" :key="website.id" class="website-item" @click="loadWebsiteDetails(website.id)">
+              <strong>{{ website.title }}</strong><br>
+              <span class="website-url">{{ website.url }}</span><br>
+              <span class="website-domain">{{ website.domain }}</span>
+            </div>
           </div>
         </div>
         <div class="popup-field">
           <strong>Connections:</strong> {{ getConnectionCount(selectedNode) }}
+        </div>
+      </div>
+      <div class="popup-content" v-else>
+        <div class="loading-details">
+          <div class="small-spinner"></div>
+          <p>Loading details...</p>
         </div>
       </div>
     </div>
@@ -104,7 +128,7 @@
 
     <!-- Zoom Info -->
     <div class="zoom-info">
-      Mouse wheel to zoom • Click and drag to pan • Click nodes for details
+      Mouse wheel to zoom • Click and drag to pan • Click clusters for details
     </div>
   </div>
 </template>
@@ -113,20 +137,31 @@
 import { ref, reactive, onMounted, onBeforeUnmount, watch, nextTick } from 'vue';
 import * as d3 from 'd3';
 
-
+// ==============================================
+// VUE REFS AND REACTIVE STATE
+// ==============================================
 const graphContainer = ref(null);
 const tooltip = ref(null);
 const showSettings = ref(false);
 const isDarkMode = ref(false);
 const selectedNode = ref(null);
 const nodePopupStyle = ref({});
+const isLoading = ref(false);
+const loadingNodeDetails = ref(false);
+const nodeDetails = ref(null);
 
 const settings = reactive({
   nodeSize: 1.0,
-  animationSpeed: 1.0
+  animationSpeed: 1.0,
+  similarityThreshold: 0.5
 });
 
+// ==============================================
+// GLOBAL VARIABLES
+// ==============================================
 let graphData;
+let rawClusters = [];
+let rawSimilarities = {};
 let simulation;
 let showConnections = ref(true);
 let searchTerm = '';
@@ -136,84 +171,192 @@ let isDragging = false;
 let dragOffsetX = 0;
 let dragOffsetY = 0;
 
+// ==============================================
+// API CONFIGURATION
+// ==============================================
+const API_BASE_URL = 'http://localhost:5000';
 
+// ==============================================
+// API FUNCTIONS
+// ==============================================
+async function fetchClusters() {
+  try {
+    const response = await fetch(`${API_BASE_URL}/clusters`);
+    if (!response.ok) throw new Error('Failed to fetch clusters');
+    const data = await response.json();
+    return data.clusters || [];
+  } catch (error) {
+    console.error('Error fetching clusters:', error);
+    return [];
+  }
+}
 
-function generatePlaceholderData() {
-  const categories = ['Ideas', 'Concepts', 'Projects', 'Notes', 'Research', 'Tasks'];
-  const vibrantColors = ['#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6', '#1abc9c'];
-  const nodes = [];
-  const nodeCount = 12;
+async function fetchSimilarities() {
+  try {
+    const response = await fetch(`${API_BASE_URL}/cluster-similarities`);
+    if (!response.ok) throw new Error('Failed to fetch similarities');
+    const data = await response.json();
+    return data.similarities || {};
+  } catch (error) {
+    console.error('Error fetching similarities:', error);
+    return {};
+  }
+}
 
-  const nodeNames = [
-    'Machine Learning', 'Quantum Physics', 'Creative Writing', 'Data Analysis',
-    'Climate Research', 'Art History', 'Blockchain Tech', 'Psychology Study',
-    'Music Theory', 'Architecture', 'Philosophy', 'Neuroscience',
-    'Renewable Energy', 'Digital Marketing', 'Biotechnology', 'Economics',
-    'Game Design', 'Linguistics', 'Astronomy', 'Robotics',
-    'Environmental Science', 'Photography', 'Urban Planning', 'Mathematics',
-    'Literature Review', 'Chemistry Lab', 'Social Media', 'AI Ethics',
-    'Sustainable Design', 'Cultural Studies', 'Medical Research', 'Film Analysis',
-    'Financial Planning', 'Education Reform', 'Space Exploration', 'Cooking Techniques',
-    'Sports Analytics', 'Historical Events', 'Technology Trends', 'Human Rights',
-    'Agricultural Science', 'Ocean Conservation', 'Mental Health', 'Archaeology',
-    'Language Learning', 'Innovation Labs', 'Community Building', 'Art Therapy',
-    'Cybersecurity', 'Genetic Engineering', 'Travel Planning', 'Mindfulness',
-    'Social Psychology', 'Information Design', 'Green Technology', 'Cultural Heritage',
-    'Public Health', 'Creative Collaboration', 'System Thinking', 'Future Studies'
-  ];
+async function fetchWebsiteDetails(websiteId) {
+  try {
+    const response = await fetch(`${API_BASE_URL}/website/${websiteId}`);
+    if (!response.ok) throw new Error('Failed to fetch website details');
+    const data = await response.json();
+    return data.website || null;
+  } catch (error) {
+    console.error('Error fetching website details:', error);
+    return null;
+  }
+}
 
-  for (let i = 0; i < nodeCount; i++) {
-    const category = categories[Math.floor(Math.random() * categories.length)];
-    const baseSize = Math.random() * 15 + 12;
-    nodes.push({
-      id: i,
-      name: nodeNames[i] || `Node ${i + 1}`,
-      category: category,
+// ==============================================
+// DATA PROCESSING
+// ==============================================
+function processApiData(clusters, similarities) {
+  const nodes = clusters.map((cluster, index) => {
+    const baseSize = Math.max(15, Math.min(40, cluster.website_count * 8 + 15));
+    return {
+      id: cluster.cluster_id,
+      cluster_id: cluster.cluster_id,
+      topic: cluster.topic,
+      website_count: cluster.website_count,
+      websites: cluster.websites,
       size: baseSize,
       baseSize: baseSize,
-      color: vibrantColors[Math.floor(Math.random() * vibrantColors.length)],
-      x: Math.random() * 2000 - 1000,
-      y: Math.random() * 1500 - 750,
+      // Position nodes in a rough circle initially
+      x: Math.cos(index * 2 * Math.PI / clusters.length) * 300,
+      y: Math.sin(index * 2 * Math.PI / clusters.length) * 300,
       metadata: {
-        description: `A ${category.toLowerCase()} related to ${nodeNames[i] || 'various topics'}. This node contains important information and connections to other related concepts.`,
-        tags: [category.toLowerCase(), 'notebook', 'research', 'analysis']
+        description: `Cluster containing ${cluster.website_count} websites about ${cluster.topic}`,
+        tags: ['cluster', cluster.topic.toLowerCase().replace(/\s+/g, '-')]
       }
-    });
-  }
+    };
+  });
 
   const links = [];
-  nodes.forEach((node, index) => {
-    const connectionCount = Math.floor(Math.random() * 2) + 1;
-    for (let i = 0; i < connectionCount; i++) {
-      const targetIndex = Math.floor(Math.random() * nodes.length);
-      const target = nodes[targetIndex];
-      if (target !== node && !links.some(l =>
-        (l.source === node.id && l.target === target.id) ||
-        (l.source === target.id && l.target === node.id)
-      )) {
-        const distance = Math.sqrt(Math.pow(node.x - target.x, 2) + Math.pow(node.y - target.y, 2));
-        const categoryMatch = node.category === target.category;
-        const connectionChance = categoryMatch ? 0.6 : (distance < 300 ? 0.4 : 0.2);
-
-        if (Math.random() < connectionChance) {
-          links.push({
-            source: node.id,
-            target: target.id,
-            strength: Math.random() * 0.3 + 0.3
-          });
-        }
+  Object.entries(similarities).forEach(([sourceId, targets]) => {
+    Object.entries(targets).forEach(([targetId, similarity]) => {
+      // Only create link if similarity meets threshold and we haven't already created this link
+      if (similarity >= settings.similarityThreshold && 
+          !links.some(l => (l.source === sourceId && l.target === targetId) || 
+                           (l.source === targetId && l.target === sourceId))) {
+        links.push({
+          source: sourceId,
+          target: targetId,
+          similarity: similarity,
+          strength: similarity
+        });
       }
-    }
+    });
   });
 
   return { nodes, links };
 }
 
-function initializeGraph() {
+async function loadData() {
+  isLoading.value = true;
+  try {
+    const [clusters, similarities] = await Promise.all([
+      fetchClusters(),
+      fetchSimilarities()
+    ]);
+    
+    rawClusters = clusters;
+    rawSimilarities = similarities;
+    graphData = processApiData(clusters, similarities);
+    
+    if (graphData.nodes.length === 0) {
+      console.warn('No clusters found, falling back to placeholder data');
+      graphData = generatePlaceholderData();
+    }
+    
+  } catch (error) {
+    console.error('Error loading data:', error);
+    graphData = generatePlaceholderData();
+  } finally {
+    isLoading.value = false;
+  }
+}
+
+function generatePlaceholderData() {
+  const categories = ['Ideas', 'Concepts', 'Projects', 'Notes', 'Research', 'Tasks'];
+  const nodes = [];
+  const nodeCount = 6;
+
+  const nodeNames = [
+    'Machine Learning', 'Artificial Intelligence', 'Data Science', 
+    'Web Development', 'Cloud Computing', 'Cybersecurity'
+  ];
+
+  for (let i = 0; i < nodeCount; i++) {
+    const category = categories[Math.floor(Math.random() * categories.length)];
+    const baseSize = Math.random() * 15 + 15;
+    nodes.push({
+      id: `placeholder-${i}`,
+      cluster_id: `placeholder-${i}`,
+      topic: nodeNames[i] || `Cluster ${i + 1}`,
+      website_count: Math.floor(Math.random() * 5) + 1,
+      websites: [],
+      size: baseSize,
+      baseSize: baseSize,
+      x: Math.cos(i * 2 * Math.PI / nodeCount) * 200,
+      y: Math.sin(i * 2 * Math.PI / nodeCount) * 200,
+      metadata: {
+        description: `Placeholder cluster for ${nodeNames[i] || 'various topics'}`,
+        tags: [category.toLowerCase(), 'placeholder']
+      }
+    });
+  }
+
+  const links = [];
+  for (let i = 0; i < nodeCount - 1; i++) {
+    if (Math.random() < 0.6) {
+      links.push({
+        source: nodes[i].id,
+        target: nodes[i + 1].id,
+        similarity: 0.5 + Math.random() * 0.3,
+        strength: 0.5
+      });
+    }
+  }
+
+  return { nodes, links };
+}
+
+async function refreshData() {
+  selectedNode.value = null;
+  await loadData();
+  if (simulation) {
+    simulation.nodes(graphData.nodes);
+    simulation.force('link').links(graphData.links);
+    simulation.alpha(1).restart();
+    renderGraph();
+  }
+}
+
+function updateConnections() {
+  if (rawClusters.length > 0) {
+    graphData = processApiData(rawClusters, rawSimilarities);
+    simulation.force('link').links(graphData.links);
+    simulation.alpha(0.3).restart();
+    renderGraph();
+  }
+}
+
+// ==============================================
+// GRAPH INITIALIZATION AND RENDERING
+// ==============================================
+async function initializeGraph() {
   const width = graphContainer.value.clientWidth;
   const height = graphContainer.value.clientHeight;
 
-  graphData = generatePlaceholderData();
+  await loadData();
 
   svg = d3.select(graphContainer.value)
     .append('svg')
@@ -232,28 +375,30 @@ function initializeGraph() {
 
   simulation = d3.forceSimulation(graphData.nodes)
     .force('link', d3.forceLink(graphData.links).id(d => d.id).distance(200).strength(0.03))
-    .force('charge', d3.forceManyBody().strength(-150))
+    .force('charge', d3.forceManyBody().strength(-200))
     .force('center', d3.forceCenter(0, 0))
-    .force('collision', d3.forceCollide().radius(d => d.size * settings.nodeSize + 10))
-    .force('x', d3.forceX().strength(0.05))
-    .force('y', d3.forceY().strength(0.05));
+    .force('collision', d3.forceCollide().radius(d => d.size * settings.nodeSize + 15))
+    .force('x', d3.forceX().strength(0.02))
+    .force('y', d3.forceY().strength(0.02));
 
   renderGraph();
 
   setTimeout(() => {
     const bounds = container.node().getBBox();
-    const fullWidth = bounds.width;
-    const fullHeight = bounds.height;
-    const midX = bounds.x + fullWidth / 2;
-    const midY = bounds.y + fullHeight / 2;
+    if (bounds.width > 0 && bounds.height > 0) {
+      const fullWidth = bounds.width;
+      const fullHeight = bounds.height;
+      const midX = bounds.x + fullWidth / 2;
+      const midY = bounds.y + fullHeight / 2;
 
-    const scale = Math.min(width / fullWidth, height / fullHeight) * 0.8;
-    const translate = [width / 2 - scale * midX, height / 2 - scale * midY];
+      const scale = Math.min(width / fullWidth, height / fullHeight) * 0.8;
+      const translate = [width / 2 - scale * midX, height / 2 - scale * midY];
 
-    svg.transition()
-      .duration(2000)
-      .call(zoom.transform, d3.zoomIdentity.translate(translate[0], translate[1]).scale(scale));
-  }, 100);
+      svg.transition()
+        .duration(2000)
+        .call(zoom.transform, d3.zoomIdentity.translate(translate[0], translate[1]).scale(scale));
+    }
+  }, 500);
 }
 
 function renderGraph() {
@@ -266,10 +411,11 @@ function renderGraph() {
   const labelGroup = container.select('.labels');
 
   const links = linkGroup.selectAll('.link')
-    .data(graphData.links, d => `${d.source.id}-${d.target.id}`)
+    .data(graphData.links, d => `${d.source.id || d.source}-${d.target.id || d.target}`)
     .join('line')
     .attr('class', 'link')
-    .style('opacity', showConnections.value ? 0.3 : 0);
+    .style('opacity', showConnections.value ? 0.4 : 0)
+    .style('stroke-width', d => Math.max(1, (d.similarity || 0.5) * 4));
 
   const nodes = nodeGroup.selectAll('.node')
     .data(graphData.nodes, d => d.id)
@@ -285,8 +431,8 @@ function renderGraph() {
     .data(graphData.nodes, d => d.id)
     .join('text')
     .attr('class', 'node-label')
-    .text(d => d.name)
-    .style('font-size', d => Math.max(10, (d.size * settings.nodeSize) / 3) + 'px')
+    .text(d => d.topic)
+    .style('font-size', d => Math.max(10, (d.size * settings.nodeSize) / 3.5) + 'px')
     .style('fill', '#000000');
 
   nodes
@@ -335,12 +481,15 @@ function drag(simulation) {
     .on('end', dragended);
 }
 
+// ==============================================
+// EVENT HANDLERS
+// ==============================================
 function handleNodeMouseOver(event, d) {
   const tooltipEl = d3.select(tooltip.value);
   tooltipEl.transition().duration(200 / settings.animationSpeed).style('opacity', 1);
   tooltipEl.html(`
-    <strong>${d.name}</strong><br>
-    Category: ${d.category}<br>
+    <strong>${d.topic}</strong><br>
+    Websites: ${d.website_count}<br>
     Click for more details
   `)
     .style('left', (event.pageX + 15) + 'px')
@@ -354,23 +503,24 @@ function handleNodeMouseOut() {
   clearHighlights();
 }
 
-function handleNodeClick(event, d) {
+async function handleNodeClick(event, d) {
   event.stopPropagation();
 
   selectedNode.value = d;
+  loadingNodeDetails.value = true;
+  nodeDetails.value = null;
 
-  // Position popup near the node but avoid screen edges
+  // Position popup
   const containerRect = graphContainer.value.getBoundingClientRect();
   const nodeScreenX = event.pageX - containerRect.left;
   const nodeScreenY = event.pageY - containerRect.top;
 
-  const popupWidth = 320;
-  const popupHeight = 280;
+  const popupWidth = 400;
+  const popupHeight = 350;
 
   let left = nodeScreenX + 20;
   let top = nodeScreenY - popupHeight / 2;
 
-  // Adjust position to keep popup in viewport
   if (left + popupWidth > containerRect.width) {
     left = nodeScreenX - popupWidth - 20;
   }
@@ -383,8 +533,31 @@ function handleNodeClick(event, d) {
     left: left + 'px',
     top: top + 'px'
   };
+
+  // Load additional details for the first website if available
+  if (d.websites && d.websites.length > 0) {
+    try {
+      const details = await fetchWebsiteDetails(d.websites[0].id);
+      nodeDetails.value = details;
+    } catch (error) {
+      console.error('Error loading website details:', error);
+    }
+  }
+  
+  loadingNodeDetails.value = false;
 }
 
+async function loadWebsiteDetails(websiteId) {
+  try {
+    const details = await fetchWebsiteDetails(websiteId);
+    if (details) {
+      alert(`Website Details:\nTitle: ${details.title}\nURL: ${details.url}\nSummary: ${details.ai_summary?.summary || 'No summary available'}`);
+    }
+  } catch (error) {
+    console.error('Error loading website details:', error);
+    alert('Failed to load website details');
+  }
+}
 
 function enablePopupDrag(popupEl, headerEl) {
   headerEl.addEventListener('mousedown', (e) => {
@@ -432,7 +605,8 @@ function handleProfileClick() {
 
 function getConnectionCount(node) {
   return graphData.links.filter(link =>
-    link.source.id === node.id || link.target.id === node.id
+    (link.source.id === node.id || link.source === node.id) || 
+    (link.target.id === node.id || link.target === node.id)
   ).length;
 }
 
@@ -445,9 +619,12 @@ function performSearch(term) {
   }
 
   const matchingNodes = graphData.nodes.filter(node =>
-    node.name.toLowerCase().includes(searchTerm) ||
-    node.category.toLowerCase().includes(searchTerm) ||
-    node.metadata.tags.some(tag => tag.includes(searchTerm))
+    node.topic.toLowerCase().includes(searchTerm) ||
+    node.websites.some(website => 
+      website.title.toLowerCase().includes(searchTerm) ||
+      website.url.toLowerCase().includes(searchTerm) ||
+      website.domain.toLowerCase().includes(searchTerm)
+    )
   );
 
   highlightSearchResults(matchingNodes);
@@ -483,11 +660,14 @@ function highlightConnections(node) {
   const connectedLinks = new Set();
 
   graphData.links.forEach(link => {
-    if (link.source.id === node.id) {
-      connectedNodeIds.add(link.target.id);
+    const sourceId = link.source.id || link.source;
+    const targetId = link.target.id || link.target;
+    
+    if (sourceId === node.id) {
+      connectedNodeIds.add(targetId);
       connectedLinks.add(link);
-    } else if (link.target.id === node.id) {
-      connectedNodeIds.add(link.source.id);
+    } else if (targetId === node.id) {
+      connectedNodeIds.add(sourceId);
       connectedLinks.add(link);
     }
   });
@@ -522,7 +702,6 @@ function toggleDarkMode() {
 }
 
 function updateTheme() {
-  // Update node colors based on theme
   container.select('.nodes').selectAll('.node')
     .transition()
     .duration(300)
@@ -539,10 +718,10 @@ function updateNodeSizes() {
   container.select('.labels').selectAll('.node-label')
     .transition()
     .duration(300 / settings.animationSpeed)
-    .style('font-size', d => Math.max(10, (d.baseSize * settings.nodeSize) / 3) + 'px');
+    .style('font-size', d => Math.max(10, (d.baseSize * settings.nodeSize) / 3.5) + 'px');
 
   if (simulation) {
-    simulation.force('collision', d3.forceCollide().radius(d => d.baseSize * settings.nodeSize + 10));
+    simulation.force('collision', d3.forceCollide().radius(d => d.baseSize * settings.nodeSize + 15));
     simulation.alpha(0.3).restart();
   }
 }
@@ -550,9 +729,11 @@ function updateNodeSizes() {
 function resetSettings() {
   settings.nodeSize = 1.0;
   settings.animationSpeed = 1.0;
+  settings.similarityThreshold = 0.5;
   isDarkMode.value = false;
   updateNodeSizes();
   updateTheme();
+  updateConnections();
 }
 
 // ==============================================
@@ -562,34 +743,26 @@ function resetView() {
   const width = graphContainer.value.clientWidth;
   const height = graphContainer.value.clientHeight;
   const bounds = container.node().getBBox();
-  const fullWidth = bounds.width;
-  const fullHeight = bounds.height;
-  const midX = bounds.x + fullWidth / 2;
-  const midY = bounds.y + fullHeight / 2;
-  const scale = Math.min(width / fullWidth, height / fullHeight) * 0.8;
-  const translate = [width / 2 - scale * midX, height / 2 - scale * midY];
+  
+  if (bounds.width > 0 && bounds.height > 0) {
+    const fullWidth = bounds.width;
+    const fullHeight = bounds.height;
+    const midX = bounds.x + fullWidth / 2;
+    const midY = bounds.y + fullHeight / 2;
+    const scale = Math.min(width / fullWidth, height / fullHeight) * 0.8;
+    const translate = [width / 2 - scale * midX, height / 2 - scale * midY];
 
-  svg.transition()
-    .duration(1000 / settings.animationSpeed)
-    .call(zoom.transform, d3.zoomIdentity.translate(translate[0], translate[1]).scale(scale));
+    svg.transition()
+      .duration(1000 / settings.animationSpeed)
+      .call(zoom.transform, d3.zoomIdentity.translate(translate[0], translate[1]).scale(scale));
+  }
 }
 
 function toggleConnections() {
   container.select('.links').selectAll('.link')
     .transition()
     .duration(500 / settings.animationSpeed)
-    .style('opacity', showConnections.value ? 0.3 : 0);
-}
-
-function regenerateData() {
-  // selectedNode.value = null; // Close any open popup
-  graphData = generatePlaceholderData();
-
-  simulation.nodes(graphData.nodes);
-  simulation.force('link').links(graphData.links);
-  simulation.alpha(1).restart();
-
-  renderGraph();
+    .style('opacity', showConnections.value ? 0.4 : 0);
 }
 
 // ==============================================
@@ -600,8 +773,6 @@ const handleResize = () => {
     const width = graphContainer.value.clientWidth;
     const height = graphContainer.value.clientHeight;
     svg.attr('width', width).attr('height', height);
-
-    // Close popup on resize to avoid positioning issues
     selectedNode.value = null;
   }
 };
