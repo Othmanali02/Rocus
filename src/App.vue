@@ -1,9 +1,10 @@
 <script setup>
 import GraphNode from './components/GraphNode.vue'
+import Landing from './components/Landing.vue';
 </script>
 
 <template>
-  <GraphNode />
+  <Landing />
 </template>
 
 <style>

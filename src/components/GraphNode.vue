@@ -1,7 +1,9 @@
 <template>
   <div class="graph-wrapper" :class="{ 'dark-mode': isDarkMode }">
     <!-- Profile Picture Button -->
-    <div class="profile-container">
+    <div class="fixed top-5 left-5 z-[1000] flex gap-5 items-center">
+      <img src="./images/rocus1.png" alt="Rocus" class="h-12 w-auto" />
+
       <button class="profile-btn" @click="handleProfileClick">
         <img
           src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23666' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2'/%3E%3Ccircle cx='12' cy='7' r='4'/%3E%3C/svg%3E"
@@ -11,7 +13,8 @@
 
     <!-- Search Container -->
     <div class="search-container">
-      <input type="text" class="search-input" placeholder="Search clusters..." @input="performSearch($event.target.value)">
+      <input type="text" class="search-input" placeholder="Search clusters..."
+        @input="performSearch($event.target.value)">
       <button class="settings-btn" @click="toggleSettings">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="12" cy="12" r="3"></circle>
@@ -23,24 +26,47 @@
     </div>
 
     <!-- Control Buttons -->
-    <div class="controls">
+    <div class="fixed top-5 right-5 z-[1000] flex gap-2.5">
       <button class="control-btn" @click="resetView">Reset View</button>
       <button class="control-btn" @click="refreshData">Refresh Data</button>
+      <button class="control-btn" v-if="explodedNode" @click="collapseNode">Collapse</button>
+    </div>
+
+    <!-- WebSocket Connection Status -->
+    <div v-if="connectionStatus !== 'hidden'" class="connection-status" :class="connectionStatus">
+      <div class="status-pulse"></div>
+      <span v-if="connectionStatus === 'connected'">🟢 Connected</span>
+      <span v-else-if="connectionStatus === 'connecting'">🟡 Connecting...</span>
+      <span v-else-if="connectionStatus === 'disconnected'">🔴 Disconnected</span>
+    </div>
+
+    <!-- New Data Notification -->
+    <div v-if="showNewDataNotification" class="new-data-notification">
+      <div class="notification-icon">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+          <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+        </svg>
+      </div>
+      <span>New clusters detected! Updating graph...</span>
     </div>
 
     <!-- Loading Indicator -->
-    <div v-if="isLoading" class="loading-overlay">
-      <div class="loading-spinner">
+    <div v-if="isLoading" class="fixed inset-0 bg-black/30 z-[3000] flex items-center justify-center">
+      <div class="bg-white dark:bg-gray-800 rounded-xl p-8 text-center shadow-2xl">
         <div class="spinner"></div>
-        <p>Loading clusters...</p>
+        <p class="mt-4 text-gray-700 dark:text-gray-300">Loading clusters...</p>
       </div>
     </div>
 
     <!-- Settings Popup -->
-    <div class="settings-overlay" v-if="showSettings" @click="closeSettings">
-      <div class="settings-popup" @click.stop>
-        <div class="settings-header">
-          <h3>Graph Settings</h3>
+    <div class="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center" v-if="showSettings"
+      @click="closeSettings">
+      <div
+        class="bg-white dark:bg-gray-800 rounded-xl p-6 min-w-[400px] max-w-[90vw] max-h-[80vh] overflow-y-auto shadow-2xl"
+        @click.stop>
+        <div class="flex justify-between items-center mb-5 pb-3 border-b border-gray-300 dark:border-gray-600">
+          <h3 class="text-lg font-semibold text-gray-700 dark:text-gray-200">Graph Settings</h3>
           <button class="close-btn" @click="closeSettings">&times;</button>
         </div>
 
@@ -55,80 +81,144 @@
 
         <div class="setting-group">
           <label>Node Size:</label>
-          <input type="range" min="0.5" max="2" step="0.1" v-model="settings.nodeSize" @input="updateNodeSizes">
-          <span>{{ settings.nodeSize }}x</span>
+          <input type="range" min="0.5" max="2" step="0.1" v-model="settings.nodeSize" @input="updateNodeSizes"
+            class="flex-1 mx-2">
+          <span class="min-w-[40px] text-right text-gray-600 dark:text-gray-400">{{ settings.nodeSize }}x</span>
         </div>
 
         <div class="setting-group">
           <label>Animation Speed:</label>
-          <input type="range" min="0.1" max="2" step="0.1" v-model="settings.animationSpeed">
-          <span>{{ settings.animationSpeed }}x</span>
+          <input type="range" min="0.1" max="2" step="0.1" v-model="settings.animationSpeed" class="flex-1 mx-2">
+          <span class="min-w-[40px] text-right text-gray-600 dark:text-gray-400">{{ settings.animationSpeed }}x</span>
         </div>
 
         <div class="setting-group">
           <label>Show Connections:</label>
-          <input type="checkbox" v-model="showConnections" @change="toggleConnections">
+          <input type="checkbox" v-model="showConnections" @change="toggleConnections" class="scale-125">
         </div>
 
         <div class="setting-group">
           <label>Similarity Threshold:</label>
-          <input type="range" min="0.3" max="0.9" step="0.05" v-model="settings.similarityThreshold" @input="updateConnections">
-          <span>{{ settings.similarityThreshold }}</span>
+          <input type="range" min="0.3" max="0.9" step="0.05" v-model="settings.similarityThreshold"
+            @input="updateConnections" class="flex-1 mx-2">
+          <span class="min-w-[40px] text-right text-gray-600 dark:text-gray-400">{{ settings.similarityThreshold
+            }}</span>
         </div>
 
-        <div class="settings-actions">
+        <div class="mt-5 pt-4 border-t border-gray-300 dark:border-gray-600">
           <button class="reset-btn" @click="resetSettings">Reset to Default</button>
         </div>
       </div>
     </div>
 
-    <!-- Node Detail Popup -->
-    <div class="node-popup" v-if="selectedNode" :style="nodePopupStyle" @click.stop>
-      <div class="popup-header">
-        <h4>{{ selectedNode.topic }}</h4>
-        <button class="popup-close" @click="closeNodePopup">&times;</button>
+    <!-- Website Sticky Note -->
+    <div class="sticky-note" v-if="selectedWebsite" :style="stickyNoteStyle" @click.stop>
+      <div class="sticky-note-header" @mousedown="startDraggingSticky">
+        <h4>{{ selectedWebsite.title }}</h4>
+        <button class="sticky-close" @click="closeStickyNote">&times;</button>
       </div>
-      <div class="popup-content" v-if="!loadingNodeDetails">
-        <div class="popup-field">
-          <strong>Cluster ID:</strong> {{ selectedNode.cluster_id }}
+      <div class="sticky-note-content">
+        <div class="sticky-field">
+          <strong>Cluster ID:</strong> {{ selectedWebsite.parentCluster }}
         </div>
-        <div class="popup-field">
-          <strong>Websites:</strong> {{ selectedNode.website_count }}
+        <div class="sticky-field">
+          <strong>Domain:</strong> {{ selectedWebsite.domain }}
         </div>
-        <div class="popup-field" v-if="nodeDetails">
-          <strong>Description:</strong> {{ nodeDetails.ai_summary?.summary || 'No description available' }}
+        <div class="sticky-field" v-if="websiteDetails">
+          <strong>Description:</strong> {{ websiteDetails.ai_summary?.summary || 'No description available' }}
         </div>
-        <div class="popup-field">
-          <strong>Website List:</strong>
-          <div class="website-list">
-            <div v-for="website in selectedNode.websites" :key="website.id" class="website-item" @click="loadWebsiteDetails(website.id)">
-              <strong>{{ website.title }}</strong><br>
-              <span class="website-url">{{ website.url }}</span><br>
-              <span class="website-domain">{{ website.domain }}</span>
+        <div class="sticky-field">
+          <a :href="selectedWebsite.url" target="_blank" class="cute-link">
+            🔗 Visit Website
+          </a>
+        </div>
+        <div class="sticky-field">
+          <strong>Processed:</strong> {{ formatDate(selectedWebsite.processed_at) }}
+        </div>
+      </div>
+    </div>
+
+    <!-- Discover Similar Websites Modal -->
+    <div class="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center" v-if="showDiscoverModal"
+      @click="closeDiscoverModal">
+      <div
+        class="bg-white dark:bg-gray-800 rounded-xl p-6 w-[600px] max-w-[90vw] max-h-[80vh] overflow-y-auto shadow-2xl"
+        @click.stop>
+        <div class="flex justify-between items-center mb-5 pb-3 border-b border-gray-300 dark:border-gray-600">
+          <h3 class="text-lg font-semibold text-gray-700 dark:text-gray-200">
+            <span class="inline-block mr-2"></span>
+            Discover Similar Websites
+          </h3>
+          <button class="close-btn" @click="closeDiscoverModal">&times;</button>
+        </div>
+
+        <div class="py-2">
+          <p class="mb-4 text-sm text-gray-600 dark:text-gray-400">
+            Found {{ similarWebsites.length }} websites related to <strong>{{ explodedNode?.topic }}</strong>
+          </p>
+
+          <!-- Loading State -->
+          <div v-if="isLoadingSimilar" class="flex flex-col items-center justify-center py-12">
+            <div class="spinner-small"></div>
+            <p class="mt-4 text-sm text-gray-600 dark:text-gray-400">Searching the web...</p>
+          </div>
+
+          <!-- Similar Websites List -->
+          <div v-else-if="similarWebsites.length > 0" class="flex flex-col gap-3">
+            <div v-for="(website, index) in similarWebsites" :key="index" class="similar-website-item"
+              @click="openExternalLink(website.url)">
+              <div class="flex items-start gap-3">
+                <div class="similar-icon">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+                    <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+                  </svg>
+                </div>
+                <div class="flex-1 min-w-0">
+                  <h4 class="text-sm text-black font-semibold truncate">
+                    {{ website.title }}
+                  </h4>
+                  <p class="text-xs text-blue-600 dark:text-blue-400 mt-1 truncate">
+                    {{ website.domain }}
+                  </p>
+                  <p class="text-xs text-gray-600 dark:text-gray-400 mt-2 line-clamp-2">
+                    {{ website.snippet }}
+                  </p>
+                </div>
+                <div class="external-link-icon">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                    <polyline points="15 3 21 3 21 9"></polyline>
+                    <line x1="10" y1="14" x2="21" y2="3"></line>
+                  </svg>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-        <div class="popup-field">
-          <strong>Connections:</strong> {{ getConnectionCount(selectedNode) }}
-        </div>
-      </div>
-      <div class="popup-content" v-else>
-        <div class="loading-details">
-          <div class="small-spinner"></div>
-          <p>Loading details...</p>
+
+          <!-- Empty State -->
+          <div v-else class="flex flex-col items-center justify-center py-12 text-gray-500 dark:text-gray-400">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"
+              class="mb-4 opacity-50">
+              <circle cx="11" cy="11" r="8"></circle>
+              <path d="m21 21-4.35-4.35"></path>
+            </svg>
+            <p class="text-sm">No similar websites found</p>
+          </div>
         </div>
       </div>
     </div>
 
     <!-- Graph Container -->
-    <div id="graph-container" ref="graphContainer" @click="handleBackgroundClick"></div>
+    <div id="graph-container" ref="graphContainer" @click="handleBackgroundClick"
+      class="w-full h-full cursor-grab active:cursor-grabbing"></div>
 
     <!-- Tooltip -->
     <div class="tooltip" id="tooltip" ref="tooltip"></div>
 
     <!-- Zoom Info -->
     <div class="zoom-info">
-      Mouse wheel to zoom • Click and drag to pan • Click clusters for details
+      Mouse wheel to zoom • Click and drag to pan • Click clusters to explode
     </div>
   </div>
 </template>
@@ -144,11 +234,22 @@ const graphContainer = ref(null);
 const tooltip = ref(null);
 const showSettings = ref(false);
 const isDarkMode = ref(false);
-const selectedNode = ref(null);
-const nodePopupStyle = ref({});
+const selectedWebsite = ref(null);
+const stickyNoteStyle = ref({});
 const isLoading = ref(false);
-const loadingNodeDetails = ref(false);
-const nodeDetails = ref(null);
+const websiteDetails = ref(null);
+const explodedNode = ref(null);
+const showDiscoverModal = ref(false);
+const isLoadingSimilar = ref(false);
+const similarWebsites = ref([]);
+
+// WebSocket state
+const wsConnection = ref(null);
+const connectionStatus = ref('disconnected'); // 'connected', 'disconnected', 'connecting'
+const showNewDataNotification = ref(false);
+let reconnectTimeout = null;
+let reconnectAttempts = 0;
+const MAX_RECONNECT_ATTEMPTS = 5;
 
 const settings = reactive({
   nodeSize: 1.0,
@@ -166,10 +267,142 @@ let simulation;
 let showConnections = ref(true);
 let searchTerm = '';
 let svg, container, zoom;
+let websiteNodes = [];
 
-let isDragging = false;
+// Sticky note dragging
+let isDraggingSticky = false;
 let dragOffsetX = 0;
 let dragOffsetY = 0;
+
+// ==============================================
+// WEBSOCKET FUNCTIONS
+// ==============================================
+function connectWebSocket() {
+  if (wsConnection.value?.readyState === WebSocket.OPEN) {
+    return; // Already connected
+  }
+
+  connectionStatus.value = 'connecting';
+  console.log('🔌 Connecting to WebSocket...');
+
+  try {
+    wsConnection.value = new WebSocket('ws://localhost:5000/ws');
+
+    wsConnection.value.onopen = () => {
+      connectionStatus.value = 'connected';
+      reconnectAttempts = 0;
+      console.log('✅ WebSocket connected');
+
+      // Hide status after 3 seconds
+      setTimeout(() => {
+        if (connectionStatus.value === 'connected') {
+          connectionStatus.value = 'hidden';
+        }
+      }, 3000);
+    };
+
+    wsConnection.value.onmessage = (event) => {
+      try {
+        const message = JSON.parse(event.data);
+        handleWebSocketMessage(message);
+      } catch (error) {
+        console.error('Error parsing WebSocket message:', error);
+      }
+    };
+
+    wsConnection.value.onerror = (error) => {
+      console.error('❌ WebSocket error:', error);
+      connectionStatus.value = 'disconnected';
+    };
+
+    wsConnection.value.onclose = () => {
+      console.log('🔌 WebSocket disconnected');
+      connectionStatus.value = 'disconnected';
+      wsConnection.value = null;
+
+      // Attempt to reconnect
+      if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+        reconnectAttempts++;
+        const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
+        console.log(`⏳ Reconnecting in ${delay / 1000}s (attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
+
+        reconnectTimeout = setTimeout(() => {
+          connectWebSocket();
+        }, delay);
+      } else {
+        console.log('❌ Max reconnection attempts reached');
+      }
+    };
+  } catch (error) {
+    console.error('Error creating WebSocket connection:', error);
+    connectionStatus.value = 'disconnected';
+  }
+}
+
+function disconnectWebSocket() {
+  if (reconnectTimeout) {
+    clearTimeout(reconnectTimeout);
+    reconnectTimeout = null;
+  }
+
+  if (wsConnection.value) {
+    wsConnection.value.close();
+    wsConnection.value = null;
+  }
+
+  connectionStatus.value = 'disconnected';
+}
+
+async function handleWebSocketMessage(message) {
+  console.log('📨 WebSocket message:', message);
+
+  if (message.type === 'cluster_update') {
+    // New cluster data available
+    showNewDataNotification.value = true;
+
+    // Auto-refresh data
+    await loadData();
+
+    if (simulation) {
+      simulation.nodes(graphData.nodes);
+      simulation.force('link').links(graphData.links);
+      simulation.alpha(0.5).restart();
+      renderGraph();
+    }
+
+    // Hide notification after 4 seconds
+    setTimeout(() => {
+      showNewDataNotification.value = false;
+    }, 4000);
+  }
+
+  if (message.type === 'website_added') {
+    // Individual website added
+    console.log('🆕 New website added:', message.data);
+    showNewDataNotification.value = true;
+
+    // Refresh to get latest data
+    await loadData();
+
+    if (simulation) {
+      simulation.nodes(graphData.nodes);
+      simulation.force('link').links(graphData.links);
+      simulation.alpha(0.5).restart();
+      renderGraph();
+    }
+
+    setTimeout(() => {
+      showNewDataNotification.value = false;
+    }, 4000);
+  }
+
+  if (message.type === 'ping') {
+    // Respond to ping to keep connection alive
+    if (wsConnection.value?.readyState === WebSocket.OPEN) {
+      wsConnection.value.send(JSON.stringify({ type: 'pong' }));
+    }
+  }
+}
 
 // ==============================================
 // API CONFIGURATION
@@ -215,6 +448,40 @@ async function fetchWebsiteDetails(websiteId) {
   }
 }
 
+async function searchSimilarWebsites(cluster) {
+  try {
+    // Check if cluster has pre-fetched similar_links
+    if (cluster.similar_links && cluster.similar_links.length > 0) {
+      return cluster.similar_links;
+    }
+
+    // Otherwise, search based on cluster topic
+    const searchQuery = encodeURIComponent(cluster.topic);
+    const response = await fetch(`${API_BASE_URL}/search?q=${searchQuery}`);
+
+    if (!response.ok) throw new Error('Failed to search');
+    const data = await response.json();
+
+    return data.results || [];
+  } catch (error) {
+    console.error('Error searching similar websites:', error);
+    return [];
+  }
+}
+
+// ==============================================
+// UTILITY FUNCTIONS
+// ==============================================
+function formatDate(dateString) {
+  if (!dateString) return 'N/A';
+  const date = new Date(dateString);
+  return date.toLocaleDateString();
+}
+
+function openExternalLink(url) {
+  window.open(url, '_blank', 'noopener,noreferrer');
+}
+
 // ==============================================
 // DATA PROCESSING
 // ==============================================
@@ -227,9 +494,10 @@ function processApiData(clusters, similarities) {
       topic: cluster.topic,
       website_count: cluster.website_count,
       websites: cluster.websites,
+      similar_links: cluster.similar_links || [],
       size: baseSize,
       baseSize: baseSize,
-      // Position nodes in a rough circle initially
+      type: 'cluster',
       x: Math.cos(index * 2 * Math.PI / clusters.length) * 300,
       y: Math.sin(index * 2 * Math.PI / clusters.length) * 300,
       metadata: {
@@ -242,15 +510,15 @@ function processApiData(clusters, similarities) {
   const links = [];
   Object.entries(similarities).forEach(([sourceId, targets]) => {
     Object.entries(targets).forEach(([targetId, similarity]) => {
-      // Only create link if similarity meets threshold and we haven't already created this link
-      if (similarity >= settings.similarityThreshold && 
-          !links.some(l => (l.source === sourceId && l.target === targetId) || 
-                           (l.source === targetId && l.target === sourceId))) {
+      if (similarity >= settings.similarityThreshold &&
+        !links.some(l => (l.source === sourceId && l.target === targetId) ||
+          (l.source === targetId && l.target === sourceId))) {
         links.push({
           source: sourceId,
           target: targetId,
           similarity: similarity,
-          strength: similarity
+          strength: similarity,
+          type: 'cluster-link'
         });
       }
     });
@@ -266,16 +534,16 @@ async function loadData() {
       fetchClusters(),
       fetchSimilarities()
     ]);
-    
+
     rawClusters = clusters;
     rawSimilarities = similarities;
     graphData = processApiData(clusters, similarities);
-    
+
     if (graphData.nodes.length === 0) {
       console.warn('No clusters found, falling back to placeholder data');
       graphData = generatePlaceholderData();
     }
-    
+
   } catch (error) {
     console.error('Error loading data:', error);
     graphData = generatePlaceholderData();
@@ -290,7 +558,7 @@ function generatePlaceholderData() {
   const nodeCount = 6;
 
   const nodeNames = [
-    'Machine Learning', 'Artificial Intelligence', 'Data Science', 
+    'Machine Learning', 'Artificial Intelligence', 'Data Science',
     'Web Development', 'Cloud Computing', 'Cybersecurity'
   ];
 
@@ -303,8 +571,10 @@ function generatePlaceholderData() {
       topic: nodeNames[i] || `Cluster ${i + 1}`,
       website_count: Math.floor(Math.random() * 5) + 1,
       websites: [],
+      similar_links: [],
       size: baseSize,
       baseSize: baseSize,
+      type: 'cluster',
       x: Math.cos(i * 2 * Math.PI / nodeCount) * 200,
       y: Math.sin(i * 2 * Math.PI / nodeCount) * 200,
       metadata: {
@@ -321,7 +591,8 @@ function generatePlaceholderData() {
         source: nodes[i].id,
         target: nodes[i + 1].id,
         similarity: 0.5 + Math.random() * 0.3,
-        strength: 0.5
+        strength: 0.5,
+        type: 'cluster-link'
       });
     }
   }
@@ -330,7 +601,8 @@ function generatePlaceholderData() {
 }
 
 async function refreshData() {
-  selectedNode.value = null;
+  selectedWebsite.value = null;
+  explodedNode.value = null;
   await loadData();
   if (simulation) {
     simulation.nodes(graphData.nodes);
@@ -347,6 +619,214 @@ function updateConnections() {
     simulation.alpha(0.3).restart();
     renderGraph();
   }
+}
+
+// ==============================================
+// EXPLODE/COLLAPSE FUNCTIONALITY
+// ==============================================
+function explodeNode(clusterNode) {
+  if (explodedNode.value) {
+    collapseNode();
+  }
+
+  explodedNode.value = clusterNode;
+  const centerX = clusterNode.x;
+  const centerY = clusterNode.y;
+  const radius = 80; // Increased radius for smoother spread
+
+  websiteNodes = [];
+  const totalNodes = clusterNode.websites.length + 1; // +1 for discover node
+  const angleStep = (2 * Math.PI) / totalNodes;
+
+  // Create website nodes with staggered animation
+  clusterNode.websites.forEach((website, index) => {
+    const angle = angleStep * index;
+    const websiteNode = {
+      id: `website-${website.id}`,
+      websiteId: website.id,
+      title: website.title,
+      url: website.url,
+      domain: website.domain,
+      processed_at: website.processed_at,
+      size: 10,
+      baseSize: 10,
+      type: 'website',
+      parentCluster: clusterNode.id,
+      x: centerX,
+      y: centerY,
+      targetX: centerX + Math.cos(angle) * radius,
+      targetY: centerY + Math.sin(angle) * radius,
+      animationDelay: index * 50 // Stagger animation
+    };
+    websiteNodes.push(websiteNode);
+    graphData.nodes.push(websiteNode);
+
+    graphData.links.push({
+      source: clusterNode.id,
+      target: websiteNode.id,
+      type: 'website-link'
+    });
+  });
+
+  // Create "Discover Similar" node - centered and professional
+  const discoverAngle = angleStep * clusterNode.websites.length;
+  const discoverNode = {
+    id: `discover-${clusterNode.id}`,
+    title: 'Discover Similar',
+    size: 14,
+    baseSize: 14,
+    type: 'discover',
+    parentCluster: clusterNode.id,
+    x: centerX,
+    y: centerY,
+    targetX: centerX + Math.cos(discoverAngle) * radius,
+    targetY: centerY + Math.sin(discoverAngle) * radius,
+    animationDelay: clusterNode.websites.length * 50
+  };
+  websiteNodes.push(discoverNode);
+  graphData.nodes.push(discoverNode);
+
+  graphData.links.push({
+    source: clusterNode.id,
+    target: discoverNode.id,
+    type: 'discover-link'
+  });
+
+  // Update simulation
+  simulation.nodes(graphData.nodes);
+  simulation.force('link').links(graphData.links);
+  simulation.alpha(0.5).restart();
+
+  renderGraph();
+
+  // Smooth staggered animation to target positions
+  websiteNodes.forEach((node, index) => {
+    setTimeout(() => {
+      const d3Node = graphData.nodes.find(n => n.id === node.id);
+      if (d3Node) {
+        // Use transition for smooth movement
+        d3.select(`.node[data-id="${node.id}"]`)
+          .transition()
+          .duration(600 / settings.animationSpeed)
+          .ease(d3.easeCubicOut);
+
+        d3Node.fx = node.targetX;
+        d3Node.fy = node.targetY;
+      }
+      simulation.alpha(0.3).restart();
+    }, node.animationDelay);
+  });
+
+  // Release fixed positions after animation completes
+  setTimeout(() => {
+    websiteNodes.forEach(node => {
+      const d3Node = graphData.nodes.find(n => n.id === node.id);
+      if (d3Node) {
+        d3Node.fx = null;
+        d3Node.fy = null;
+      }
+    });
+  }, (websiteNodes.length * 50) + 700);
+}
+
+function collapseNode() {
+  if (!explodedNode.value) return;
+
+  // Smooth collapse animation - nodes move back to center
+  const centerX = explodedNode.value.x;
+  const centerY = explodedNode.value.y;
+
+  websiteNodes.forEach((node, index) => {
+    setTimeout(() => {
+      const d3Node = graphData.nodes.find(n => n.id === node.id);
+      if (d3Node) {
+        d3Node.fx = centerX;
+        d3Node.fy = centerY;
+      }
+      simulation.alpha(0.3).restart();
+    }, index * 30);
+  });
+
+  // Remove nodes after animation
+  setTimeout(() => {
+    graphData.nodes = graphData.nodes.filter(node =>
+      node.type !== 'website' && node.type !== 'discover'
+    );
+
+    graphData.links = graphData.links.filter(link =>
+      link.type !== 'website-link' && link.type !== 'discover-link'
+    );
+
+    websiteNodes = [];
+    explodedNode.value = null;
+    selectedWebsite.value = null;
+
+    simulation.nodes(graphData.nodes);
+    simulation.force('link').links(graphData.links);
+    simulation.alpha(0.5).restart();
+
+    renderGraph();
+  }, (websiteNodes.length * 30) + 400);
+}
+
+async function handleDiscoverClick() {
+  if (!explodedNode.value) return;
+
+  showDiscoverModal.value = true;
+  isLoadingSimilar.value = true;
+  similarWebsites.value = [];
+
+  try {
+    const results = await searchSimilarWebsites(explodedNode.value);
+    similarWebsites.value = results;
+  } catch (error) {
+    console.error('Error loading similar websites:', error);
+  } finally {
+    isLoadingSimilar.value = false;
+  }
+}
+
+function navigateToCluster(cluster) {
+  showDiscoverModal.value = false;
+  collapseNode();
+
+  const width = graphContainer.value.clientWidth;
+  const height = graphContainer.value.clientHeight;
+
+  svg.transition()
+    .duration(800 / settings.animationSpeed)
+    .call(zoom.transform,
+      d3.zoomIdentity
+        .translate(width / 2, height / 2)
+        .scale(1.2)
+        .translate(-cluster.x, -cluster.y)
+    );
+}
+
+// ==============================================
+// STICKY NOTE DRAGGING
+// ==============================================
+function startDraggingSticky(e) {
+  isDraggingSticky = true;
+  const stickyEl = e.currentTarget.parentElement;
+  dragOffsetX = e.clientX - stickyEl.offsetLeft;
+  dragOffsetY = e.clientY - stickyEl.offsetTop;
+  document.addEventListener('mousemove', handleStickyDrag);
+  document.addEventListener('mouseup', stopStickyDrag);
+}
+
+function handleStickyDrag(e) {
+  if (!isDraggingSticky) return;
+  stickyNoteStyle.value = {
+    left: e.clientX - dragOffsetX + 'px',
+    top: e.clientY - dragOffsetY + 'px'
+  };
+}
+
+function stopStickyDrag() {
+  isDraggingSticky = false;
+  document.removeEventListener('mousemove', handleStickyDrag);
+  document.removeEventListener('mouseup', stopStickyDrag);
 }
 
 // ==============================================
@@ -374,7 +854,7 @@ async function initializeGraph() {
   svg.call(zoom);
 
   simulation = d3.forceSimulation(graphData.nodes)
-    .force('link', d3.forceLink(graphData.links).id(d => d.id).distance(200).strength(0.03))
+    .force('link', d3.forceLink(graphData.links).id(d => d.id).distance(d => d.type === 'website-link' ? 80 : 200).strength(0.03))
     .force('charge', d3.forceManyBody().strength(-200))
     .force('center', d3.forceCenter(0, 0))
     .force('collision', d3.forceCollide().radius(d => d.size * settings.nodeSize + 15))
@@ -413,17 +893,45 @@ function renderGraph() {
   const links = linkGroup.selectAll('.link')
     .data(graphData.links, d => `${d.source.id || d.source}-${d.target.id || d.target}`)
     .join('line')
-    .attr('class', 'link')
-    .style('opacity', showConnections.value ? 0.4 : 0)
-    .style('stroke-width', d => Math.max(1, (d.similarity || 0.5) * 4));
+    .attr('class', d => `link ${d.type}`)
+    .style('opacity', d => {
+      if (d.type === 'website-link' || d.type === 'discover-link') return 0.6;
+      return showConnections.value ? 0.4 : 0;
+    })
+    .style('stroke-width', d => {
+      if (d.type === 'website-link' || d.type === 'discover-link') return 1.5;
+      return Math.max(1, (d.similarity || 0.5) * 4);
+    })
+    .style('stroke', d => {
+      if (d.type === 'discover-link') return '#95a5a6';
+      if (d.type === 'website-link') return '#adb5bd';
+      return '#adb5bd';
+    });
 
   const nodes = nodeGroup.selectAll('.node')
     .data(graphData.nodes, d => d.id)
     .join('circle')
-    .attr('class', 'node')
+    .attr('class', d => `node ${d.type}`)
+    .attr('data-id', d => d.id)
     .attr('r', d => d.size * settings.nodeSize)
-    .attr('fill', isDarkMode.value ? '#2c3e50' : '#f8f9fa')
-    .attr('stroke', isDarkMode.value ? '#34495e' : '#dee2e6')
+    .attr('fill', d => {
+      if (d.type === 'discover') {
+        return isDarkMode.value ? '#3498db' : '#3498db';
+      }
+      if (d.type === 'website') {
+        return isDarkMode.value ? '#2c3e50' : '#f8f9fa';
+      }
+      return isDarkMode.value ? '#2c3e50' : '#f8f9fa';
+    })
+    .attr('stroke', d => {
+      if (d.type === 'discover') {
+        return isDarkMode.value ? '#2980b9' : '#2980b9';
+      }
+      if (d.type === 'website') {
+        return isDarkMode.value ? '#34495e' : '#dee2e6';
+      }
+      return isDarkMode.value ? '#34495e' : '#dee2e6';
+    })
     .attr('stroke-width', 2)
     .call(drag(simulation));
 
@@ -431,9 +939,21 @@ function renderGraph() {
     .data(graphData.nodes, d => d.id)
     .join('text')
     .attr('class', 'node-label')
-    .text(d => d.topic)
-    .style('font-size', d => Math.max(10, (d.size * settings.nodeSize) / 3.5) + 'px')
-    .style('fill', '#000000');
+    .text(d => {
+      if (d.type === 'website') return d.title.substring(0, 20) + (d.title.length > 20 ? '...' : '');
+      if (d.type === 'discover') return '';
+      return d.topic;
+    })
+    .style('font-size', d => {
+      if (d.type === 'website') return '8px';
+      if (d.type === 'discover') return '18px';
+      return Math.max(10, (d.size * settings.nodeSize) / 3.5) + 'px';
+    })
+    .style('fill', d => {
+      if (d.type === 'discover') return '#ffffff';
+      return '#000000';
+    })
+    .style('font-weight', d => d.type === 'discover' ? '400' : '500');
 
   nodes
     .on('mouseover', handleNodeMouseOver)
@@ -453,7 +973,10 @@ function renderGraph() {
 
     labels
       .attr('x', d => d.x)
-      .attr('y', d => d.y + (d.size * settings.nodeSize) + 18);
+      .attr('y', d => {
+        if (d.type === 'website' || d.type === 'discover') return d.y + 4;
+        return d.y + (d.size * settings.nodeSize) + 18;
+      });
   });
 }
 
@@ -487,15 +1010,23 @@ function drag(simulation) {
 function handleNodeMouseOver(event, d) {
   const tooltipEl = d3.select(tooltip.value);
   tooltipEl.transition().duration(200 / settings.animationSpeed).style('opacity', 1);
-  tooltipEl.html(`
-    <strong>${d.topic}</strong><br>
-    Websites: ${d.website_count}<br>
-    Click for more details
-  `)
+
+  let tooltipContent = '';
+  if (d.type === 'cluster') {
+    tooltipContent = `<strong>${d.topic}</strong><br>Websites: ${d.website_count}<br>Click to explode`;
+  } else if (d.type === 'website') {
+    tooltipContent = `<strong>${d.title}</strong><br>${d.domain}<br>Click for details`;
+  } else if (d.type === 'discover') {
+    tooltipContent = `<strong>Discover Similar</strong><br>Find related websites`;
+  }
+
+  tooltipEl.html(tooltipContent)
     .style('left', (event.pageX + 15) + 'px')
     .style('top', (event.pageY - 10) + 'px');
 
-  highlightConnections(d);
+  if (d.type === 'cluster') {
+    highlightConnections(d);
+  }
 }
 
 function handleNodeMouseOut() {
@@ -506,97 +1037,64 @@ function handleNodeMouseOut() {
 async function handleNodeClick(event, d) {
   event.stopPropagation();
 
-  selectedNode.value = d;
-  loadingNodeDetails.value = true;
-  nodeDetails.value = null;
+  if (d.type === 'cluster') {
+    explodeNode(d);
+  } else if (d.type === 'website') {
+    await showWebsiteDetails(event, d);
+  } else if (d.type === 'discover') {
+    await handleDiscoverClick();
+  }
+}
 
-  // Position popup
+async function showWebsiteDetails(event, websiteNode) {
+  selectedWebsite.value = websiteNode;
+  websiteDetails.value = null;
+
+  // Position sticky note
   const containerRect = graphContainer.value.getBoundingClientRect();
   const nodeScreenX = event.pageX - containerRect.left;
   const nodeScreenY = event.pageY - containerRect.top;
 
-  const popupWidth = 400;
-  const popupHeight = 350;
+  const stickyWidth = 300;
+  const stickyHeight = 280;
 
   let left = nodeScreenX + 20;
-  let top = nodeScreenY - popupHeight / 2;
+  let top = nodeScreenY - stickyHeight / 2;
 
-  if (left + popupWidth > containerRect.width) {
-    left = nodeScreenX - popupWidth - 20;
+  if (left + stickyWidth > containerRect.width) {
+    left = nodeScreenX - stickyWidth - 20;
   }
   if (top < 20) top = 20;
-  if (top + popupHeight > containerRect.height - 20) {
-    top = containerRect.height - popupHeight - 20;
+  if (top + stickyHeight > containerRect.height - 20) {
+    top = containerRect.height - stickyHeight - 20;
   }
 
-  nodePopupStyle.value = {
+  stickyNoteStyle.value = {
     left: left + 'px',
     top: top + 'px'
   };
 
-  // Load additional details for the first website if available
-  if (d.websites && d.websites.length > 0) {
-    try {
-      const details = await fetchWebsiteDetails(d.websites[0].id);
-      nodeDetails.value = details;
-    } catch (error) {
-      console.error('Error loading website details:', error);
-    }
-  }
-  
-  loadingNodeDetails.value = false;
-}
-
-async function loadWebsiteDetails(websiteId) {
+  // Fetch details
   try {
-    const details = await fetchWebsiteDetails(websiteId);
-    if (details) {
-      alert(`Website Details:\nTitle: ${details.title}\nURL: ${details.url}\nSummary: ${details.ai_summary?.summary || 'No summary available'}`);
-    }
+    const details = await fetchWebsiteDetails(websiteNode.websiteId);
+    websiteDetails.value = details;
   } catch (error) {
     console.error('Error loading website details:', error);
-    alert('Failed to load website details');
   }
 }
-
-function enablePopupDrag(popupEl, headerEl) {
-  headerEl.addEventListener('mousedown', (e) => {
-    isDragging = true;
-    dragOffsetX = e.clientX - popupEl.offsetLeft;
-    dragOffsetY = e.clientY - popupEl.offsetTop;
-    document.addEventListener('mousemove', handleDrag);
-    document.addEventListener('mouseup', stopDrag);
-  });
-
-  function handleDrag(e) {
-    if (!isDragging) return;
-    popupEl.style.left = e.clientX - dragOffsetX + 'px';
-    popupEl.style.top = e.clientY - dragOffsetY + 'px';
-  }
-
-  function stopDrag() {
-    isDragging = false;
-    document.removeEventListener('mousemove', handleDrag);
-    document.removeEventListener('mouseup', stopDrag);
-  }
-}
-
-watch(selectedNode, () => {
-  nextTick(() => {
-    const popupEl = document.querySelector('.node-popup');
-    const headerEl = popupEl?.querySelector('.popup-header');
-    if (popupEl && headerEl) {
-      enablePopupDrag(popupEl, headerEl);
-    }
-  });
-});
 
 function handleBackgroundClick() {
-  selectedNode.value = null;
+  selectedWebsite.value = null;
 }
 
-function closeNodePopup() {
-  selectedNode.value = null;
+function closeStickyNote() {
+  selectedWebsite.value = null;
+  websiteDetails.value = null;
+}
+
+function closeDiscoverModal() {
+  showDiscoverModal.value = false;
+  similarWebsites.value = [];
 }
 
 function handleProfileClick() {
@@ -605,8 +1103,9 @@ function handleProfileClick() {
 
 function getConnectionCount(node) {
   return graphData.links.filter(link =>
-    (link.source.id === node.id || link.source === node.id) || 
-    (link.target.id === node.id || link.target === node.id)
+    ((link.source.id === node.id || link.source === node.id) ||
+      (link.target.id === node.id || link.target === node.id)) &&
+    link.type === 'cluster-link'
   ).length;
 }
 
@@ -619,11 +1118,13 @@ function performSearch(term) {
   }
 
   const matchingNodes = graphData.nodes.filter(node =>
-    node.topic.toLowerCase().includes(searchTerm) ||
-    node.websites.some(website => 
-      website.title.toLowerCase().includes(searchTerm) ||
-      website.url.toLowerCase().includes(searchTerm) ||
-      website.domain.toLowerCase().includes(searchTerm)
+    node.type === 'cluster' && (
+      node.topic.toLowerCase().includes(searchTerm) ||
+      node.websites.some(website =>
+        website.title.toLowerCase().includes(searchTerm) ||
+        website.url.toLowerCase().includes(searchTerm) ||
+        website.domain.toLowerCase().includes(searchTerm)
+      )
     )
   );
 
@@ -662,11 +1163,11 @@ function highlightConnections(node) {
   graphData.links.forEach(link => {
     const sourceId = link.source.id || link.source;
     const targetId = link.target.id || link.target;
-    
-    if (sourceId === node.id) {
+
+    if (sourceId === node.id && link.type === 'cluster-link') {
       connectedNodeIds.add(targetId);
       connectedLinks.add(link);
-    } else if (targetId === node.id) {
+    } else if (targetId === node.id && link.type === 'cluster-link') {
       connectedNodeIds.add(sourceId);
       connectedLinks.add(link);
     }
@@ -705,8 +1206,16 @@ function updateTheme() {
   container.select('.nodes').selectAll('.node')
     .transition()
     .duration(300)
-    .attr('fill', isDarkMode.value ? '#2c3e50' : '#f8f9fa')
-    .attr('stroke', isDarkMode.value ? '#34495e' : '#dee2e6');
+    .attr('fill', d => {
+      if (d.type === 'discover') return '#3498db';
+      if (d.type === 'website') return isDarkMode.value ? '#2c3e50' : '#f8f9fa';
+      return isDarkMode.value ? '#2c3e50' : '#f8f9fa';
+    })
+    .attr('stroke', d => {
+      if (d.type === 'discover') return '#2980b9';
+      if (d.type === 'website') return isDarkMode.value ? '#34495e' : '#dee2e6';
+      return isDarkMode.value ? '#34495e' : '#dee2e6';
+    });
 }
 
 function updateNodeSizes() {
@@ -718,7 +1227,11 @@ function updateNodeSizes() {
   container.select('.labels').selectAll('.node-label')
     .transition()
     .duration(300 / settings.animationSpeed)
-    .style('font-size', d => Math.max(10, (d.baseSize * settings.nodeSize) / 3.5) + 'px');
+    .style('font-size', d => {
+      if (d.type === 'website') return '8px';
+      if (d.type === 'discover') return '18px';
+      return Math.max(10, (d.baseSize * settings.nodeSize) / 3.5) + 'px';
+    });
 
   if (simulation) {
     simulation.force('collision', d3.forceCollide().radius(d => d.baseSize * settings.nodeSize + 15));
@@ -743,7 +1256,7 @@ function resetView() {
   const width = graphContainer.value.clientWidth;
   const height = graphContainer.value.clientHeight;
   const bounds = container.node().getBBox();
-  
+
   if (bounds.width > 0 && bounds.height > 0) {
     const fullWidth = bounds.width;
     const fullHeight = bounds.height;
@@ -759,7 +1272,7 @@ function resetView() {
 }
 
 function toggleConnections() {
-  container.select('.links').selectAll('.link')
+  container.select('.links').selectAll('.link.cluster-link')
     .transition()
     .duration(500 / settings.animationSpeed)
     .style('opacity', showConnections.value ? 0.4 : 0);
@@ -773,7 +1286,7 @@ const handleResize = () => {
     const width = graphContainer.value.clientWidth;
     const height = graphContainer.value.clientHeight;
     svg.attr('width', width).attr('height', height);
-    selectedNode.value = null;
+    selectedWebsite.value = null;
   }
 };
 
@@ -787,10 +1300,12 @@ watch(() => isDarkMode.value, () => {
 
 onMounted(() => {
   initializeGraph();
+  connectWebSocket(); // Connect to WebSocket on mount
   window.addEventListener('resize', handleResize);
 });
 
 onBeforeUnmount(() => {
+  disconnectWebSocket(); // Clean up WebSocket on unmount
   window.removeEventListener('resize', handleResize);
 });
 
@@ -825,13 +1340,6 @@ onBeforeUnmount(() => {
       #2c3e50 28px),
     linear-gradient(90deg, #1a1a1a 0%, #2c2c2c 100%);
   background-size: 100% 28px, 100% 100%;
-}
-
-.profile-container {
-  position: fixed;
-  top: 20px;
-  left: 20px;
-  z-index: 1000;
 }
 
 .profile-btn {
@@ -940,15 +1448,6 @@ onBeforeUnmount(() => {
   color: #ecf0f1;
 }
 
-.controls {
-  position: fixed;
-  top: 20px;
-  right: 20px;
-  z-index: 1000;
-  display: flex;
-  gap: 10px;
-}
-
 .control-btn {
   background: white;
   border: 2px solid #dee2e6;
@@ -978,58 +1477,33 @@ onBeforeUnmount(() => {
   background: #34495e;
 }
 
-.settings-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
-  z-index: 2000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.spinner {
+  width: 50px;
+  height: 50px;
+  margin: 0 auto 15px;
+  border: 4px solid #f3f3f3;
+  border-top: 4px solid #3498db;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
 }
 
-.settings-popup {
-  background: white;
-  border-radius: 12px;
-  padding: 24px;
-  min-width: 400px;
-  max-width: 90vw;
-  max-height: 80vh;
-  overflow-y: auto;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
-  font-family: 'Liberation Sans', Arial, sans-serif;
+.spinner-small {
+  width: 40px;
+  height: 40px;
+  border: 3px solid #f3f3f3;
+  border-top: 3px solid #3498db;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
 }
 
-.dark-mode .settings-popup {
-  background: #2c3e50;
-  color: #ecf0f1;
-}
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
 
-.settings-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid #dee2e6;
-}
-
-.dark-mode .settings-header {
-  border-bottom-color: #4a5f7a;
-}
-
-.settings-header h3 {
-  margin: 0;
-  color: #495057;
-  font-size: 18px;
-  font-family: 'Liberation Sans', Arial, sans-serif;
-}
-
-.dark-mode .settings-header h3 {
-  color: #ecf0f1;
+  100% {
+    transform: rotate(360deg);
+  }
 }
 
 .close-btn {
@@ -1070,7 +1544,7 @@ onBeforeUnmount(() => {
 }
 
 .setting-group label {
-  min-width: 120px;
+  min-width: 140px;
   color: #495057;
   font-weight: 500;
   font-family: 'Liberation Sans', Arial, sans-serif;
@@ -1078,26 +1552,6 @@ onBeforeUnmount(() => {
 
 .dark-mode .setting-group label {
   color: #ecf0f1;
-}
-
-.setting-group input[type="range"] {
-  flex: 1;
-  margin: 0 8px;
-}
-
-.setting-group input[type="checkbox"] {
-  transform: scale(1.2);
-}
-
-.setting-group span {
-  min-width: 40px;
-  text-align: right;
-  color: #6c757d;
-  font-family: 'Liberation Sans', monospace;
-}
-
-.dark-mode .setting-group span {
-  color: #bdc3c7;
 }
 
 .theme-toggle {
@@ -1143,16 +1597,6 @@ onBeforeUnmount(() => {
   color: #bdc3c7;
 }
 
-.settings-actions {
-  margin-top: 20px;
-  padding-top: 16px;
-  border-top: 1px solid #dee2e6;
-}
-
-.dark-mode .settings-actions {
-  border-top-color: #4a5f7a;
-}
-
 .reset-btn {
   background: #6c757d;
   color: white;
@@ -1163,13 +1607,15 @@ onBeforeUnmount(() => {
   font-size: 14px;
   transition: background 0.2s ease;
   font-family: 'Liberation Sans', Arial, sans-serif;
+  width: 100%;
 }
 
 .reset-btn:hover {
   background: #5a6268;
 }
 
-.node-popup {
+/* Sticky Note Styles */
+.sticky-note {
   position: fixed;
   background: #feff9c;
   border: 2px solid #feffc2;
@@ -1180,15 +1626,15 @@ onBeforeUnmount(() => {
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
   z-index: 1500;
   font-family: 'Liberation Sans', Arial, sans-serif;
-  animation: popupFadeIn 0.2s ease-out;
+  animation: stickyFadeIn 0.2s ease-out;
 }
 
-.dark-mode .node-popup {
+.dark-mode .sticky-note {
   background: #feff9c;
   border-color: #34495e;
 }
 
-@keyframes popupFadeIn {
+@keyframes stickyFadeIn {
   from {
     opacity: 0;
     transform: scale(0.9);
@@ -1200,7 +1646,7 @@ onBeforeUnmount(() => {
   }
 }
 
-.popup-header {
+.sticky-note-header {
   display: flex;
   justify-content: space-between;
   cursor: move;
@@ -1212,22 +1658,14 @@ onBeforeUnmount(() => {
   border-radius: 10px 10px 0 0;
 }
 
-.dark-mode .popup-header {
-  background: #feff9c;
-  color: black;
-  border-bottom-color: #4a5f7a;
-}
-
-.popup-header h4 {
+.sticky-note-header h4 {
   margin: 0;
   font-size: 16px;
   font-weight: 600;
   font-family: 'Liberation Sans', Arial, sans-serif;
 }
 
-.dark-mode .popup-header h4 {}
-
-.popup-close {
+.sticky-close {
   background: none;
   border: none;
   font-size: 20px;
@@ -1241,31 +1679,22 @@ onBeforeUnmount(() => {
   justify-content: center;
 }
 
-.popup-close:hover {
+.sticky-close:hover {
   background: #1a1a1a;
   color: white;
 }
 
-.dark-mode .popup-close {
-  color: #bdc3c7;
-}
-
-.dark-mode .popup-close:hover {
-  background: #4a5f7a;
-  color: #ecf0f1;
-}
-
-.popup-content {
+.sticky-note-content {
   padding: 20px;
 }
 
-.popup-field {
+.sticky-field {
   margin-bottom: 12px;
   font-size: 14px;
   line-height: 1.4;
 }
 
-.popup-field strong {
+.sticky-field strong {
   color: #495057;
   font-weight: 600;
   display: inline-block;
@@ -1273,38 +1702,81 @@ onBeforeUnmount(() => {
   font-family: 'Liberation Sans', Arial, sans-serif;
 }
 
-.dark-mode .popup-field strong {}
-
-.tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 4px;
-}
-
-.tag {
+.cute-link {
+  display: inline-block;
   background: #1a1a1a;
-  color: white; 
+  color: white;
   font-weight: bold;
-  padding: 2px 8px;   
+  padding: 6px 12px;
   border-radius: 12px;
+  text-decoration: none;
   font-size: 12px;
-  font-family: 'Liberation Sans', Arial, sans-serif;
+  transition: all 0.2s ease;
 }
 
-.dark-mode .tag {
+.cute-link:hover {
+  background: #000;
+  transform: translateY(-2px);
+}
+
+/* Similar Websites Modal Styles */
+.similar-website-item {
+  padding: 16px;
+  background: #f8f9fa;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 2px solid transparent;
+}
+
+.similar-website-item:hover {
+  background: #e9ecef;
+  border-color: #3498db;
+  transform: translateX(4px);
+  box-shadow: 0 4px 12px rgba(52, 152, 219, 0.2);
+}
+
+.dark-mode .similar-website-item {
+  background: #34495e;
+}
+
+.dark-mode .similar-website-item:hover {
   background: #4a5f7a;
-  color: #ecf0f1;
+  border-color: #3498db;
 }
 
-#graph-container {
-  width: 100%;
-  height: 100%;
-  cursor: grab;
+.similar-icon {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: white;
+  border-radius: 50%;
+  flex-shrink: 0;
+  color: #3498db;
 }
 
-#graph-container:active {
-  cursor: grabbing;
+.dark-mode .similar-icon {
+  background: #2c3e50;
+}
+
+.external-link-icon {
+  color: #95a5a6;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+}
+
+.similar-website-item:hover .external-link-icon {
+  color: #3498db;
+  transform: translate(2px, -2px);
+}
+
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .tooltip {
@@ -1343,17 +1815,26 @@ onBeforeUnmount(() => {
   border-color: #34495e;
 }
 
-
 /* Global styles for D3 elements */
 :global(.node) {
   cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1));
 }
 
 :global(.node:hover) {
   stroke-width: 3px;
   filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.2));
+}
+
+:global(.node.website),
+:global(.node.discover) {
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.15));
+}
+
+:global(.node.website:hover),
+:global(.node.discover:hover) {
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.25));
 }
 
 :global(.node.highlighted) {
@@ -1386,18 +1867,19 @@ onBeforeUnmount(() => {
   transform: scale(1.1);
 }
 
-
-:global(.node-label.dark-mode) {
-  color: #bdc3c7;
+:global(.link) {
+  transition: all 0.3s ease;
 }
 
-
-:global(.link) {
+:global(.link.cluster-link) {
   stroke: #adb5bd;
-  stroke-width: 1;
-  transition: all 0.3s ease;
   stroke-dasharray: 2, 2;
-  opacity: 0.3;
+}
+
+:global(.link.website-link),
+:global(.link.discover-link) {
+  stroke: #adb5bd;
+  opacity: 0.6;
 }
 
 :global(.link.highlighted) {
@@ -1405,5 +1887,127 @@ onBeforeUnmount(() => {
   stroke-width: 2;
   opacity: 0.8 !important;
   stroke-dasharray: none;
+}
+
+/* WebSocket Connection Status */
+.connection-status {
+  position: fixed;
+  top: 80px;
+  right: 20px;
+  z-index: 1000;
+  padding: 12px 20px;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  animation: slideInRight 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  font-family: 'Liberation Sans', Arial, sans-serif;
+}
+
+.connection-status.connected {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: white;
+}
+
+.connection-status.disconnected {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  color: white;
+}
+
+.connection-status.connecting {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  color: white;
+}
+
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(100px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.status-pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.5;
+    transform: scale(1.2);
+  }
+}
+
+/* New Data Notification */
+.new-data-notification {
+  position: fixed;
+  bottom: 80px;
+  right: 20px;
+  z-index: 1000;
+  padding: 16px 24px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: white;
+  font-size: 14px;
+  font-weight: 600;
+  box-shadow: 0 8px 24px rgba(59, 130, 246, 0.4);
+  animation: slideInUp 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  font-family: 'Liberation Sans', Arial, sans-serif;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+@keyframes slideInUp {
+  from {
+    opacity: 0;
+    transform: translateY(100px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.notification-icon {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 50%;
+  animation: bounce 1s ease-in-out infinite;
+}
+
+@keyframes bounce {
+
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-5px);
+  }
 }
 </style>
