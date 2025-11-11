@@ -1,14 +1,11 @@
 <template>
-    <div class="min-h-screen bg-[#f4f4f4]">
-        <!-- Navbar -->
+    <div class="bg-[#f4f4f4] min-h-screen overflow-y-auto">
         <nav
             :class="['fixed w-full z-50 transition-all duration-300', scrolled ? 'bg-white shadow-lg' : 'bg-white/80 backdrop-blur-sm']">
             <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                 <div class="flex justify-between items-center h-16">
-                    <!-- Logo -->
                     <div class="flex items-center space-x-3">
                         <img src="./images/rocus1.png" alt="Rocus" class="h-14" />
-                        <!-- <span class="text-xl font-bold text-[#1A1A1A]">Rocus</span> -->
                     </div>
                     <div class="hidden md:flex items-center space-x-6">
                         <a href="#features"
@@ -31,17 +28,16 @@
                             </svg>
                             <span>Donate</span>
                         </button>
-                        <button
+                        <a href="http://localhost:5000/auth/login"
                             class="px-5 py-2 text-[#4A90E2] border-2 border-[#4A90E2] rounded-lg hover:bg-[#4A90E2] hover:text-white transition-all font-semibold">
                             Sign In
-                        </button>
+                        </a>
                         <button
                             class="px-5 py-2 bg-[#4A90E2] text-white rounded-lg hover:bg-[#3A7BC8] transition-all font-semibold shadow-lg shadow-[#4A90E2]/30">
                             Launch App
                         </button>
                     </div>
 
-                    <!-- Mobile Menu Button -->
                     <button @click="mobileMenuOpen = !mobileMenuOpen" class="md:hidden">
                         <svg v-if="!mobileMenuOpen" class="w-6 h-6" fill="none" stroke="currentColor"
                             viewBox="0 0 24 24">
@@ -56,7 +52,6 @@
                 </div>
             </div>
 
-            <!-- Mobile Menu -->
             <div v-if="mobileMenuOpen" class="md:hidden bg-white border-t">
                 <div class="px-4 py-3 space-y-3">
                     <a href="#features" class="block py-2 text-[#1A1A1A] hover:text-[#4A90E2] font-medium">Features</a>
@@ -75,7 +70,6 @@
         </nav>
 
         <section class="pt-32 pb-20 px-4 sm:px-6 lg:px-8 relative overflow-hidden">
-            <!-- Background gradient -->
             <div class="absolute inset-0 bg-gradient-to-br from-[#4A90E2]/5 via-transparent to-[#4A90E2]/10"></div>
 
             <div class="max-w-7xl mx-auto relative">
@@ -123,11 +117,9 @@
                     </div>
                 </div>
 
-                <!-- AI Knowledge Map Visual -->
                 <div class="relative max-w-5xl mx-auto">
                     <div class="bg-white rounded-2xl shadow-2xl p-8 border-2 border-[#4A90E2]/20">
                         <div class="relative h-96">
-                            <!-- Central Node -->
                             <div class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-10">
                                 <div
                                     class="w-20 h-20 bg-gradient-to-br from-[#4A90E2] to-[#6AB4F5] rounded-full shadow-lg flex items-center justify-center animate-pulse">
@@ -151,7 +143,6 @@
                                 </div>
                             </div>
 
-                            <!-- Connection Lines -->
                             <svg class="absolute inset-0 w-full h-full" style="z-index: 1;">
                                 <line v-for="i in 8" :key="'line-' + i" x1="50%" y1="50%"
                                     :x2="(50 + 35 * Math.cos(i * Math.PI / 4)) + '%'"
@@ -167,7 +158,6 @@
             </div>
         </section>
 
-        <!-- Features Section -->
         <section id="features" class="py-20 px-4 sm:px-6 lg:px-8 bg-white">
             <div class="max-w-7xl mx-auto">
                 <div class="text-center mb-16">
@@ -180,7 +170,6 @@
                 </div>
 
                 <div class="grid md:grid-cols-3 gap-8">
-                    <!-- Feature 1 -->
                     <div
                         class="group bg-gradient-to-br from-[#4A90E2]/5 to-transparent rounded-2xl p-8 hover:shadow-2xl transition-all hover:-translate-y-2 border-2 border-transparent hover:border-[#4A90E2]/30">
                         <div
@@ -197,7 +186,6 @@
                         </p>
                     </div>
 
-                    <!-- Feature 2 -->
                     <div
                         class="group bg-gradient-to-br from-[#4A90E2]/5 to-transparent rounded-2xl p-8 hover:shadow-2xl transition-all hover:-translate-y-2 border-2 border-transparent hover:border-[#4A90E2]/30">
                         <div
@@ -214,7 +202,6 @@
                         </p>
                     </div>
 
-                    <!-- Feature 3 -->
                     <div
                         class="group bg-gradient-to-br from-[#4A90E2]/5 to-transparent rounded-2xl p-8 hover:shadow-2xl transition-all hover:-translate-y-2 border-2 border-transparent hover:border-[#4A90E2]/30">
                         <div
@@ -234,7 +221,6 @@
             </div>
         </section>
 
-        <!-- About Section -->
         <section id="about" class="py-20 px-4 sm:px-6 lg:px-8 bg-gradient-to-b from-white to-[#f4f4f4]">
             <div class="max-w-7xl mx-auto">
                 <div class="grid md:grid-cols-2 gap-12 items-center">
@@ -318,7 +304,6 @@
             </div>
         </section>
 
-        <!-- CTA Section -->
         <section class="py-20 px-4 sm:px-6 lg:px-8 bg-[#f4f4f4]">
             <div class="max-w-4xl mx-auto text-center">
                 <h2 class="text-4xl sm:text-5xl font-bold mb-6 text-[#1A1A1A]">
@@ -339,7 +324,6 @@
             </div>
         </section>
 
-        <!-- Footer -->
         <footer class="bg-[#1A1A1A] text-white py-12 px-4 sm:px-6 lg:px-8">
             <div class="max-w-7xl mx-auto">
                 <div class="grid md:grid-cols-4 gap-8 mb-8">
@@ -395,7 +379,7 @@ const mobileMenuOpen = ref(false);
 const scrolled = ref(false);
 
 const handleScroll = () => {
-    scrolled.value = window.scrollY > 20;
+    scrolled.value = window.scrollY > 150;
 };
 
 onMounted(() => {
@@ -410,8 +394,6 @@ onUnmounted(() => {
 const installExtension = () => {
     window.open('https://chrome.google.com/webstore/detail/your-extension-id', '_blank');
 };
-
-
 </script>
 
 <style scoped>

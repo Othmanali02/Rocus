@@ -15,11 +15,13 @@
 		"@tailwindcss/cli": "^4.1.13",
 		"@tailwindcss/forms": "^0.5.9",
 		"@tailwindcss/typography": "^0.5.15",
+		"axios": "^1.13.2",
 		"d3": "^7.9.0",
 		"graphology": "^0.26.0",
 		"sigma": "^3.0.2",
 		"tailwindcss": "^3.4.9",
-		"vue": "^3.5.18"
+		"vue": "^3.5.18",
+		"vue-router": "^4.6.3"
 	},
 	"devDependencies": {
 		"@vitejs/plugin-vue": "^6.0.1",
