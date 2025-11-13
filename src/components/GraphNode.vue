@@ -225,6 +225,7 @@
 
 <script setup>
 import { ref, reactive, onMounted, onBeforeUnmount, watch, nextTick } from 'vue';
+import axios from 'axios';
 import * as d3 from 'd3';
 
 // ==============================================
@@ -412,11 +413,23 @@ const API_BASE_URL = 'http://localhost:5000';
 // ==============================================
 // API FUNCTIONS
 // ==============================================
+
+function getCookie(name) {
+  const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
+  return match ? match[2] : null;
+}
+
 async function fetchClusters() {
   try {
-    const response = await fetch(`${API_BASE_URL}/clusters`);
+    const token = getCookie('token');
+    const response = await axios.get('http://localhost:5000/clusters', {
+      withCredentials: true,
+      headers: { 'Content-Type': 'application/json' },
+    });
+
     if (!response.ok) throw new Error('Failed to fetch clusters');
     const data = await response.json();
+    console.log(data)
     return data.clusters || [];
   } catch (error) {
     console.error('Error fetching clusters:', error);
@@ -426,7 +439,11 @@ async function fetchClusters() {
 
 async function fetchSimilarities() {
   try {
-    const response = await fetch(`${API_BASE_URL}/cluster-similarities`);
+    const token = getCookie('token');
+    const response = await axios.get('http://localhost:5000/cluster-similarities', {
+      withCredentials: true,
+      headers: { 'Content-Type': 'application/json' },
+    });
     if (!response.ok) throw new Error('Failed to fetch similarities');
     const data = await response.json();
     return data.similarities || {};
@@ -438,6 +455,7 @@ async function fetchSimilarities() {
 
 async function fetchWebsiteDetails(websiteId) {
   try {
+    const token = getCookie('token');
     const response = await fetch(`${API_BASE_URL}/website/${websiteId}`);
     if (!response.ok) throw new Error('Failed to fetch website details');
     const data = await response.json();
@@ -1302,6 +1320,7 @@ onMounted(() => {
   initializeGraph();
   connectWebSocket(); // Connect to WebSocket on mount
   window.addEventListener('resize', handleResize);
+
 });
 
 onBeforeUnmount(() => {

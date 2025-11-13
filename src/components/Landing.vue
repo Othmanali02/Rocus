@@ -1,3 +1,35 @@
+<script setup>
+import { ref, onMounted, onUnmounted } from 'vue';
+import { store } from "../router/store";
+
+const mobileMenuOpen = ref(false);
+const scrolled = ref(false);
+
+const handleScroll = () => {
+    scrolled.value = window.scrollY > 150;
+};
+
+const props = defineProps({
+    user: Object
+});
+
+onMounted(() => {
+    window.addEventListener('scroll', handleScroll);
+    console.log(store.user);
+});
+
+onUnmounted(() => {
+    window.removeEventListener('scroll', handleScroll);
+});
+
+
+const installExtension = () => {
+    window.open('https://chrome.google.com/webstore/detail/your-extension-id', '_blank');
+};
+</script>
+
+
+
 <template>
     <div class="bg-[#f4f4f4] min-h-screen overflow-y-auto">
         <nav
@@ -28,7 +60,13 @@
                             </svg>
                             <span>Donate</span>
                         </button>
-                        <a href="http://localhost:5000/auth/login"
+
+                        <a v-if="store.user" href="/profile"
+                            class="px-5 py-2 text-[#4A90E2] capitalize border-2 border-[#4A90E2] rounded-lg hover:bg-[#4A90E2] hover:text-white transition-all font-semibold">
+                            {{ store.user.username }}
+                        </a>
+
+                        <a v-else href="http://localhost:5000/auth/login"
                             class="px-5 py-2 text-[#4A90E2] border-2 border-[#4A90E2] rounded-lg hover:bg-[#4A90E2] hover:text-white transition-all font-semibold">
                             Sign In
                         </a>
@@ -372,29 +410,6 @@
     </div>
 </template>
 
-<script setup>
-import { ref, onMounted, onUnmounted } from 'vue';
-
-const mobileMenuOpen = ref(false);
-const scrolled = ref(false);
-
-const handleScroll = () => {
-    scrolled.value = window.scrollY > 150;
-};
-
-onMounted(() => {
-    window.addEventListener('scroll', handleScroll);
-});
-
-onUnmounted(() => {
-    window.removeEventListener('scroll', handleScroll);
-});
-
-
-const installExtension = () => {
-    window.open('https://chrome.google.com/webstore/detail/your-extension-id', '_blank');
-};
-</script>
 
 <style scoped>
 @keyframes bounce {
