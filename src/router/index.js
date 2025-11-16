@@ -4,7 +4,7 @@ import axios from "axios";
 import GraphNode from "@/components/GraphNode.vue";
 import Landing from "../components/Landing.vue";
 import Redirect from "@/components/Redirect.vue";
-import { store } from './store';
+import { store } from "./store";
 
 var user = ref(null);
 
@@ -29,7 +29,7 @@ const router = createRouter({
 			component: GraphNode,
 			props: () => ({ user: store.user }),
 		},
-			{
+		{
 			path: "/redirect",
 			name: "Redirect",
 			component: Redirect,
@@ -67,7 +67,6 @@ router.beforeEach(async (to, from, next) => {
 			}
 		}
 	}
-
 
 	// if (to.path.includes("/lists/")) {
 	// 	const listId = to.params.listId;

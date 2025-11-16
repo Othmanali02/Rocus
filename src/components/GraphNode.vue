@@ -70,7 +70,6 @@
           <button class="close-btn" @click="closeSettings">&times;</button>
         </div>
 
-        <!-- Dark Mode Toggle -->
         <div class="setting-group">
           <label>Dark Mode:</label>
           <button class="theme-toggle" @click="toggleDarkMode">
@@ -102,7 +101,7 @@
           <input type="range" min="0.3" max="0.9" step="0.05" v-model="settings.similarityThreshold"
             @input="updateConnections" class="flex-1 mx-2">
           <span class="min-w-[40px] text-right text-gray-600 dark:text-gray-400">{{ settings.similarityThreshold
-            }}</span>
+          }}</span>
         </div>
 
         <div class="mt-5 pt-4 border-t border-gray-300 dark:border-gray-600">
@@ -125,14 +124,14 @@
           <strong>Domain:</strong> {{ selectedWebsite.domain }}
         </div>
         <div class="sticky-field" v-if="websiteDetails">
-          <strong>Description:</strong> {{ websiteDetails.ai_summary?.summary || 'No description available' }}
+          <strong>Description:</strong> {{ websiteDetails.ai_summary || 'No description available' }}
         </div>
         <div class="sticky-field">
           <a :href="selectedWebsite.url" target="_blank" class="cute-link">
             🔗 Visit Website
           </a>
         </div>
-        <div class="sticky-field">
+        <div class="sticky-field" v-if="selectedWebsite.processed_at">
           <strong>Processed:</strong> {{ formatDate(selectedWebsite.processed_at) }}
         </div>
       </div>
@@ -146,7 +145,6 @@
         @click.stop>
         <div class="flex justify-between items-center mb-5 pb-3 border-b border-gray-300 dark:border-gray-600">
           <h3 class="text-lg font-semibold text-gray-700 dark:text-gray-200">
-            <span class="inline-block mr-2"></span>
             Discover Similar Websites
           </h3>
           <button class="close-btn" @click="closeDiscoverModal">&times;</button>
@@ -179,10 +177,10 @@
                     {{ website.title }}
                   </h4>
                   <p class="text-xs text-blue-600 dark:text-blue-400 mt-1 truncate">
-                    {{ website.domain }}
+                    {{ website.domain || new URL(website.url).hostname }}
                   </p>
                   <p class="text-xs text-gray-600 dark:text-gray-400 mt-2 line-clamp-2">
-                    {{ website.snippet }}
+                    {{ website.snippet || website.description || 'No description available' }}
                   </p>
                 </div>
                 <div class="external-link-icon">
@@ -224,7 +222,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, onBeforeUnmount, watch, nextTick } from 'vue';
+import { ref, reactive, onMounted, onBeforeUnmount, watch } from 'vue';
 import axios from 'axios';
 import * as d3 from 'd3';
 
@@ -246,7 +244,7 @@ const similarWebsites = ref([]);
 
 // WebSocket state
 const wsConnection = ref(null);
-const connectionStatus = ref('disconnected'); // 'connected', 'disconnected', 'connecting'
+const connectionStatus = ref('disconnected');
 const showNewDataNotification = ref(false);
 let reconnectTimeout = null;
 let reconnectAttempts = 0;
@@ -276,11 +274,20 @@ let dragOffsetX = 0;
 let dragOffsetY = 0;
 
 // ==============================================
+// API CONFIGURATION
+// ==============================================
+const API_BASE_URL = 'http://localhost:5000';
+
+// Configure axios defaults
+axios.defaults.withCredentials = true;
+axios.defaults.baseURL = API_BASE_URL;
+
+// ==============================================
 // WEBSOCKET FUNCTIONS
 // ==============================================
 function connectWebSocket() {
   if (wsConnection.value?.readyState === WebSocket.OPEN) {
-    return; // Already connected
+    return;
   }
 
   connectionStatus.value = 'connecting';
@@ -294,7 +301,6 @@ function connectWebSocket() {
       reconnectAttempts = 0;
       console.log('✅ WebSocket connected');
 
-      // Hide status after 3 seconds
       setTimeout(() => {
         if (connectionStatus.value === 'connected') {
           connectionStatus.value = 'hidden';
@@ -321,7 +327,6 @@ function connectWebSocket() {
       connectionStatus.value = 'disconnected';
       wsConnection.value = null;
 
-      // Attempt to reconnect
       if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
         reconnectAttempts++;
         const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
@@ -330,8 +335,6 @@ function connectWebSocket() {
         reconnectTimeout = setTimeout(() => {
           connectWebSocket();
         }, delay);
-      } else {
-        console.log('❌ Max reconnection attempts reached');
       }
     };
   } catch (error) {
@@ -357,32 +360,9 @@ function disconnectWebSocket() {
 async function handleWebSocketMessage(message) {
   console.log('📨 WebSocket message:', message);
 
-  if (message.type === 'cluster_update') {
-    // New cluster data available
+  if (message.type === 'cluster_update' || message.type === 'website_added') {
     showNewDataNotification.value = true;
 
-    // Auto-refresh data
-    await loadData();
-
-    if (simulation) {
-      simulation.nodes(graphData.nodes);
-      simulation.force('link').links(graphData.links);
-      simulation.alpha(0.5).restart();
-      renderGraph();
-    }
-
-    // Hide notification after 4 seconds
-    setTimeout(() => {
-      showNewDataNotification.value = false;
-    }, 4000);
-  }
-
-  if (message.type === 'website_added') {
-    // Individual website added
-    console.log('🆕 New website added:', message.data);
-    showNewDataNotification.value = true;
-
-    // Refresh to get latest data
     await loadData();
 
     if (simulation) {
@@ -398,7 +378,6 @@ async function handleWebSocketMessage(message) {
   }
 
   if (message.type === 'ping') {
-    // Respond to ping to keep connection alive
     if (wsConnection.value?.readyState === WebSocket.OPEN) {
       wsConnection.value.send(JSON.stringify({ type: 'pong' }));
     }
@@ -406,83 +385,58 @@ async function handleWebSocketMessage(message) {
 }
 
 // ==============================================
-// API CONFIGURATION
-// ==============================================
-const API_BASE_URL = 'http://localhost:5000';
-
-// ==============================================
 // API FUNCTIONS
 // ==============================================
-
-function getCookie(name) {
-  const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
-  return match ? match[2] : null;
-}
-
 async function fetchClusters() {
   try {
-    const token = getCookie('token');
-    const response = await axios.get('http://localhost:5000/clusters', {
-      withCredentials: true,
-      headers: { 'Content-Type': 'application/json' },
-    });
-
-    if (!response.ok) throw new Error('Failed to fetch clusters');
-    const data = await response.json();
-    console.log(data)
-    return data.clusters || [];
+    console.log('📡 Fetching clusters...');
+    const response = await axios.get('/clusters');
+    console.log('✅ Clusters response:', response.data);
+    return response.data.clusters || [];
   } catch (error) {
-    console.error('Error fetching clusters:', error);
+    console.error('❌ Error fetching clusters:', error);
+    if (error.response) {
+      console.error('Response status:', error.response.status);
+      console.error('Response data:', error.response.data);
+    }
     return [];
   }
 }
 
 async function fetchSimilarities() {
   try {
-    const token = getCookie('token');
-    const response = await axios.get('http://localhost:5000/cluster-similarities', {
-      withCredentials: true,
-      headers: { 'Content-Type': 'application/json' },
-    });
-    if (!response.ok) throw new Error('Failed to fetch similarities');
-    const data = await response.json();
-    return data.similarities || {};
+    console.log('📡 Fetching similarities...');
+    const response = await axios.get('/cluster-similarities');
+    console.log('✅ Similarities response:', response.data);
+    return response.data.similarities || {};
   } catch (error) {
-    console.error('Error fetching similarities:', error);
+    console.error('❌ Error fetching similarities:', error);
     return {};
   }
 }
 
 async function fetchWebsiteDetails(websiteId) {
   try {
-    const token = getCookie('token');
-    const response = await fetch(`${API_BASE_URL}/website/${websiteId}`);
-    if (!response.ok) throw new Error('Failed to fetch website details');
-    const data = await response.json();
-    return data.website || null;
+    console.log('📡 Fetching website details for:', websiteId);
+    const response = await axios.get(`/website/${websiteId}`);
+    console.log('✅ Website details:', response.data);
+    return response.data.website || null;
   } catch (error) {
-    console.error('Error fetching website details:', error);
+    console.error('❌ Error fetching website details:', error);
     return null;
   }
 }
 
-async function searchSimilarWebsites(cluster) {
+async function searchSimilarWebsites(query) {
   try {
-    // Check if cluster has pre-fetched similar_links
-    if (cluster.similar_links && cluster.similar_links.length > 0) {
-      return cluster.similar_links;
-    }
-
-    // Otherwise, search based on cluster topic
-    const searchQuery = encodeURIComponent(cluster.topic);
-    const response = await fetch(`${API_BASE_URL}/search?q=${searchQuery}`);
-
-    if (!response.ok) throw new Error('Failed to search');
-    const data = await response.json();
-
-    return data.results || [];
+    console.log('📡 Searching for similar websites:', query);
+    const response = await axios.get('/search', {
+      params: { q: query }
+    });
+    console.log('✅ Search results:', response.data);
+    return response.data.results || [];
   } catch (error) {
-    console.error('Error searching similar websites:', error);
+    console.error('❌ Error searching similar websites:', error);
     return [];
   }
 }
@@ -504,6 +458,8 @@ function openExternalLink(url) {
 // DATA PROCESSING
 // ==============================================
 function processApiData(clusters, similarities) {
+  console.log('🔄 Processing API data:', { clusters, similarities });
+
   const nodes = clusters.map((cluster, index) => {
     const baseSize = Math.max(15, Math.min(40, cluster.website_count * 8 + 15));
     return {
@@ -511,7 +467,7 @@ function processApiData(clusters, similarities) {
       cluster_id: cluster.cluster_id,
       topic: cluster.topic,
       website_count: cluster.website_count,
-      websites: cluster.websites,
+      websites: cluster.websites || [],
       similar_links: cluster.similar_links || [],
       size: baseSize,
       baseSize: baseSize,
@@ -542,28 +498,37 @@ function processApiData(clusters, similarities) {
     });
   });
 
+  console.log('✅ Processed data:', { nodeCount: nodes.length, linkCount: links.length });
   return { nodes, links };
 }
 
 async function loadData() {
   isLoading.value = true;
   try {
+    console.log('🔄 Loading data...');
     const [clusters, similarities] = await Promise.all([
       fetchClusters(),
       fetchSimilarities()
     ]);
+
+    console.log('📊 Data loaded:', {
+      clusterCount: clusters.length,
+      hasSimularities: Object.keys(similarities).length > 0
+    });
 
     rawClusters = clusters;
     rawSimilarities = similarities;
     graphData = processApiData(clusters, similarities);
 
     if (graphData.nodes.length === 0) {
-      console.warn('No clusters found, falling back to placeholder data');
+      console.warn('⚠️ No clusters found, falling back to placeholder data');
       graphData = generatePlaceholderData();
+    } else {
+      console.log('✅ Graph data ready:', graphData);
     }
 
   } catch (error) {
-    console.error('Error loading data:', error);
+    console.error('❌ Error loading data:', error);
     graphData = generatePlaceholderData();
   } finally {
     isLoading.value = false;
@@ -571,6 +536,7 @@ async function loadData() {
 }
 
 function generatePlaceholderData() {
+  console.log('🔄 Generating placeholder data...');
   const categories = ['Ideas', 'Concepts', 'Projects', 'Notes', 'Research', 'Tasks'];
   const nodes = [];
   const nodeCount = 6;
@@ -619,6 +585,7 @@ function generatePlaceholderData() {
 }
 
 async function refreshData() {
+  console.log('🔄 Refreshing data...');
   selectedWebsite.value = null;
   explodedNode.value = null;
   await loadData();
@@ -650,13 +617,12 @@ function explodeNode(clusterNode) {
   explodedNode.value = clusterNode;
   const centerX = clusterNode.x;
   const centerY = clusterNode.y;
-  const radius = 80; // Increased radius for smoother spread
+  const radius = 80;
 
   websiteNodes = [];
-  const totalNodes = clusterNode.websites.length + 1; // +1 for discover node
+  const totalNodes = clusterNode.websites.length + 1;
   const angleStep = (2 * Math.PI) / totalNodes;
 
-  // Create website nodes with staggered animation
   clusterNode.websites.forEach((website, index) => {
     const angle = angleStep * index;
     const websiteNode = {
@@ -674,7 +640,7 @@ function explodeNode(clusterNode) {
       y: centerY,
       targetX: centerX + Math.cos(angle) * radius,
       targetY: centerY + Math.sin(angle) * radius,
-      animationDelay: index * 50 // Stagger animation
+      animationDelay: index * 50
     };
     websiteNodes.push(websiteNode);
     graphData.nodes.push(websiteNode);
@@ -686,7 +652,6 @@ function explodeNode(clusterNode) {
     });
   });
 
-  // Create "Discover Similar" node - centered and professional
   const discoverAngle = angleStep * clusterNode.websites.length;
   const discoverNode = {
     id: `discover-${clusterNode.id}`,
@@ -710,24 +675,16 @@ function explodeNode(clusterNode) {
     type: 'discover-link'
   });
 
-  // Update simulation
   simulation.nodes(graphData.nodes);
   simulation.force('link').links(graphData.links);
   simulation.alpha(0.5).restart();
 
   renderGraph();
 
-  // Smooth staggered animation to target positions
   websiteNodes.forEach((node, index) => {
     setTimeout(() => {
       const d3Node = graphData.nodes.find(n => n.id === node.id);
       if (d3Node) {
-        // Use transition for smooth movement
-        d3.select(`.node[data-id="${node.id}"]`)
-          .transition()
-          .duration(600 / settings.animationSpeed)
-          .ease(d3.easeCubicOut);
-
         d3Node.fx = node.targetX;
         d3Node.fy = node.targetY;
       }
@@ -735,7 +692,6 @@ function explodeNode(clusterNode) {
     }, node.animationDelay);
   });
 
-  // Release fixed positions after animation completes
   setTimeout(() => {
     websiteNodes.forEach(node => {
       const d3Node = graphData.nodes.find(n => n.id === node.id);
@@ -750,7 +706,6 @@ function explodeNode(clusterNode) {
 function collapseNode() {
   if (!explodedNode.value) return;
 
-  // Smooth collapse animation - nodes move back to center
   const centerX = explodedNode.value.x;
   const centerY = explodedNode.value.y;
 
@@ -765,7 +720,6 @@ function collapseNode() {
     }, index * 30);
   });
 
-  // Remove nodes after animation
   setTimeout(() => {
     graphData.nodes = graphData.nodes.filter(node =>
       node.type !== 'website' && node.type !== 'discover'
@@ -795,30 +749,13 @@ async function handleDiscoverClick() {
   similarWebsites.value = [];
 
   try {
-    const results = await searchSimilarWebsites(explodedNode.value);
+    const results = await searchSimilarWebsites(explodedNode.value.topic);
     similarWebsites.value = results;
   } catch (error) {
     console.error('Error loading similar websites:', error);
   } finally {
     isLoadingSimilar.value = false;
   }
-}
-
-function navigateToCluster(cluster) {
-  showDiscoverModal.value = false;
-  collapseNode();
-
-  const width = graphContainer.value.clientWidth;
-  const height = graphContainer.value.clientHeight;
-
-  svg.transition()
-    .duration(800 / settings.animationSpeed)
-    .call(zoom.transform,
-      d3.zoomIdentity
-        .translate(width / 2, height / 2)
-        .scale(1.2)
-        .translate(-cluster.x, -cluster.y)
-    );
 }
 
 // ==============================================
@@ -1068,7 +1005,6 @@ async function showWebsiteDetails(event, websiteNode) {
   selectedWebsite.value = websiteNode;
   websiteDetails.value = null;
 
-  // Position sticky note
   const containerRect = graphContainer.value.getBoundingClientRect();
   const nodeScreenX = event.pageX - containerRect.left;
   const nodeScreenY = event.pageY - containerRect.top;
@@ -1092,7 +1028,6 @@ async function showWebsiteDetails(event, websiteNode) {
     top: top + 'px'
   };
 
-  // Fetch details
   try {
     const details = await fetchWebsiteDetails(websiteNode.websiteId);
     websiteDetails.value = details;
@@ -1117,14 +1052,6 @@ function closeDiscoverModal() {
 
 function handleProfileClick() {
   alert('Profile functionality would be implemented here');
-}
-
-function getConnectionCount(node) {
-  return graphData.links.filter(link =>
-    ((link.source.id === node.id || link.source === node.id) ||
-      (link.target.id === node.id || link.target === node.id)) &&
-    link.type === 'cluster-link'
-  ).length;
 }
 
 function performSearch(term) {
@@ -1317,20 +1244,22 @@ watch(() => isDarkMode.value, () => {
 });
 
 onMounted(() => {
+  console.log('🚀 Component mounted, initializing graph...');
   initializeGraph();
-  connectWebSocket(); // Connect to WebSocket on mount
+  connectWebSocket();
   window.addEventListener('resize', handleResize);
-
 });
 
 onBeforeUnmount(() => {
-  disconnectWebSocket(); // Clean up WebSocket on unmount
+  console.log('👋 Component unmounting, cleaning up...');
+  disconnectWebSocket();
   window.removeEventListener('resize', handleResize);
 });
 
 </script>
 
 <style scoped>
+/* Keep all existing styles from the previous version */
 @import url('https://fonts.googleapis.com/css2?family=Liberation+Sans:ital,wght@0,400;0,700;1,400;1,700&display=swap');
 
 .graph-wrapper {

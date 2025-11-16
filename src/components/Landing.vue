@@ -60,20 +60,26 @@ const installExtension = () => {
                             </svg>
                             <span>Donate</span>
                         </button>
+                        <div v-if="store.user">
+                            <a href="/profile"
+                                class="px-5 py-2 text-[#4A90E2] capitalize border-2 border-[#4A90E2] rounded-lg hover:bg-[#4A90E2] hover:text-white transition-all font-semibold">
+                                {{ store.user.username }}
+                            </a>
+                            <a v-if="store.user" href="http://localhost:5000/auth/logout"
+                                class="px-5 py-2 mx-3 text-red-500 capitalize border-2 border-red-500 rounded-lg hover:bg-red-500 hover:text-white transition-all font-semibold">
+                                Logout
+                            </a>
+                        </div>
 
-                        <a v-if="store.user" href="/profile"
-                            class="px-5 py-2 text-[#4A90E2] capitalize border-2 border-[#4A90E2] rounded-lg hover:bg-[#4A90E2] hover:text-white transition-all font-semibold">
-                            {{ store.user.username }}
-                        </a>
 
                         <a v-else href="http://localhost:5000/auth/login"
                             class="px-5 py-2 text-[#4A90E2] border-2 border-[#4A90E2] rounded-lg hover:bg-[#4A90E2] hover:text-white transition-all font-semibold">
                             Sign In
                         </a>
-                        <button
+                        <a href="/dashboard"
                             class="px-5 py-2 bg-[#4A90E2] text-white rounded-lg hover:bg-[#3A7BC8] transition-all font-semibold shadow-lg shadow-[#4A90E2]/30">
                             Launch App
-                        </button>
+                        </a>
                     </div>
 
                     <button @click="mobileMenuOpen = !mobileMenuOpen" class="md:hidden">
