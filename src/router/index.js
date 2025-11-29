@@ -5,6 +5,7 @@ import GraphNode from "@/components/GraphNode.vue";
 import Landing from "../components/Landing.vue";
 import Redirect from "@/components/Redirect.vue";
 import { store } from "./store";
+import POCLLM from "@/components/POCLLM.vue";
 
 var user = ref(null);
 
@@ -23,6 +24,12 @@ const router = createRouter({
 		// 	component: AboutView,
 		// 	props: () => ({ user: store.user }),
 		// },
+		{
+			path: "/proofofconcept",
+			name: "POCLLM",
+			component: POCLLM,
+			props: () => ({ user: store.user }),
+		},
 		{
 			path: "/dashboard",
 			name: "GraphNode",
