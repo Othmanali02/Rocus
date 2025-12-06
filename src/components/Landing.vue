@@ -75,10 +75,11 @@ const installExtension = () => {
                             </a>
                         </div>
 
-                        <a v-else href="http://localhost:5000/auth/login"
+                        <!-- <a v-else href="http://localhost:5000/auth/login"
                             class="px-5 py-2 text-[#4A90E2] border-2 border-[#4A90E2] rounded-lg hover:bg-[#4A90E2] hover:text-white transition-all font-semibold">
                             Sign In
-                        </a>
+                        </a> -->
+
                         <a href="/dashboard"
                             class="px-5 py-2 bg-[#4A90E2] text-white rounded-lg hover:bg-[#3A7BC8] transition-all font-semibold shadow-lg shadow-[#4A90E2]/30">
                             Launch App
@@ -108,9 +109,9 @@ const installExtension = () => {
                     <button class="block w-full text-left py-2 text-[#1A1A1A] hover:text-[#4A90E2] font-medium">
                         Donate
                     </button>
-                    <button class="w-full px-4 py-2 text-[#4A90E2] border-2 border-[#4A90E2] rounded-lg font-semibold">
+                    <!-- <button class="w-full px-4 py-2 text-[#4A90E2] border-2 border-[#4A90E2] rounded-lg font-semibold">
                         Sign In
-                    </button>
+                    </button> -->
                     <button class="w-full px-4 py-2 bg-[#4A90E2] text-white rounded-lg font-semibold">
                         Launch App
                     </button>
@@ -149,7 +150,7 @@ const installExtension = () => {
                     <div class="flex flex-col sm:flex-row gap-4 justify-center">
                         <button @click="installExtension"
                             class="group px-8 py-4 bg-[#4A90E2] text-white rounded-lg text-lg font-bold hover:bg-[#3A7BC8] transition-all shadow-xl shadow-[#4A90E2]/30 hover:shadow-2xl hover:shadow-[#4A90E2]/40 flex items-center justify-center space-x-2">
-                            <span>Get Started</span>
+                            <span>Launch App</span>
                             <svg class="w-5 h-5 group-hover:translate-x-1 transition-transform" fill="none"
                                 stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -168,42 +169,16 @@ const installExtension = () => {
                 </div>
 
                 <div class="relative max-w-5xl mx-auto">
-                    <div class="bg-white rounded-2xl shadow-2xl p-8 border-2 border-[#4A90E2]/20">
-                        <div class="relative h-96">
-                            <div class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-10">
-                                <div
-                                    class="w-20 h-20 bg-gradient-to-br from-[#4A90E2] to-[#6AB4F5] rounded-full shadow-lg flex items-center justify-center animate-pulse">
-                                    <svg class="w-10 h-10 text-white" fill="none" stroke="currentColor"
-                                        viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                            d="M13 10V3L4 14h7v7l9-11h-7z" />
-                                    </svg>
-                                </div>
-                            </div>
-
-                            <!-- Orbiting Nodes -->
-                            <div v-for="(node, i) in 8" :key="i" :style="{
-                                top: 50 + 35 * Math.sin((i * Math.PI) / 4) + '%',
-                                left: 50 + 35 * Math.cos((i * Math.PI) / 4) + '%',
-                                animationDelay: i * 0.2 + 's',
-                            }" class="absolute transform -translate-x-1/2 -translate-y-1/2 animate-bounce">
-                                <div
-                                    class="w-12 h-12 bg-[#4A90E2]/20 rounded-lg flex items-center justify-center backdrop-blur-sm border border-[#4A90E2]/30">
-                                    <div class="w-6 h-6 bg-[#4A90E2] rounded"></div>
-                                </div>
-                            </div>
-
-                            <svg class="absolute inset-0 w-full h-full" style="z-index: 1">
-                                <line v-for="i in 8" :key="'line-' + i" x1="50%" y1="50%"
-                                    :x2="50 + 35 * Math.cos((i * Math.PI) / 4) + '%'"
-                                    :y2="50 + 35 * Math.sin((i * Math.PI) / 4) + '%'" stroke="#4A90E2" stroke-width="2"
-                                    stroke-opacity="0.3" stroke-dasharray="5,5">
-                                    <animate attributeName="stroke-dashoffset" from="0" to="10" dur="1s"
-                                        repeatCount="indefinite" />
-                                </line>
-                            </svg>
-                        </div>
-                    </div>
+                    <img src="./images/demo.png" alt="Rocus Demo" class="w-full rounded-2xl shadow-2xl" />
+                    <!-- <div
+                        class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-lg animate-bounce">
+                        <svg class="w-8 h-8 text-[#4A90E2]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.868v4.264a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                    </div> -->
                 </div>
             </div>
         </section>
@@ -382,7 +357,7 @@ const installExtension = () => {
                     Ready to revolutionize your bookmarks?
                 </h2>
 
-                <button
+                <!-- <button
                     class="group px-10 py-5 bg-[#4A90E2] text-white rounded-lg text-xl font-bold hover:bg-[#3A7BC8] transition-all shadow-2xl shadow-[#4A90E2]/40 hover:shadow-[#4A90E2]/60 inline-flex items-center space-x-3">
                     <span>Get Started Now</span>
                     <svg class="w-6 h-6 group-hover:translate-x-1 transition-transform" fill="none"
@@ -390,7 +365,7 @@ const installExtension = () => {
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                             d="M13 7l5 5m0 0l-5 5m5-5H6" />
                     </svg>
-                </button>
+                </button> -->
             </div>
         </section>
 

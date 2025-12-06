@@ -1,12 +1,12 @@
 <template>
 	<div class="w-screen h-screen relative overflow-hidden font-sans transition-all duration-300"
-		:class="isDarkMode ? 'bg-[#212121]' : 'bg-[#f4f4f4]'">
+		:style="{ backgroundColor: currentTheme.colors.background }">
 		<div class="fixed top-0 left-0 right-0 z-[1000] px-5 py-4"
-			:class="isDarkMode ? 'dark:bg-[#212121]' : 'dark:bg-[#f4f4f4]'">
+			:style="{ backgroundColor: currentTheme.colors.background }">
 			<div class="flex items-center justify-between max-w-screen-2xl mx-auto">
 				<div class="flex items-center gap-4">
 					<a href="/" class="flex items-center">
-						<img v-if="isDarkMode" src="./images/RocusBlue.png" alt="Rocus" class="h-10 w-auto" />
+						<img v-if="currentTheme.isDark" src="./images/RocusBlue.png" alt="Rocus" class="h-10 w-auto" />
 						<img v-else src="./images/RocusBlue.png" alt="Rocus" class="h-10 w-auto" />
 					</a>
 				</div>
@@ -14,29 +14,26 @@
 				<div class="flex-1 max-w-2xl mx-8">
 					<div class="relative">
 						<button @click.stop="toggleAlbumsDropdown"
-							class="w-full flex items-center justify-between px-4 py-2.5 rounded-xl border hover:border-[#4A90E2] transition-all duration-200 group"
-							:class="isDarkMode
-								? 'dark:bg-black dark:text-gray-500 dark:border-gray-800'
-								: 'dark:bg-[#f4f4f4] dark:text-gray-400 dark:border-gray-200'
-								">
+							class="w-full flex items-center justify-between px-4 py-2.5 rounded-xl border transition-all duration-200 group"
+							:style="{
+								backgroundColor: currentTheme.colors.surface,
+								borderColor: currentTheme.colors.border,
+								color: currentTheme.colors.textSecondary
+							}" :class="'hover:border-[' + currentTheme.colors.primary + ']'">
 							<div class="flex items-center gap-3">
-								<span class="text-2xl">{{ currentAlbum?.icon || "📁" }}</span>
+								<img v-if="currentAlbum?.icon" :src="getIconUrl(currentAlbum.icon)" alt="Album icon"
+									class="w-8 h-8 object-contain" />
+								<img v-else src="./images/RocusFileIconColored.png" alt="Album icon"
+									class="w-8 h-8 object-contain" />
 
 								<div class="text-left">
-									<div class="text-sm font-semibold"
-										:class="isDarkMode ? 'dark:text-white' : 'text-gray-700'">
-										{{ currentAlbum?.name || "All Clusters" }}
+									<div class="text-sm font-medium" :style="{ color: currentTheme.colors.text }">
+										{{ currentAlbum ? currentAlbum.name : 'All Clusters' }}
 									</div>
-									<!-- <div class="text-xs text-gray-500 dark:text-gray-400">
-										{{
-											graphData?.nodes?.length ||
-											0
-										}}
-										clusters
-									</div> -->
 								</div>
 							</div>
-							<svg class="w-5 h-5 text-gray-400 group-hover:text-[#4A90E2] transition-transform duration-200"
+							<svg class="w-5 h-5 transition-transform duration-200"
+								:style="{ color: currentTheme.colors.textSecondary }"
 								:class="{ 'rotate-180': showAlbumsDropdown }" fill="none" stroke="currentColor"
 								viewBox="0 0 24 24">
 								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -46,23 +43,22 @@
 
 						<div v-if="showAlbumsDropdown"
 							class="absolute top-full left-0 right-0 mt-2 rounded-2xl shadow-2xl border overflow-hidden z-50 animate-fadeIn"
-							:class="isDarkMode
-								? 'dark:bg-black dark:border-gray-800'
-								: 'bg-white border-gray-200 text-gray-700'
-								">
+							:style="{
+								backgroundColor: currentTheme.colors.surface,
+								borderColor: currentTheme.colors.border
+							}">
 							<button @click="selectAlbum(null)"
-								class="w-full flex items-center gap-3 px-4 py-3 text-gray-100 transition-colors" :class="{
+								class="w-full flex items-center gap-3 px-4 py-3 transition-colors"
+								:style="{ color: currentTheme.colors.text }" :class="{
 									'bg-[#4A90E2]/10': !currentAlbum,
-									'dark:hover:bg-[#212121]': isDarkMode,
-									'hover:bg-[#f4f4f4]': !isDarkMode,
 								}">
 								<span class="text-2xl">🌐</span>
 								<div class="flex-1 text-left">
-									<div class="text-sm font-medium"
-										:class="isDarkMode ? 'dark:text-white' : 'text-gray-900'">
+									<div class="text-sm font-medium" :style="{ color: currentTheme.colors.text }">
 										All Clusters
 									</div>
-									<div class="text-xs text-gray-500">View</div>
+									<div class="text-xs" :style="{ color: currentTheme.colors.textSecondary }">View
+										everything</div>
 								</div>
 								<svg v-if="!currentAlbum" class="w-5 h-5 text-[#4A90E2]" fill="currentColor"
 									viewBox="0 0 20 20">
@@ -72,25 +68,19 @@
 								</svg>
 							</button>
 
-							<div class="h-px mx-4" :class="isDarkMode ? 'dark:bg-gray-800' : 'bg-gray-200'"></div>
+							<div class="h-px mx-4" :style="{ backgroundColor: currentTheme.colors.border }"></div>
 
 							<div class="max-h-64 overflow-y-auto">
 								<button v-for="album in albums" :key="album.id" @click="selectAlbum(album)"
-									class="w-full flex items-center gap-3 px-4 py-3 hover:bg-[#4A90E2] transition-colors group"
-									:class="{
+									class="w-full flex items-center gap-3 px-4 py-3 transition-colors group" :class="{
 										'bg-[#4A90E2]/10': currentAlbum?.id === album.id,
-										'dark:hover:bg-[#212121]': isDarkMode,
-										'hover:bg-[#f4f4f4]': !isDarkMode,
 									}">
-									<span class="text-2xl">{{ album.icon }}</span>
+									<img :src="getIconUrl(album.icon)" alt="Album icon"
+										class="w-8 h-8 object-contain" />
 									<div class="flex-1 text-left">
-										<div class="text-sm font-medium"
-											:class="isDarkMode ? 'dark:text-white' : 'text-gray-900 '">
+										<div class="text-sm font-medium" :style="{ color: currentTheme.colors.text }">
 											{{ album.name }}
 										</div>
-										<!-- <div class="text-xs text-gray-500">
-											{{ album.cluster_ids?.length || 0 }} clusters
-										</div> -->
 									</div>
 									<div class="flex items-center gap-2">
 										<svg v-if="currentAlbum?.id === album.id" class="w-5 h-5 text-[#4A90E2]"
@@ -100,9 +90,9 @@
 												clip-rule="evenodd" />
 										</svg>
 										<button @click.stop="editAlbum(album)"
-											class="p-1.5 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800 opacity-0 group-hover:opacity-100 transition-opacity">
-											<svg class="w-4 h-4 text-gray-600 dark:text-gray-300" fill="none"
-												stroke="currentColor" viewBox="0 0 24 24">
+											class="p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"
+											:style="{ color: currentTheme.colors.textSecondary }">
+											<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
 													d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
 											</svg>
@@ -119,12 +109,10 @@
 								</button>
 							</div>
 
-							<div class="h-px mx-4" :class="isDarkMode ? 'dark:bg-gray-800' : 'bg-gray-200'"></div>
+							<div class="h-px mx-4" :style="{ backgroundColor: currentTheme.colors.border }"></div>
 
 							<button @click="createNewAlbum"
-								class="w-full flex items-center gap-3 px-4 py-3 transition-colors text-[#4A90E2] font-medium"
-								:class="isDarkMode ? ' dark:hover:bg-[#212121]' : 'hover:bg-[#f4f4f4]'
-									">
+								class="w-full flex items-center gap-3 px-4 py-3 transition-colors text-[#4A90E2] font-medium">
 								<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
 										d="M12 4v16m8-8H4" />
@@ -134,81 +122,78 @@
 						</div>
 					</div>
 
-
-
-					<div class="fixed top-24 left-1/2 transform -translate-x-1/2  transition-all duration-300"
+					<div class="fixed top-24 left-1/2 transform -translate-x-1/2 transition-all duration-300"
 						:class="{ 'scale-105': isSearchFocused }">
 						<div @click="focusSearch"
 							class="flex items-center gap-3 px-5 py-3.5 rounded-2xl transition-all duration-300 cursor-text group"
-							:class="isSearchFocused
-								? (isDarkMode
-									? 'bg-black/90 focus:outline-none'
-									: 'bg-[#ffffff] focus:outline-none')
-								: (isDarkMode
-									? 'bg-[#212121] hover:bg-black/60'
-									: 'bg-[#f4f4f4] hover:bg-white/60')
-								">
+							:style="{
+								backgroundColor: isSearchFocused ? currentTheme.colors.surface : currentTheme.colors.background,
+							}">
 
-							<!-- Search Icon -->
-							<svg class="w-5 h-5 transition-colors duration-200" :class="isSearchFocused
-								? 'text-blue-500'
-								: (isDarkMode ? 'text-gray-500 group-hover:text-gray-400' : 'text-gray-400 group-hover:text-gray-600')"
+							<svg class="w-5 h-5 transition-colors duration-200"
+								:style="{ color: isSearchFocused ? currentTheme.colors.primary : currentTheme.colors.textSecondary }"
 								fill="none" stroke="currentColor" viewBox="0 0 24 24">
 								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
 									d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
 							</svg>
 
-							<!-- Input Field -->
 							<input ref="searchInputRef" v-model="searchInput" @input="performSearch"
 								@focus="isSearchFocused = true" @blur="handleSearchBlur" type="text"
 								placeholder="Search clusters, websites, domains..."
 								class="bg-transparent border-none focus:outline-none focus:ring-0 outline-none w-80 placeholder-gray-400 transition-all duration-200"
-								:class="isDarkMode ? 'text-white focus:outline-none' : 'text-gray-900 focus:outline-none'" />
+								:style="{ color: currentTheme.colors.text }" />
 
-							<!-- Clear Button -->
 							<button v-if="searchInput" @click="clearSearch"
-								class="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-all duration-200 flex-shrink-0">
-								<svg class="w-4 h-4" :class="isDarkMode ? 'text-gray-400' : 'text-gray-500'"
-									fill="currentColor" viewBox="0 0 20 20">
+								class="p-1.5 rounded-full transition-all duration-200 flex-shrink-0"
+								:style="{ color: currentTheme.colors.textSecondary }">
+								<svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
 									<path fill-rule="evenodd"
 										d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
 										clip-rule="evenodd" />
 								</svg>
 							</button>
 
-							<!-- ESC Hint (shown when not focused) -->
-							<div class="flex items-center gap-1.5 px-2 py-1 rounded-lg transition-all duration-200 flex-shrink-0"
-								:class="isDarkMode
-									? 'bg-gray-800/80 border border-gray-700/50'
-									: 'bg-gray-200/80 border border-gray-300/50'">
+							<div class="flex items-center gap-1.5 px-2 py-1 rounded-lg transition-all duration-200 flex-shrink-0 border"
+								:style="{
+									backgroundColor: currentTheme.isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
+									borderColor: currentTheme.colors.border
+								}">
+
 								<span class="text-xs font-medium tracking-wider"
-									:class="isDarkMode ? 'text-gray-400' : 'text-gray-600'">
+									:style="{ color: currentTheme.colors.textSecondary }">
 									ESC
 								</span>
 							</div>
 
-							<!-- Match Counter -->
-							<div v-if="matchCount > 0"
-								class="px-3 py-1.5 rounded-lg text-sm font-semibold transition-all duration-200 flex-shrink-0"
-								:class="isDarkMode
-									? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
-									: 'bg-blue-100 text-blue-700 border border-blue-200'">
+							<!-- <div v-if="showContextMenu" @click.stop
+								class="fixed z-[2500] rounded-xl shadow-2xl border overflow-hidden min-w-[200px] animate-scaleIn"
+								:style="{
+									...contextMenuStyle,
+									backgroundColor: currentTheme.colors.surface,
+									borderColor: currentTheme.colors.border
+								}">
+
 								{{ matchCount }}
-							</div>
+							</div> -->
 						</div>
 					</div>
 
 				</div>
 
-
-
 				<div class="flex items-center gap-3">
-					<button @click="toggleSettings" class="p-2.5 rounded-xl transition-all" :class="isDarkMode
-						? 'dark:bg-black hover:bg-gray-100 dark:hover:bg-[#212121]'
-						: 'bg-white'
-						">
-						<svg class="w-5 h-5 text-gray-600 dark:text-gray-300" fill="none" stroke="currentColor"
-							viewBox="0 0 24 24">
+					<button @click="toggleThemes" class="p-2.5 rounded-xl transition-all"
+						:style="{ backgroundColor: currentTheme.colors.surface }">
+						<svg class="w-5 h-5" :style="{ color: currentTheme.colors.textSecondary }" fill="none"
+							stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+								d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
+						</svg>
+					</button>
+
+					<button @click="toggleSettings" class="p-2.5 rounded-xl transition-all"
+						:style="{ backgroundColor: currentTheme.colors.surface }">
+						<svg class="w-5 h-5" :style="{ color: currentTheme.colors.textSecondary }" fill="none"
+							stroke="currentColor" viewBox="0 0 24 24">
 							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
 								d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
 							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -216,43 +201,36 @@
 						</svg>
 					</button>
 
-					<button @click="toggleModelStatus" class="relative p-2.5 rounded-xl transition-all" :class="isDarkMode
-						? 'dark:bg-black hover:bg-gray-100 dark:hover:bg-[#212121]'
-						: 'bg-white'
-						">
-						<!-- Loading state with spinner -->
+					<button @click="toggleModelStatus" class="relative p-2.5 rounded-xl transition-all"
+						:style="{ backgroundColor: currentTheme.colors.surface }">
 						<svg v-if="modelLoading" class="w-5 h-5 text-[#4A90E2] animate-spin" fill="none"
 							stroke="currentColor" viewBox="0 0 24 24">
 							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
 								d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
 						</svg>
-						<!-- Ready state with checkmark -->
-						<svg v-else-if="!error" class="w-5 h-5 text-gray-600 dark:text-gray-300" fill="none"
-							stroke="currentColor" viewBox="0 0 24 24">
+						<svg v-else-if="!error" class="w-5 h-5" :style="{ color: currentTheme.colors.textSecondary }"
+							fill="none" stroke="currentColor" viewBox="0 0 24 24">
 							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
 								d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
 						</svg>
-						<!-- Error state -->
 						<svg v-else class="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
 								d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
 						</svg>
-						<!-- Ready indicator badge -->
 						<div v-if="!modelLoading && !error"
-							class="absolute top-1 right-1 w-2 h-2 bg-green-500 rounded-full border-2 border-white dark:border-black">
+							class="absolute top-1 right-1 w-2 h-2 bg-green-500 rounded-full border-2"
+							:style="{ borderColor: currentTheme.colors.surface }">
 						</div>
-						<!-- Processing indicator badge -->
 						<div v-if="processingQueue.length > 0"
-							class="absolute top-1 right-1 w-2 h-2 bg-[#4A90E2] rounded-full border-2 border-white dark:border-black animate-pulse">
+							class="absolute top-1 right-1 w-2 h-2 bg-[#4A90E2] rounded-full border-2 animate-pulse"
+							:style="{ borderColor: currentTheme.colors.surface }">
 						</div>
 					</button>
 
-					<button @click="handleProfileClick" class="p-2.5 rounded-xl transition-all" :class="isDarkMode
-						? 'dark:bg-black hover:bg-gray-100 dark:hover:bg-[#212121]'
-						: 'bg-white'
-						">
-						<svg class="w-5 h-5 text-gray-600 dark:text-gray-300" fill="none" stroke="currentColor"
-							viewBox="0 0 24 24">
+					<button @click="handleProfileClick" class="p-2.5 rounded-xl transition-all"
+						:style="{ backgroundColor: currentTheme.colors.surface }">
+						<svg class="w-5 h-5" :style="{ color: currentTheme.colors.textSecondary }" fill="none"
+							stroke="currentColor" viewBox="0 0 24 24">
 							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
 								d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
 						</svg>
@@ -263,12 +241,14 @@
 
 		<div v-if="isLoading"
 			class="fixed inset-0 bg-black/30 backdrop-blur-sm z-[3000] flex items-center justify-center">
-			<div
-				class="bg-white dark:bg-black border border-gray-200 dark:border-gray-800 rounded-3xl p-10 text-center shadow-2xl max-w-sm">
-				<div
-					class="w-16 h-16 mx-auto mb-6 border-4 border-gray-200 dark:border-gray-800 border-t-[#4A90E2] rounded-full animate-spin">
+			<div class="border rounded-3xl p-10 text-center shadow-2xl max-w-sm" :style="{
+				backgroundColor: currentTheme.colors.surface,
+				borderColor: currentTheme.colors.border
+			}">
+				<div class="w-16 h-16 mx-auto mb-6 border-4 border-t-[#4A90E2] rounded-full animate-spin"
+					:style="{ borderColor: currentTheme.colors.border, borderTopColor: currentTheme.colors.primary }">
 				</div>
-				<p class="text-lg font-medium text-gray-700 dark:text-gray-300">
+				<p class="text-lg font-medium" :style="{ color: currentTheme.colors.text }">
 					Loading clusters...
 				</p>
 			</div>
@@ -276,36 +256,36 @@
 
 		<div v-if="showAlbumModal" @click="closeAlbumModal"
 			class="fixed inset-0 bg-black/50 backdrop-blur-sm z-[2000] flex items-center justify-center p-4 animate-fadeIn">
-			<div @click.stop class="border rounded-3xl p-8 w-full max-w-md shadow-2xl animate-scaleIn" :class="isDarkMode
-				? 'dark:bg-black dark:border-gray-800'
-				: 'bg-white border-gray-200'
-				">
-				<h3 class="text-2xl font-bold mb-6" :class="isDarkMode ? 'dark:text-white' : 'text-gray-900'">
+			<div @click.stop class="border rounded-3xl p-8 w-full max-w-md shadow-2xl animate-scaleIn" :style="{
+				backgroundColor: currentTheme.colors.surface,
+				borderColor: currentTheme.colors.border
+			}">
+				<h3 class="text-2xl font-bold mb-6" :style="{ color: currentTheme.colors.text }">
 					{{ editingAlbum ? "Edit Album" : "Create New Album" }}
 				</h3>
 
 				<div class="space-y-5">
 					<div>
 						<label class="block text-sm font-medium mb-2"
-							:class="isDarkMode ? 'dark:text-gray-300' : 'text-gray-700'">Album Name</label>
+							:style="{ color: currentTheme.colors.textSecondary }">Album
+							Name</label>
 						<input v-model="albumForm.name" type="text" placeholder="My Collection"
 							class="w-full px-4 py-3 border rounded-xl focus:ring-2 focus:ring-[#4A90E2] focus:border-transparent outline-none transition-all"
-							:class="isDarkMode
-								? 'dark:bg-[#212121] dark:border-gray-800 dark:text-white'
-								: 'bg-[#f4f4f4] border-gray-200 text-gray-900'
-								" />
+							:style="{
+								backgroundColor: currentTheme.colors.background,
+								borderColor: currentTheme.colors.border,
+								color: currentTheme.colors.text
+							}" />
 					</div>
 
 					<div>
 						<label class="block text-sm font-medium mb-2"
-							:class="isDarkMode ? 'dark:text-gray-300' : 'text-gray-700'">Icon</label>
+							:style="{ color: currentTheme.colors.textSecondary }">Icon</label>
 						<div class="flex gap-2">
 							<button v-for="(icon, index) in iconOptions" :key="icon" @click="albumForm.icon = icon"
 								class="p-3 rounded-xl transition-all" :class="{
 									'bg-[#4A90E2]/20 ring-2 ring-[#4A90E2]':
 										albumForm.icon === icon,
-									'dark:hover:bg-[#212121]': isDarkMode,
-									'hover:bg-[#f4f4f4]': !isDarkMode,
 								}">
 								<img :src="iconUrls[index]" alt="icon" class="w-8 h-8 object-contain" />
 							</button>
@@ -315,10 +295,10 @@
 
 				<div class="flex gap-3 mt-8">
 					<button @click="closeAlbumModal" class="flex-1 px-6 py-3 rounded-xl font-medium transition-all"
-						:class="isDarkMode
-							? 'dark:text-gray-300 dark:bg-[#212121] dark:hover:bg-gray-700'
-							: 'text-gray-700 bg-[#f4f4f4] hover:bg-gray-200'
-							">
+						:style="{
+							backgroundColor: currentTheme.colors.background,
+							color: currentTheme.colors.textSecondary
+						}">
 						Cancel
 					</button>
 					<button @click="saveAlbum"
@@ -333,17 +313,17 @@
 			class="fixed inset-0 bg-black/50 backdrop-blur-sm z-[2000] flex items-center justify-center p-4 animate-fadeIn">
 			<div @click.stop
 				class="border rounded-3xl p-8 w-full max-w-md shadow-2xl animate-scaleIn max-h-[80vh] overflow-y-auto"
-				:class="isDarkMode
-					? 'dark:bg-black dark:border-gray-800'
-					: 'bg-white border-gray-200'
-					">
+				:style="{
+					backgroundColor: currentTheme.colors.surface,
+					borderColor: currentTheme.colors.border
+				}">
 				<div class="flex justify-between items-center mb-6">
-					<h3 class="text-2xl font-bold" :class="isDarkMode ? ' dark:text-white' : 'text-gray-900'">
+					<h3 class="text-2xl font-bold" :style="{ color: currentTheme.colors.text }">
 						Settings
 					</h3>
-					<button @click="closeSettings" class="p-2 rounded-xl transition-all" :class="isDarkMode ? 'dark:hover:bg-[#212121]' : 'hover:bg-[#f4f4f4]'
-						">
-						<svg class="w-6 h-6 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<button @click="closeSettings" class="p-2 rounded-xl transition-all">
+						<svg class="w-6 h-6" :style="{ color: currentTheme.colors.textSecondary }" fill="none"
+							stroke="currentColor" viewBox="0 0 24 24">
 							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
 								d="M6 18L18 6M6 6l12 12" />
 						</svg>
@@ -352,57 +332,27 @@
 
 				<div class="space-y-6">
 					<div class="flex items-center justify-between">
-						<div>
-							<div class="font-medium" :class="isDarkMode ? 'dark:text-white' : ' text-gray-900 '">
+						<!-- <div>
+							<div class="font-medium" :style="{ color: currentTheme.colors.text }">
 								Dark Mode
 							</div>
-							<div class="text-sm text-gray-500">Toggle dark theme</div>
-						</div>
-						<button @click="toggleDarkMode" class="relative w-14 h-8 rounded-full transition-all"
-							:class="isDarkMode ? 'bg-[#4A90E2]' : 'bg-gray-300'">
+							<div class="text-sm" :style="{ color: currentTheme.colors.textSecondary }">Toggle dark theme
+							</div>
+						</div> -->
+						<!-- <button @click="toggleDarkMode" class="relative w-14 h-8 rounded-full transition-all"
+							:class="currentTheme.isDark ? 'bg-[#4A90E2]' : 'bg-gray-300'">
 							<div class="absolute top-1 left-1 w-6 h-6 bg-white rounded-full transition-transform duration-200"
-								:class="{ 'translate-x-6': isDarkMode }"></div>
-						</button>
+								:class="{ 'translate-x-6': currentTheme.isDark }"></div>
+						</button> -->
 					</div>
-
-					<!-- <div>
-						<div class="flex items-center justify-between mb-2">
-							<div class="font-medium text-gray-900 dark:text-white">
-								Node Size
-							</div>
-							<span class="text-sm text-gray-500"
-								>{{ settings.nodeSize }}x</span
-							>
-						</div>
-						<input
-							type="range"
-							min="0.5"
-							max="2"
-							step="0.1"
-							v-model="settings.nodeSize"
-							@input="updateNodeSizes"
-							class="w-full h-2 bg-[#f4f4f4] dark:bg-[#212121] rounded-lg appearance-none cursor-pointer slider"
-						/>
-					</div> -->
-
-					<!-- <div>
-						<div class="flex items-center justify-between mb-2">
-							<div class="font-medium" :class="isDarkMode ? 'dark:text-white' : 'text-gray-900'">
-								Animation Speed
-							</div>
-							<span class="text-sm text-gray-500">{{ settings.animationSpeed }}x</span>
-						</div>
-						<input type="range" min="0.1" max="2" step="0.1" v-model="settings.animationSpeed"
-							class="w-full h-2 rounded-lg appearance-none cursor-pointer slider"
-							:class="isDarkMode ? 'dark:bg-[#212121]' : 'bg-[#f4f4f4]'" />
-					</div> -->
 
 					<div class="flex items-center justify-between">
 						<div>
-							<div class="font-medium" :class="isDarkMode ? 'dark:text-white' : ' text-gray-900 '">
+							<div class="font-medium" :style="{ color: currentTheme.colors.text }">
 								Show Connections
 							</div>
-							<div class="text-sm text-gray-500">Display cluster links</div>
+							<div class="text-sm" :style="{ color: currentTheme.colors.textSecondary }">Display cluster
+								links</div>
 						</div>
 						<button @click="
 							showConnections = !showConnections;
@@ -413,57 +363,98 @@
 								:class="{ 'translate-x-6': showConnections }"></div>
 						</button>
 					</div>
-
-					<!-- <div>
-						<div class="flex items-center justify-between mb-2">
-							<div class="font-medium text-gray-900 dark:text-white">
-								Similarity Threshold
-							</div>
-							<span class="text-sm text-gray-500">{{
-								settings.similarityThreshold
-							}}</span>
-						</div>
-						<input
-							type="range"
-							min="0.3"
-							max="0.9"
-							step="0.05"
-							v-model="settings.similarityThreshold"
-							@input="updateConnections"
-							class="w-full h-2 bg-[#f4f4f4] dark:bg-[#212121] rounded-lg appearance-none cursor-pointer slider"
-						/>
-					</div> -->
 				</div>
 
 				<button @click="resetSettings" class="w-full mt-8 px-6 py-3 rounded-xl font-medium transition-all"
-					:class="isDarkMode
-						? 'dark:bg-[#212121] dark:text-gray-300 dark:hover:bg-gray-700'
-						: 'bg-[#f4f4f4] text-gray-700 hover:bg-gray-200'
-						">
+					:style="{
+						backgroundColor: currentTheme.colors.background,
+						color: currentTheme.colors.textSecondary
+					}">
 					Reset to Default
 				</button>
 			</div>
 		</div>
 
+		<!-- Theme Picker Modal -->
+		<div v-if="showThemes" @click="closeThemes"
+			class="fixed inset-0 bg-black/50 backdrop-blur-sm z-[2000] flex items-center justify-center p-4 animate-fadeIn">
+			<div @click.stop
+				class="border rounded-3xl p-8 w-full max-w-2xl shadow-2xl animate-scaleIn max-h-[80vh] overflow-y-auto"
+				:style="{
+					backgroundColor: currentTheme.colors.surface,
+					borderColor: currentTheme.colors.border
+				}">
+
+				<div class="flex justify-between items-center mb-6">
+					<h3 class="text-2xl font-bold" :style="{ color: currentTheme.colors.text }">
+						Theme Picker
+					</h3>
+					<button @click="closeThemes" class="p-2 rounded-xl transition-all">
+						<svg class="w-6 h-6" :style="{ color: currentTheme.colors.textSecondary }" fill="none"
+							stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+								d="M6 18L18 6M6 6l12 12" />
+						</svg>
+					</button>
+				</div>
+
+				<div class="grid grid-cols-1 gap-3">
+					<button v-for="theme in themes" :key="theme.id" @mouseenter="previewTheme(theme)"
+						@click="applyTheme(theme)"
+						class="group relative flex items-center gap-4 p-4 rounded-2xl border-2 transition-all" :class="[
+							currentTheme.id === theme.id
+								? 'border-[#4A90E2] bg-blue-50 dark:bg-blue-900/20'
+								: 'border-transparent hover:border-gray-300 dark:hover:border-gray-700'
+						]" :style="{ backgroundColor: currentTheme.id === theme.id ? 'rgba(74, 144, 226, 0.1)' : currentTheme.colors.background }">
+
+						<div class="flex gap-2">
+							<div v-for="(color, index) in theme.preview" :key="index"
+								class="w-10 h-10 rounded-lg shadow-sm border border-black/10"
+								:style="{ backgroundColor: color }">
+							</div>
+						</div>
+
+						<div class="flex-1 text-left">
+							<div class="font-semibold" :style="{ color: currentTheme.colors.text }">
+								{{ theme.name }}
+							</div>
+							<div class="text-sm" :style="{ color: currentTheme.colors.textSecondary }">
+								{{ theme.description }}
+							</div>
+						</div>
+
+						<svg v-if="currentTheme.id === theme.id" class="w-6 h-6 text-[#4A90E2] flex-shrink-0"
+							fill="currentColor" viewBox="0 0 20 20">
+							<path fill-rule="evenodd"
+								d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+								clip-rule="evenodd" />
+						</svg>
+					</button>
+				</div>
+			</div>
+		</div>
+
 		<div class="fixed bottom-8 right-8 z-[1000] flex flex-col gap-3">
 			<button @click="resetView" class="p-4 rounded-2xl shadow-lg hover:shadow-xl transition-all border group"
-				:class="isDarkMode
-					? 'dark:bg-[#212121] dark:text-gray-300 dark:hover:bg-gray-700'
-					: 'bg-[#f4f4f4] text-gray-700 hover:bg-gray-200'
-					">
-				<svg class="w-5 h-5 text-gray-600 dark:text-gray-300 group-hover:text-[#4A90E2] transition-colors"
-					fill="none" stroke="currentColor" viewBox="0 0 24 24">
+				:style="{
+					backgroundColor: currentTheme.colors.background,
+					borderColor: currentTheme.colors.border
+				}">
+				<svg class="w-5 h-5 group-hover:text-[#4A90E2] transition-colors"
+					:style="{ color: currentTheme.colors.textSecondary }" fill="none" stroke="currentColor"
+					viewBox="0 0 24 24">
 					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
 						d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
 				</svg>
 			</button>
 			<button @click="refreshData" class="p-4 rounded-2xl shadow-lg hover:shadow-xl transition-all border group"
-				:class="isDarkMode
-					? 'dark:bg-[#212121] dark:text-gray-300 dark:hover:bg-gray-700'
-					: 'bg-[#f4f4f4] text-gray-700 hover:bg-gray-200'
-					">
-				<svg class="w-5 h-5 text-gray-600 dark:text-gray-300 group-hover:text-[#4A90E2] transition-colors"
-					fill="none" stroke="currentColor" viewBox="0 0 24 24">
+				:style="{
+					backgroundColor: currentTheme.colors.background,
+					borderColor: currentTheme.colors.border
+				}">
+				<svg class="w-5 h-5 group-hover:text-[#4A90E2] transition-colors"
+					:style="{ color: currentTheme.colors.textSecondary }" fill="none" stroke="currentColor"
+					viewBox="0 0 24 24">
 					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
 						d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
 				</svg>
@@ -475,21 +466,27 @@
 				</svg>
 			</button>
 		</div>
-
 		<div id="graph-container" ref="graphContainer" @click="handleBackgroundClick"
 			class="w-full h-full pt-20 cursor-grab active:cursor-grabbing"></div>
 
 		<div ref="tooltip"
-			class="fixed pointer-events-none opacity-0 transition-opacity duration-200 z-[2000] px-4 py-3 bg-black/95 dark:bg-white/95 text-white dark:text-black text-sm rounded-xl shadow-xl max-w-xs backdrop-blur-sm">
+			class="fixed pointer-events-none opacity-0 transition-opacity duration-200 z-[2000] px-4 py-3 text-sm rounded-xl shadow-xl max-w-xs backdrop-blur-sm"
+			:style="{
+				backgroundColor: currentTheme.isDark ? 'rgba(255,255,255,0.95)' : 'rgba(0,0,0,0.95)',
+				color: currentTheme.isDark ? '#000' : '#fff'
+			}">
 		</div>
 
 		<!-- Context Menu -->
-		<div v-if="showContextMenu" :style="contextMenuStyle" @click.stop
-			class="fixed z-[2500] rounded-xl shadow-2xl border overflow-hidden min-w-[200px] animate-scaleIn"
-			:class="isDarkMode ? 'bg-black border-gray-800' : 'bg-white border-gray-200'">
+		<div v-if="showContextMenu" @click.stop
+			class="fixed z-[2500] rounded-xl shadow-2xl border overflow-hidden min-w-[200px] animate-scaleIn" :style="{
+				...contextMenuStyle,
+				backgroundColor: currentTheme.colors.surface,
+				borderColor: currentTheme.colors.border
+			}">
 
 			<button @click="renameCluster" class="w-full flex items-center gap-3 px-4 py-3 transition-colors"
-				:class="isDarkMode ? 'hover:bg-gray-900 text-gray-300' : 'hover:bg-gray-50 text-gray-700'">
+				:style="{ color: currentTheme.colors.text }">
 				<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
 						d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -498,7 +495,7 @@
 			</button>
 
 			<button @click="showAddWebsitesModal" class="w-full flex items-center gap-3 px-4 py-3 transition-colors"
-				:class="isDarkMode ? 'hover:bg-gray-900 text-gray-300' : 'hover:bg-gray-50 text-gray-700'">
+				:style="{ color: currentTheme.colors.text }">
 				<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
 				</svg>
@@ -506,14 +503,14 @@
 			</button>
 
 			<button @click="showRemoveWebsitesModal" class="w-full flex items-center gap-3 px-4 py-3 transition-colors"
-				:class="isDarkMode ? 'hover:bg-gray-900 text-gray-300' : 'hover:bg-gray-50 text-gray-700'">
+				:style="{ color: currentTheme.colors.text }">
 				<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
 				</svg>
 				<span class="text-sm font-medium">Remove Websites</span>
 			</button>
 
-			<div class="h-px mx-2" :class="isDarkMode ? 'bg-gray-800' : 'bg-gray-200'"></div>
+			<div class="h-px mx-2" :style="{ backgroundColor: currentTheme.colors.border }"></div>
 
 			<button @click="deleteCluster"
 				class="w-full flex items-center gap-3 px-4 py-3 transition-colors text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20">
@@ -528,17 +525,25 @@
 		<!-- Rename Modal -->
 		<div v-if="showRenameModal" @click="closeRenameModal"
 			class="fixed inset-0 bg-black/50 backdrop-blur-sm z-[2000] flex items-center justify-center p-4 animate-fadeIn">
-			<div @click.stop class="rounded-3xl p-8 w-full max-w-md shadow-2xl animate-scaleIn border"
-				:class="isDarkMode ? 'bg-black border-gray-800' : 'bg-white border-gray-200'">
-				<h3 class="text-2xl font-bold mb-6" :class="isDarkMode ? 'text-white' : 'text-gray-900'">
+			<div @click.stop class="rounded-3xl p-8 w-full max-w-md shadow-2xl animate-scaleIn border" :style="{
+				backgroundColor: currentTheme.colors.surface,
+				borderColor: currentTheme.colors.border
+			}">
+				<h3 class="text-2xl font-bold mb-6" :style="{ color: currentTheme.colors.text }">
 					Rename Cluster
 				</h3>
 				<input v-model="renameInput" @keyup.enter="confirmRename" type="text" placeholder="New cluster name"
-					class="w-full px-4 py-3 border rounded-xl outline-none transition-all"
-					:class="isDarkMode ? 'bg-gray-900 border-gray-800 text-white' : 'bg-gray-50 border-gray-200 text-gray-900'" />
+					class="w-full px-4 py-3 border rounded-xl outline-none transition-all" :style="{
+						backgroundColor: currentTheme.colors.background,
+						borderColor: currentTheme.colors.border,
+						color: currentTheme.colors.text
+					}" />
 				<div class="flex gap-3 mt-6">
 					<button @click="closeRenameModal" class="flex-1 px-6 py-3 rounded-xl font-medium transition-all"
-						:class="isDarkMode ? 'bg-gray-900 text-gray-300 hover:bg-gray-800' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'">
+						:style="{
+							backgroundColor: currentTheme.colors.background,
+							color: currentTheme.colors.textSecondary
+						}">
 						Cancel
 					</button>
 					<button @click="confirmRename"
@@ -554,29 +559,36 @@
 			class="fixed inset-0 bg-black/50 backdrop-blur-sm z-[2000] flex items-center justify-center p-4 animate-fadeIn">
 			<div @click.stop
 				class="rounded-3xl p-8 w-full max-w-2xl shadow-2xl animate-scaleIn border max-h-[80vh] overflow-y-auto"
-				:class="isDarkMode ? 'bg-black border-gray-800' : 'bg-white border-gray-200'">
-				<h3 class="text-2xl font-bold mb-6" :class="isDarkMode ? 'text-white' : 'text-gray-900'">
+				:style="{
+					backgroundColor: currentTheme.colors.surface,
+					borderColor: currentTheme.colors.border
+				}">
+				<h3 class="text-2xl font-bold mb-6" :style="{ color: currentTheme.colors.text }">
 					Add Websites to Cluster
 				</h3>
 				<div class="space-y-2 mb-6">
 					<div v-for="website in availableWebsites" :key="website.id"
-						class="flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-colors" :class="selectedWebsitesToAdd.includes(website.id)
-							? 'bg-blue-50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-800'
-							: isDarkMode ? 'border-gray-800 hover:bg-gray-900' : 'border-gray-200 hover:bg-gray-50'"
-						@click="toggleWebsiteSelection(website.id)">
+						class="flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-colors"
+						:class="selectedWebsitesToAdd.includes(website.id) ? 'bg-blue-50 dark:bg-blue-900/20' : ''"
+						:style="{
+							borderColor: selectedWebsitesToAdd.includes(website.id) ? currentTheme.colors.primary : currentTheme.colors.border
+						}" @click="toggleWebsiteSelection(website.id)">
 						<input type="checkbox" :checked="selectedWebsitesToAdd.includes(website.id)" class="w-4 h-4" />
 						<div class="flex-1">
-							<div class="font-medium" :class="isDarkMode ? 'text-white' : 'text-gray-900'">
+							<div class="font-medium" :style="{ color: currentTheme.colors.text }">
 								{{ website.title }}
 							</div>
-							<div class="text-sm text-gray-500">{{ website.domain }}</div>
+							<div class="text-sm" :style="{ color: currentTheme.colors.textSecondary }">{{ website.domain
+							}}</div>
 						</div>
 					</div>
 				</div>
 				<div class="flex gap-3">
 					<button @click="closeAddWebsitesModal"
-						class="flex-1 px-6 py-3 rounded-xl font-medium transition-all"
-						:class="isDarkMode ? 'bg-gray-900 text-gray-300 hover:bg-gray-800' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'">
+						class="flex-1 px-6 py-3 rounded-xl font-medium transition-all" :style="{
+							backgroundColor: currentTheme.colors.background,
+							color: currentTheme.colors.textSecondary
+						}">
 						Cancel
 					</button>
 					<button @click="confirmAddWebsites"
@@ -592,65 +604,74 @@
 			class="fixed inset-0 bg-black/50 backdrop-blur-sm z-[2000] flex items-center justify-center p-4 animate-fadeIn">
 			<div @click.stop
 				class="rounded-3xl p-8 w-full max-w-2xl shadow-2xl animate-scaleIn border max-h-[80vh] overflow-y-auto"
-				:class="isDarkMode ? 'bg-black border-gray-800' : 'bg-white border-gray-200'">
-				<h3 class="text-2xl font-bold mb-6" :class="isDarkMode ? 'text-white' : 'text-gray-900'">
+				:style="{
+					backgroundColor: currentTheme.colors.surface,
+					borderColor: currentTheme.colors.border
+				}">
+				<h3 class="text-2xl font-bold mb-6" :style="{ color: currentTheme.colors.text }">
 					Remove Websites from Cluster
 				</h3>
 				<div class="space-y-2 mb-6">
 					<div v-for="websiteId in contextCluster?.websites" :key="websiteId"
-						class="flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-colors" :class="selectedWebsitesToRemove.includes(websiteId)
-							? 'bg-red-50 border-red-200 dark:bg-red-900/20 dark:border-red-800'
-							: isDarkMode ? 'border-gray-800 hover:bg-gray-900' : 'border-gray-200 hover:bg-gray-50'"
-						@click="toggleRemoveSelection(websiteId)">
+						class="flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-colors"
+						:class="selectedWebsitesToRemove.includes(websiteId) ? 'bg-red-50 dark:bg-red-900/20' : ''"
+						:style="{
+							borderColor: selectedWebsitesToRemove.includes(websiteId) ? '#ef4444' : currentTheme.colors.border
+						}" @click="toggleRemoveSelection(websiteId)">
 						<input type="checkbox" :checked="selectedWebsitesToRemove.includes(websiteId)"
 							class="w-4 h-4" />
 						<div class="flex-1">
-							<div class="font-medium" :class="isDarkMode ? 'text-white' : 'text-gray-900'">
+							<div class="font-medium" :style="{ color: currentTheme.colors.text }">
 								{{ websites[websiteId]?.title }}
 							</div>
-							<div class="text-sm text-gray-500">{{ websites[websiteId]?.domain }}</div>
+							<div class="text-sm" :style="{ color: currentTheme.colors.textSecondary }">{{
+								websites[websiteId]?.domain
+							}}</div>
 						</div>
 					</div>
 				</div>
 				<div class="flex gap-3">
 					<button @click="closeRemoveWebsitesModal"
-						class="flex-1 px-6 py-3 rounded-xl font-medium transition-all"
-						:class="isDarkMode ? 'bg-gray-900 text-gray-300 hover:bg-gray-800' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'">
+						class="flex-1 px-6 py-3 rounded-xl font-medium transition-all" :style="{
+							backgroundColor: currentTheme.colors.background,
+							color: currentTheme.colors.textSecondary
+						}">
 						Cancel
 					</button>
-					<button @click="confirmRemoveWebsites"
+					<button @click="confirmRemoveWebsites(false)"
+						class="flex-1 px-6 py-3 bg-orange-600 text-white rounded-xl font-medium hover:bg-orange-700 transition-all">
+						Remove from Cluster
+					</button>
+					<button @click="confirmRemoveWebsites(true)"
 						class="flex-1 px-6 py-3 bg-red-600 text-white rounded-xl font-medium hover:bg-red-700 transition-all">
-						Remove Selected
+						Delete Entirely
 					</button>
 				</div>
 			</div>
 		</div>
 
 		<div v-if="selectedWebsite" :style="stickyNoteStyle" @click.stop
-			class="fixed z-[1500] rounded-2xl shadow-2xl min-w-[320px] max-w-md animate-scaleIn"
-			:class="isDarkMode ? 'dark:bg-yellow-200' : 'bg-yellow-100'">
-			<div @mousedown="startDraggingSticky" class="flex justify-between items-center p-4 cursor-move border-b"
-				:class="isDarkMode ? 'dark:border-yellow-300' : 'border-yellow-200'">
-				<h4 class="font-semibold text-base truncate pr-4"
-					:class="isDarkMode ? 'text-gray-900' : 'text-gray-900'">
+			class="fixed z-[1500] rounded-2xl shadow-2xl min-w-[320px] max-w-md animate-scaleIn bg-yellow-100">
+			<div @mousedown="startDraggingSticky"
+				class="flex justify-between items-center p-4 cursor-move border-b border-yellow-200">
+				<h4 class="font-semibold text-base truncate pr-4 text-gray-900">
 					{{ selectedWebsite.title }}
 				</h4>
 
-				<button @click="closeStickyNote" class="p-1.5 rounded-lg transition-all flex-shrink-0" :class="isDarkMode ? 'dark:hover:bg-yellow-300' : 'hover:bg-yellow-200'
-					">
-					<svg class="w-5 h-5" :class="isDarkMode ? 'text-gray-800' : 'text-gray-700'" fill="none"
-						stroke="currentColor" viewBox="0 0 24 24">
+				<button @click="closeStickyNote"
+					class="p-1.5 rounded-lg hover:bg-yellow-200 transition-all flex-shrink-0">
+					<svg class="w-5 h-5 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
 							d="M6 18L18 6M6 6l12 12" />
 					</svg>
 				</button>
 			</div>
 
-			<div class="p-4 space-y-3 text-sm" :class="isDarkMode ? 'text-gray-900' : 'text-gray-800'">
-				<div>
+			<div class="p-4 space-y-3 text-sm text-gray-800">
+				<!-- <div>
 					<span class="font-semibold">Cluster ID:</span>
 					{{ selectedWebsite.parentCluster }}
-				</div>
+				</div> -->
 
 				<div>
 					<span class="font-semibold">Domain:</span>
@@ -662,16 +683,54 @@
 					{{ websiteDetails.ai_summary || "None" }}
 				</div>
 
+				<a :href="selectedWebsite.url" target="_blank" class="cursor-pointer transition-all hover:shadow-md"
+					:class="isDarkMode ? 'border-gray-700 bg-[#212121]' : 'border-gray-300 bg-white'">
+
+					<div v-if="websiteDetails.metadata.image" class="w-full my-4 h-36 mb-2 overflow-hidden rounded-lg">
+
+						<img :src="websiteDetails.metadata.image" class="w-full h-full object-cover" alt="preview" />
+
+					</div>
+
+
+
+					<!-- Title -->
+
+					<div class="font-semibold text-sm" :class="isDarkMode ? 'text-gray-800' : 'text-gray-700'">
+
+						{{ websiteDetails.metadata.title || selectedWebsite.domain }}
+
+					</div>
+
+
+
+					<!-- Description -->
+
+					<div class="text-xs mt-1 line-clamp-2" :class="isDarkMode ? 'text-gray-700' : 'text-gray-700'">
+
+						{{ websiteDetails.metadata.description || "No description available" }}
+
+					</div>
+
+
+
+					<!-- Domain -->
+
+					<div class="text-xs mt-2 flex items-center gap-1"
+						:class="isDarkMode ? 'text-gray-400' : 'text-gray-500'">
+
+						🌐 {{ selectedWebsite.domain }}
+
+					</div>
+
+				</a>
+
 				<a :href="selectedWebsite.url" target="_blank"
-					class="inline-flex items-center gap-2 px-4 py-2 rounded-xl font-medium transition-all" :class="isDarkMode
-						? 'bg-[#333] hover:bg-black text-white'
-						: 'bg-[#212121] hover:bg-black text-white'
-						">
+					class="inline-flex items-center gap-2 px-4 py-2 rounded-xl font-medium transition-all bg-[#212121] hover:bg-black text-white">
 					🔗 Visit Website
 				</a>
 
-				<div v-if="selectedWebsite.processed_at" class="text-xs"
-					:class="isDarkMode ? 'text-gray-700' : 'text-gray-600'">
+				<div v-if="selectedWebsite.processed_at" class="text-xs text-gray-600">
 					<span class="font-semibold">Processed:</span>
 					{{ formatDate(selectedWebsite.processed_at) }}
 				</div>
@@ -682,24 +741,23 @@
 			class="fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fadeIn">
 			<div @click.stop
 				class="rounded-3xl p-8 w-full max-w-2xl shadow-2xl animate-scaleIn max-h-[80vh] overflow-y-auto border"
-				:class="isDarkMode
-					? 'dark:bg-black dark:border-gray-800'
-					: 'bg-white border-gray-200'
-					">
+				:style="{
+					backgroundColor: currentTheme.colors.surface,
+					borderColor: currentTheme.colors.border
+				}">
 				<div class="flex justify-between items-center mb-6">
 					<div>
-						<h3 class="text-2xl font-bold" :class="isDarkMode ? 'dark:text-white' : 'text-gray-900'">
+						<h3 class="text-2xl font-bold" :style="{ color: currentTheme.colors.text }">
 							Discover Similar Websites
 						</h3>
-						<p class="text-sm mt-1" :class="isDarkMode ? 'dark:text-gray-400' : 'text-gray-500'">
+						<p class="text-sm mt-1" :style="{ color: currentTheme.colors.textSecondary }">
 							Found {{ similarWebsites.length }} websites related to
 							<strong>{{ explodedNode?.topic }}</strong>
 						</p>
 					</div>
 
-					<button @click="closeDiscoverModal" class="p-2 rounded-xl transition-all" :class="isDarkMode ? 'dark:hover:bg-[#212121]' : 'hover:bg-[#f4f4f4]'
-						">
-						<svg class="w-6 h-6" :class="isDarkMode ? 'text-gray-400' : 'text-gray-500'" fill="none"
+					<button @click="closeDiscoverModal" class="p-2 rounded-xl transition-all">
+						<svg class="w-6 h-6" :style="{ color: currentTheme.colors.textSecondary }" fill="none"
 							stroke="currentColor" viewBox="0 0 24 24">
 							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
 								d="M6 18L18 6M6 6l12 12" />
@@ -707,26 +765,25 @@
 					</button>
 				</div>
 
-				<!-- Loading State -->
 				<div v-if="isLoadingSimilar" class="flex flex-col items-center justify-center py-16">
 					<div class="w-12 h-12 border-4 border-t-[#4A90E2] rounded-full animate-spin mb-4"
-						:class="isDarkMode ? 'dark:border-gray-800' : 'border-gray-200'"></div>
+						:style="{ borderColor: currentTheme.colors.border, borderTopColor: currentTheme.colors.primary }">
+					</div>
 
-					<p :class="isDarkMode ? 'dark:text-gray-400' : 'text-gray-600'">
+					<p :style="{ color: currentTheme.colors.textSecondary }">
 						Searching the web...
 					</p>
 				</div>
 
-				<!-- Results -->
 				<div v-else-if="similarWebsites.length > 0" class="space-y-3">
 					<button v-for="(website, index) in similarWebsites" :key="index"
 						@click="openExternalLink(website.url)"
-						class="w-full flex items-start gap-4 p-4 rounded-2xl transition-all group border" :class="isDarkMode
-							? 'dark:bg-[#212121] dark:hover:bg-[#333] dark:text-gray-300 dark:border-transparent'
-							: 'bg-[#f4f4f4] hover:bg-gray-200 border-transparent text-gray-700'
-							">
+						class="w-full flex items-start gap-4 p-4 rounded-2xl transition-all group border" :style="{
+							backgroundColor: currentTheme.colors.background,
+							borderColor: currentTheme.colors.border
+						}">
 						<div class="w-10 h-10 flex-shrink-0 rounded-xl flex items-center justify-center text-[#4A90E2]"
-							:class="isDarkMode ? 'dark:bg-black' : 'bg-white'">
+							:style="{ backgroundColor: currentTheme.colors.surface }">
 							<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
 									d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
@@ -734,8 +791,7 @@
 						</div>
 
 						<div class="flex-1 min-w-0 text-left">
-							<h4 class="font-semibold truncate"
-								:class="isDarkMode ? 'dark:text-white' : 'text-gray-900'">
+							<h4 class="font-semibold truncate" :style="{ color: currentTheme.colors.text }">
 								{{ website.title }}
 							</h4>
 
@@ -743,8 +799,7 @@
 								{{ website.domain || new URL(website.url).hostname }}
 							</p>
 
-							<p class="text-sm mt-2 line-clamp-2"
-								:class="isDarkMode ? 'dark:text-gray-400' : 'text-gray-600'">
+							<p class="text-sm mt-2 line-clamp-2" :style="{ color: currentTheme.colors.textSecondary }">
 								{{
 									website.snippet ||
 									website.description ||
@@ -753,47 +808,28 @@
 							</p>
 						</div>
 
-						<svg class="w-5 h-5 flex-shrink-0 transition-all group-hover:translate-x-1" :class="isDarkMode
-							? 'dark:text-gray-400 group-hover:text-[#4A90E2]'
-							: 'text-gray-400 group-hover:text-[#4A90E2]'
-							" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<svg class="w-5 h-5 flex-shrink-0 transition-all group-hover:translate-x-1 group-hover:text-[#4A90E2]"
+							:style="{ color: currentTheme.colors.textSecondary }" fill="none" stroke="currentColor"
+							viewBox="0 0 24 24">
 							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
 								d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
 						</svg>
 					</button>
 				</div>
 
-				<!-- No results -->
 				<div v-else class="flex flex-col items-center justify-center py-16">
-					<svg class="w-16 h-16 mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<svg class="w-16 h-16 mb-4 opacity-50" :style="{ color: currentTheme.colors.textSecondary }"
+						fill="none" stroke="currentColor" viewBox="0 0 24 24">
 						<circle cx="11" cy="11" r="8" stroke-width="2"></circle>
 						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35" />
 					</svg>
 
-					<p :class="isDarkMode ? 'dark:text-gray-400' : 'text-gray-500'">
+					<p :style="{ color: currentTheme.colors.textSecondary }">
 						No similar websites found
 					</p>
 				</div>
 			</div>
 		</div>
-
-		<!-- <div
-			v-if="connectionStatus !== 'hidden'"
-			class="fixed top-24 right-8 z-[1000] px-5 py-3 rounded-2xl shadow-xl flex items-center gap-3 font-semibold text-sm animate-slideInRight"
-			:class="{
-				'bg-gradient-to-r from-green-500 to-green-600 text-white':
-					connectionStatus === 'connected',
-				'bg-gradient-to-r from-red-500 to-red-600 text-white':
-					connectionStatus === 'disconnected',
-				'bg-gradient-to-r from-yellow-500 to-yellow-600 text-white':
-					connectionStatus === 'connecting',
-			}"
-		>
-			<div class="w-2 h-2 rounded-full bg-white animate-pulse"></div>
-			<span v-if="connectionStatus === 'connected'">Connected</span>
-			<span v-else-if="connectionStatus === 'connecting'">Connecting...</span>
-			<span v-else>Disconnected</span>
-		</div> -->
 
 		<div v-if="showNewDataNotification"
 			class="fixed bottom-24 right-8 z-[1000] px-6 py-4 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-2xl shadow-2xl flex items-center gap-4 font-semibold animate-slideInUp">
@@ -806,16 +842,16 @@
 			<span>New clusters detected! Updating graph...</span>
 		</div>
 
-		<div :class="[
-			'fixed bottom-8 left-8 z-[1000] px-4 py-2 backdrop-blur-xl rounded-xl text-xs border',
-			isDarkMode
-				? 'bg-black/80 text-gray-400 border-gray-800'
-				: 'bg-white/80 text-gray-600 border-gray-200',
-		]">
+		<div class="fixed bottom-8 left-8 z-[1000] px-4 py-2 backdrop-blur-xl rounded-xl text-xs border" :style="{
+			backgroundColor: currentTheme.isDark ? 'rgba(0,0,0,0.8)' : 'rgba(255,255,255,0.8)',
+			color: currentTheme.colors.textSecondary,
+			borderColor: currentTheme.colors.border
+		}">
 			Mouse wheel to zoom • Click and drag to pan • Click clusters to explode
 		</div>
 	</div>
 </template>
+
 
 <script setup>
 import {
@@ -845,8 +881,323 @@ const searchInput = ref('');
 const matchCount = ref(0);
 const isSearchFocused = ref(false);
 const searchInputRef = ref(null);
+const showThemes = ref(false);
+const currentTheme = ref({
+	id: 'default-light',
+	name: 'Default Light',
+	isDark: false,
+	colors: {
+		background: '#f4f4f4',
+		surface: '#ffffff',
+		primary: '#4A90E2',
+		secondary: '#357ABD',
+		accent: '#4A90E2',
+		node: '#f4f4f4',
+		nodeStroke: '#d1d5db',
+		text: '#000000',
+		textSecondary: '#6b7280',
+		border: '#e5e7eb'
+	}
+});
 
-// Data stores
+const themeClasses = computed(() => ({
+	surface: currentTheme.value.isDark ? 'bg-black' : 'bg-white',
+	surfaceHover: currentTheme.value.isDark ? 'hover:bg-gray-900' : 'hover:bg-gray-50',
+	border: currentTheme.value.isDark ? 'border-gray-800' : 'border-gray-200',
+	text: currentTheme.value.isDark ? 'text-white' : 'text-gray-900',
+	textSecondary: currentTheme.value.isDark ? 'text-gray-400' : 'text-gray-600',
+	buttonBg: currentTheme.value.isDark ? 'bg-black' : 'bg-white',
+	buttonHover: currentTheme.value.isDark ? 'hover:bg-[#212121]' : 'hover:bg-gray-100',
+}));
+
+const themes = [
+	{
+		id: 'default-light',
+		name: 'Default Light',
+		description: 'Clean and minimal',
+		isDark: false,
+		preview: ['#f4f4f4', '#4A90E2', '#ffffff', '#e5e7eb'],
+		colors: {
+			background: '#f4f4f4',
+			surface: '#ffffff',
+			primary: '#4A90E2',
+			secondary: '#357ABD',
+			accent: '#4A90E2',
+			node: '#f4f4f4',
+			nodeStroke: '#d1d5db',
+			text: '#000000',
+			textSecondary: '#6b7280',
+			border: '#e5e7eb'
+		}
+	},
+	{
+		id: 'default-dark',
+		name: 'Default Dark',
+		description: 'Easy on the eyes',
+		isDark: true,
+		preview: ['#212121', '#374151', '#4A90E2', '#1f2937'],
+		colors: {
+			background: '#212121',
+			surface: '#000000',
+			primary: '#4A90E2',
+			secondary: '#357ABD',
+			accent: '#4A90E2',
+			node: '#374151',
+			nodeStroke: '#4b5563',
+			text: '#ffffff',
+			textSecondary: '#9ca3af',
+			border: '#374151'
+		}
+	},
+	{
+		id: 'nord',
+		name: 'Nord',
+		description: 'Arctic, north-bluish',
+		isDark: true,
+		preview: ['#2E3440', '#88C0D0', '#5E81AC', '#4C566A'],
+		colors: {
+			background: '#2E3440',
+			surface: '#3B4252',
+			primary: '#88C0D0',
+			secondary: '#5E81AC',
+			accent: '#88C0D0',
+			node: '#4C566A',
+			nodeStroke: '#434C5E',
+			text: '#ECEFF4',
+			textSecondary: '#D8DEE9',
+			border: '#434C5E'
+		}
+	},
+	{
+		id: 'dracula',
+		name: 'Dracula',
+		description: 'Dark theme for vampires',
+		isDark: true,
+		preview: ['#282A36', '#FF79C6', '#BD93F9', '#44475A'],
+		colors: {
+			background: '#282A36',
+			surface: '#1e1f29',
+			primary: '#FF79C6',
+			secondary: '#BD93F9',
+			accent: '#FF79C6',
+			node: '#44475A',
+			nodeStroke: '#6272A4',
+			text: '#F8F8F2',
+			textSecondary: '#C5C8C6',
+			border: '#44475A'
+		}
+	},
+	{
+		id: 'monokai',
+		name: 'Monokai',
+		description: 'Vibrant and colorful',
+		isDark: true,
+		preview: ['#272822', '#F92672', '#A6E22E', '#49483E'],
+		colors: {
+			background: '#272822',
+			surface: '#1e1f1c',
+			primary: '#F92672',
+			secondary: '#A6E22E',
+			accent: '#FD971F',
+			node: '#49483E',
+			nodeStroke: '#75715E',
+			text: '#F8F8F2',
+			textSecondary: '#CFCFC2',
+			border: '#49483E'
+		}
+	},
+	{
+		id: 'gruvbox-light',
+		name: 'Gruvbox Light',
+		description: 'Retro groove, light variant',
+		isDark: false,
+		preview: ['#FBF1C7', '#458588', '#CC241D', '#EBDBB2'],
+		colors: {
+			background: '#FBF1C7',
+			surface: '#F9F5D7',
+			primary: '#458588',
+			secondary: '#CC241D',
+			accent: '#D65D0E',
+			node: '#EBDBB2',
+			nodeStroke: '#D5C4A1',
+			text: '#3C3836',
+			textSecondary: '#665C54',
+			border: '#D5C4A1'
+		}
+	},
+	{
+		id: 'gruvbox-dark',
+		name: 'Gruvbox Dark',
+		description: 'Retro groove, dark variant',
+		isDark: true,
+		preview: ['#282828', '#458588', '#CC241D', '#3C3836'],
+		colors: {
+			background: '#282828',
+			surface: '#1d2021',
+			primary: '#458588',
+			secondary: '#CC241D',
+			accent: '#D65D0E',
+			node: '#3C3836',
+			nodeStroke: '#504945',
+			text: '#EBDBB2',
+			textSecondary: '#BDAE93',
+			border: '#504945'
+		}
+	},
+	{
+		id: 'solarized-light',
+		name: 'Solarized Light',
+		description: 'Precision colors',
+		isDark: false,
+		preview: ['#FDF6E3', '#268BD2', '#DC322F', '#EEE8D5'],
+		colors: {
+			background: '#FDF6E3',
+			surface: '#EEE8D5',
+			primary: '#268BD2',
+			secondary: '#2AA198',
+			accent: '#D33682',
+			node: '#EEE8D5',
+			nodeStroke: '#93A1A1',
+			text: '#657B83',
+			textSecondary: '#839496',
+			border: '#93A1A1'
+		}
+	},
+	{
+		id: 'solarized-dark',
+		name: 'Solarized Dark',
+		description: 'Precision colors for night',
+		isDark: true,
+		preview: ['#002B36', '#268BD2', '#DC322F', '#073642'],
+		colors: {
+			background: '#002B36',
+			surface: '#073642',
+			primary: '#268BD2',
+			secondary: '#2AA198',
+			accent: '#D33682',
+			node: '#073642',
+			nodeStroke: '#586E75',
+			text: '#839496',
+			textSecondary: '#93A1A1',
+			border: '#586E75'
+		}
+	},
+	{
+		id: 'github-light',
+		name: 'GitHub Light',
+		description: 'Clean and professional',
+		isDark: false,
+		preview: ['#FFFFFF', '#0366D6', '#28A745', '#F6F8FA'],
+		colors: {
+			background: '#FFFFFF',
+			surface: '#F6F8FA',
+			primary: '#0366D6',
+			secondary: '#28A745',
+			accent: '#0366D6',
+			node: '#F6F8FA',
+			nodeStroke: '#E1E4E8',
+			text: '#24292E',
+			textSecondary: '#586069',
+			border: '#E1E4E8'
+		}
+	},
+	{
+		id: 'github-dark',
+		name: 'GitHub Dark',
+		description: 'Easy on the eyes, professional',
+		isDark: true,
+		preview: ['#0D1117', '#58A6FF', '#3FB950', '#161B22'],
+		colors: {
+			background: '#0D1117',
+			surface: '#161B22',
+			primary: '#58A6FF',
+			secondary: '#3FB950',
+			accent: '#58A6FF',
+			node: '#161B22',
+			nodeStroke: '#30363D',
+			text: '#C9D1D9',
+			textSecondary: '#8B949E',
+			border: '#30363D'
+		}
+	},
+	{
+		id: 'tokyo-night',
+		name: 'Tokyo Night',
+		description: 'A clean dark theme',
+		isDark: true,
+		preview: ['#1A1B26', '#7AA2F7', '#BB9AF7', '#24283B'],
+		colors: {
+			background: '#1A1B26',
+			surface: '#24283B',
+			primary: '#7AA2F7',
+			secondary: '#BB9AF7',
+			accent: '#7DCFFF',
+			node: '#24283B',
+			nodeStroke: '#414868',
+			text: '#C0CAF5',
+			textSecondary: '#A9B1D6',
+			border: '#414868'
+		}
+	},
+	{
+		id: 'catppuccin-mocha',
+		name: 'Catppuccin Mocha',
+		description: 'Soothing pastel theme',
+		isDark: true,
+		preview: ['#1E1E2E', '#89B4FA', '#F5C2E7', '#313244'],
+		colors: {
+			background: '#1E1E2E',
+			surface: '#181825',
+			primary: '#89B4FA',
+			secondary: '#F5C2E7',
+			accent: '#CBA6F7',
+			node: '#313244',
+			nodeStroke: '#45475A',
+			text: '#CDD6F4',
+			textSecondary: '#BAC2DE',
+			border: '#45475A'
+		}
+	},
+	{
+		id: 'rose-pine',
+		name: 'Rosé Pine',
+		description: 'All natural pine, faux fur and a bit of soho vibes',
+		isDark: true,
+		preview: ['#191724', '#EBBCBA', '#9CCFD8', '#26233A'],
+		colors: {
+			background: '#191724',
+			surface: '#1F1D2E',
+			primary: '#EBBCBA',
+			secondary: '#9CCFD8',
+			accent: '#C4A7E7',
+			node: '#26233A',
+			nodeStroke: '#403D52',
+			text: '#E0DEF4',
+			textSecondary: '#908CAA',
+			border: '#403D52'
+		}
+	},
+	{
+		id: 'everforest',
+		name: 'Everforest',
+		description: 'Comfortable & pleasant',
+		isDark: true,
+		preview: ['#2D353B', '#A7C080', '#D699B6', '#343F44'],
+		colors: {
+			background: '#2D353B',
+			surface: '#232A2E',
+			primary: '#A7C080',
+			secondary: '#7FBBB3',
+			accent: '#D699B6',
+			node: '#343F44',
+			nodeStroke: '#3D484D',
+			text: '#D3C6AA',
+			textSecondary: '#859289',
+			border: '#3D484D'
+		}
+	}
+];
+
 const clusters = ref({});
 const websites = ref({});
 const embeddings = ref({}); // Store embeddings separately for cosine similarity
@@ -855,7 +1206,6 @@ const processingQueue = ref([]);
 const processedCount = ref(0);
 const isProcessing = ref(false);
 
-// Models
 let embeddingModel = null; // transformers.js embedding model (MiniLM)
 let summarizationModel = null; // will point to the Web-LLM engine (chat-style)
 let db = null;
@@ -867,6 +1217,11 @@ const queueProgress = computed(() => {
 	if (processingQueue.value.length === 0) return 0;
 	return (processedCount.value / processingQueue.value.length) * 100;
 });
+
+
+// Cloudflare worker URL for Google Search API
+const GOOGLE_SEARCH_WORKER_URL = 'https://rocus.othman90hijawi.workers.dev';
+
 
 // Graph information
 
@@ -915,22 +1270,115 @@ const albumForm = reactive({
 });
 const showModelStatus = ref(false);
 
-const emojiOptions = [
+const iconOptions = [
 	"RocusFileIcon.png",
-	"RocuseFileIconColored.png",
-	"RocuseFileIconDark.png",
+	"RocusFileIconColored.png",
+	"RocusFileIconDark.png",
 ];
 
-const iconUrls = emojiOptions.map(
+const iconUrls = iconOptions.map(
 	(icon) => new URL(`./images/${icon}`, import.meta.url).href
 );
 
-const wsConnection = ref(null); // web-socket not needed anymore
-const connectionStatus = ref("disconnected"); // web-socket not needed anymore
+function getIconUrl(iconFileName) {
+	if (!iconFileName) return '';
+	if (iconFileName.startsWith('http') || iconFileName.startsWith('data:')) {
+		return iconFileName;
+	}
+	return new URL(`./images/${iconFileName}`, import.meta.url).href;
+}
+
 const showNewDataNotification = ref(false);
-let reconnectTimeout = null; // web-socket not needed anymore
-let reconnectAttempts = 0; // web-socket not needed anymore
-const MAX_RECONNECT_ATTEMPTS = 5; // web-socket not needed anymore
+
+function toggleThemes() {
+	showThemes.value = !showThemes.value;
+}
+
+function closeThemes() {
+	showThemes.value = false;
+}
+
+function previewTheme(theme) {
+	// Temporarily apply theme on hover
+	applyThemeColors(theme);
+}
+
+function applyTheme(theme) {
+	currentTheme.value = theme;
+	isDarkMode.value = theme.isDark;
+	localStorage.setItem('theme', theme.id);
+	localStorage.setItem('darkMode', theme.isDark.toString());
+	applyThemeColors(theme);
+	closeThemes();
+}
+
+function applyThemeColors(theme) {
+	if (!theme || !theme.colors) return;
+
+	// Update CSS variables
+	const root = document.documentElement;
+	Object.entries(theme.colors).forEach(([key, value]) => {
+		root.style.setProperty(`--color-${key}`, value);
+	});
+
+	// Update D3 nodes if graph exists
+	if (container) {
+		container
+			.select(".nodes")
+			.selectAll(".node")
+			.transition()
+			.duration(300)
+			.attr("fill", (d) => {
+				if (d.type === "discover") return theme.colors.primary;
+				if (d.type === "website") return theme.colors.node;
+				return theme.colors.node;
+			})
+			.attr("stroke", (d) => {
+				if (d.type === "discover") return theme.colors.secondary;
+				if (d.type === "website") return theme.colors.nodeStroke;
+				return theme.colors.nodeStroke;
+			});
+
+		container
+			.select(".labels")
+			.selectAll(".node-label")
+			.transition()
+			.duration(300)
+			.style("fill", (d) => {
+				if (d.type === "discover") return "#ffffff";
+				return theme.colors.text;
+			});
+
+		// Update links too
+		container
+			.select(".links")
+			.selectAll(".link")
+			.transition()
+			.duration(300)
+			.style("stroke", (d) => {
+				if (d.type === 'discover-link') return theme.colors.nodeStroke;
+				if (d.type === 'website-link') return theme.colors.nodeStroke;
+				return theme.colors.nodeStroke;
+			});
+	}
+}
+
+function loadThemePreference() {
+	const savedThemeId = localStorage.getItem('theme');
+	if (savedThemeId) {
+		const theme = themes.find(t => t.id === savedThemeId);
+		if (theme) {
+			currentTheme.value = theme;
+			isDarkMode.value = theme.isDark;
+			applyThemeColors(theme);
+			return;
+		}
+	}
+
+	// Default theme
+	currentTheme.value = themes[0];
+	applyThemeColors(themes[0]);
+}
 
 const settings = reactive({
 	nodeSize: 1.0,
@@ -1006,9 +1454,6 @@ const clearSearch = () => {
 	focusSearch();
 };
 
-
-
-
 async function fetchAlbums() {
 	try {
 		if (!db) return {};
@@ -1082,41 +1527,34 @@ async function updateAlbum(albumId, albumData) {
 		if (!db) throw new Error("Database not initialized");
 
 		const tx = db.transaction("albums", "readwrite");
-
 		const store = tx.objectStore("albums");
 
 		const existingAlbum = await new Promise((resolve, reject) => {
 			const request = store.get(albumId);
-
 			request.onsuccess = () => resolve(request.result);
-
 			request.onerror = () => reject(request.error);
 		});
 
+		// Ensure cluster_ids is a plain array, not a proxy
 		const updatedAlbum = {
 			...existingAlbum,
-
-			...albumData,
-
+			name: albumData.name,
+			icon: albumData.icon,
+			cluster_ids: Array.from(albumData.cluster_ids || existingAlbum.cluster_ids || []), // FIX: Convert to plain array
 			id: albumId,
-
 			updated_at: new Date().toISOString(),
 		};
 
 		await new Promise((resolve, reject) => {
 			const request = store.put(updatedAlbum);
-
 			request.onsuccess = resolve;
-
 			request.onerror = () => reject(request.error);
 		});
 
 		await fetchAlbums();
-
 		return { success: true, album: updatedAlbum };
 	} catch (error) {
 		console.error("❌ Error updating album:", error);
-
 		throw error;
 	}
 }
@@ -1289,7 +1727,7 @@ async function fetchClusters() {
 						if (selectedAlbumId !== null) {
 							return cluster.album_id === selectedAlbumId;
 						}
-						return cluster.album_id === null;
+						return true; //returns all the clusters if no album is specified
 					})
 					.map(cluster => {
 						const websitesList = cluster.websites
@@ -1335,10 +1773,17 @@ async function fetchSimilarities() {
 		const activeAlbumId = currentAlbum.value ? currentAlbum.value.id : null;
 
 		// Only calculate similarities for clusters in the current album view
-		const clusterIds = Object.keys(clusters.value).filter(id => {
-			const cluster = clusters.value[id];
-			return cluster.album_id === activeAlbumId;
-		});
+		let clusterIds;
+		if (activeAlbumId === null) {
+			// "All Clusters" view - show ALL connections
+			clusterIds = Object.keys(clusters.value);
+		} else {
+			// Specific album - only show connections within that album
+			clusterIds = Object.keys(clusters.value).filter(id => {
+				const cluster = clusters.value[id];
+				return cluster.album_id === activeAlbumId;
+			});
+		}
 
 		for (const sourceClusterId of clusterIds) {
 			const sourceCluster = clusters.value[sourceClusterId];
@@ -1454,48 +1899,151 @@ async function fetchWebsiteDetails(websiteId) {
 	}
 }
 
+
+// similar links 
+
+async function googleSearch(query, numResults = 10) {
+	if (!query || !query.trim()) {
+		console.warn("⚠️ Empty search query");
+		return [];
+	}
+
+	try {
+		console.log(`🔍 Searching Google via Cloudflare Worker for: '${query}'`);
+
+		// Call Cloudflare Worker instead of Google directly
+		const url = new URL(GOOGLE_SEARCH_WORKER_URL);
+		url.searchParams.set('q', query);
+		url.searchParams.set('num', numResults.toString());
+
+		const response = await fetch(url.toString(), {
+			method: 'GET',
+			headers: {
+				'Content-Type': 'application/json',
+			}
+		});
+
+		if (!response.ok) {
+			const errorData = await response.json().catch(() => ({}));
+			throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+		}
+
+		const data = await response.json();
+
+		if (!data.success || !data.results) {
+			throw new Error('Invalid response from search worker');
+		}
+
+		console.log(`✅ Found ${data.results.length} search results`);
+		return data.results;
+
+	} catch (error) {
+		console.error(`⚠️ Google search error for query '${query}':`, error);
+		return [];
+	}
+}
+
+async function addSimilarLinksToCluster(clusterId) {
+	const cluster = clusters.value[clusterId];
+	if (!cluster) return;
+
+	// Initialize similar_links if not present
+	if (!cluster.similar_links) {
+		cluster.similar_links = {};
+	}
+
+	const websiteIds = cluster.websites || [];
+
+	// Get existing URLs in cluster to avoid duplicates
+	const existingUrls = new Set();
+	for (const wid of websiteIds) {
+		const website = websites.value[wid];
+		if (website && website.url) {
+			existingUrls.add(website.url);
+		}
+	}
+
+	// Search for each website's query
+	for (const wid of websiteIds) {
+		const website = websites.value[wid];
+		if (!website) continue;
+
+		const searchQuery = website.search_query || website.topic || website.title;
+
+		// Skip if we already have results for this website
+		if (!searchQuery || cluster.similar_links[wid]) continue;
+
+		console.log(`🔍 Searching similar links for website: ${website.title}`);
+
+		// Search Google
+		const searchResults = await googleSearch(searchQuery, 10);
+
+		// Filter out URLs already in cluster
+		const newLinks = searchResults.filter(result =>
+			result.url && !existingUrls.has(result.url)
+		);
+
+		if (newLinks.length > 0) {
+			cluster.similar_links[wid] = newLinks;
+			console.log(`🔗 Found ${newLinks.length} similar links for website ${wid}`);
+		}
+	}
+
+	// Save to IndexedDB
+	await saveToIndexedDB();
+}
+
 async function searchSimilarWebsites(query) {
 	try {
 		console.log("📡 Searching for similar websites:", query);
 
-		// Generate embedding for the query
+		if (!explodedNode.value) return [];
 
-		const queryEmbedding = await generateEmbedding(query);
+		const clusterId = explodedNode.value.id;
+		const cluster = clusters.value[clusterId];
 
-		if (!queryEmbedding) return [];
+		// Ensure similar links are populated for this cluster
+		await addSimilarLinksToCluster(clusterId);
 
-		// Find similar websites based on embeddings
+		// Collect all similar links from the cluster
+		const allSimilarLinks = [];
+		const seenUrls = new Set();
 
-		const results = [];
-
-		for (const [websiteId, embedding] of Object.entries(embeddings.value)) {
-			const similarity = cosineSimilarity(queryEmbedding, embedding);
-
-			if (similarity >= 0.4) {
-				// Lower threshold for search
-
-				const website = websites.value[websiteId];
-
-				if (website) {
-					results.push({
-						...website,
-
-						similarity,
-
-						snippet: website.ai_summary || "",
-
-						description: website.ai_summary || "",
-					});
+		if (cluster.similar_links) {
+			for (const [websiteId, links] of Object.entries(cluster.similar_links)) {
+				for (const link of links) {
+					if (!seenUrls.has(link.url)) {
+						seenUrls.add(link.url);
+						allSimilarLinks.push(link);
+					}
 				}
 			}
 		}
 
-		// Sort by similarity and return top 10
+		// If we don't have enough results, do a fresh Google search
+		if (allSimilarLinks.length < 5) {
+			console.log("🔍 Not enough cached results, performing fresh search");
+			const freshResults = await googleSearch(query, 10);
 
-		return results.sort((a, b) => b.similarity - a.similarity).slice(0, 10);
+			// Get existing cluster URLs
+			const clusterUrls = new Set(
+				cluster.websites.map(wid => websites.value[wid]?.url).filter(Boolean)
+			);
+
+			for (const result of freshResults) {
+				if (!seenUrls.has(result.url) && !clusterUrls.has(result.url)) {
+					seenUrls.add(result.url);
+					allSimilarLinks.push(result);
+				}
+			}
+		}
+
+		// Sort by relevance (you could implement scoring here)
+		// For now, just limit to top 10
+		return allSimilarLinks.slice(0, 10);
+
 	} catch (error) {
 		console.error("❌ Error searching similar websites:", error);
-
 		return [];
 	}
 }
@@ -1799,19 +2347,28 @@ function updateConnections() {
 }
 
 function explodeNode(clusterNode) {
-	if (explodedNode.value) {
+	if (explodedNode.value && explodedNode.value.id !== clusterNode.id) {
 		collapseNode();
+		setTimeout(() => {
+			performExplosion(clusterNode);
+		}, 100);
+	} else if (explodedNode.value && explodedNode.value.id === clusterNode.id) {
+		collapseNode();
+	} else {
+		performExplosion(clusterNode);
 	}
+}
 
+function performExplosion(clusterNode) {
 	explodedNode.value = clusterNode;
 	const centerX = clusterNode.x;
 	const centerY = clusterNode.y;
 
+	// Lock cluster position ONLY
 	clusterNode.fx = centerX;
 	clusterNode.fy = centerY;
 
-	const radius = 50;
-
+	const radius = 80;
 	websiteNodes = [];
 	const totalNodes = clusterNode.websites.length + 1;
 	const angleStep = (2 * Math.PI) / totalNodes;
@@ -1829,11 +2386,12 @@ function explodeNode(clusterNode) {
 			baseSize: 10,
 			type: "website",
 			parentCluster: clusterNode.id,
-			x: centerX,
+			x: centerX, // Start at center
 			y: centerY,
-			targetX: centerX + Math.cos(angle) * radius,
-			targetY: centerY + Math.sin(angle) * radius,
-			animationDelay: 0,
+			vx: 0, // ADD: reset velocity
+			vy: 0, // ADD: reset velocity
+			fx: centerX + Math.cos(angle) * radius,
+			fy: centerY + Math.sin(angle) * radius,
 		};
 		websiteNodes.push(websiteNode);
 		graphData.nodes.push(websiteNode);
@@ -1855,9 +2413,10 @@ function explodeNode(clusterNode) {
 		parentCluster: clusterNode.id,
 		x: centerX,
 		y: centerY,
-		targetX: centerX + Math.cos(discoverAngle) * radius,
-		targetY: centerY + Math.sin(discoverAngle) * radius,
-		animationDelay: 0,
+		vx: 0, // ADD: reset velocity
+		vy: 0, // ADD: reset velocity
+		fx: centerX + Math.cos(discoverAngle) * radius,
+		fy: centerY + Math.sin(discoverAngle) * radius,
 	};
 	websiteNodes.push(discoverNode);
 	graphData.nodes.push(discoverNode);
@@ -1870,19 +2429,11 @@ function explodeNode(clusterNode) {
 
 	simulation.nodes(graphData.nodes);
 	simulation.force("link").links(graphData.links);
+	simulation.alpha(0.3).restart();
 
 	renderGraph();
 
-	websiteNodes.forEach((node) => {
-		const d3Node = graphData.nodes.find((n) => n.id === node.id);
-		if (d3Node) {
-			d3Node.fx = node.targetX;
-			d3Node.fy = node.targetY;
-		}
-	});
-
-	simulation.alpha(0.1).restart();
-
+	// Release positions after animation
 	setTimeout(() => {
 		websiteNodes.forEach((node) => {
 			const d3Node = graphData.nodes.find((n) => n.id === node.id);
@@ -1891,11 +2442,11 @@ function explodeNode(clusterNode) {
 				d3Node.fy = null;
 			}
 		});
-
 		clusterNode.fx = null;
 		clusterNode.fy = null;
-	}, 300);
+	}, 500);
 }
+
 
 function collapseNode() {
 	if (!explodedNode.value) return;
@@ -1903,45 +2454,32 @@ function collapseNode() {
 	const centerX = explodedNode.value.x;
 	const centerY = explodedNode.value.y;
 
-	explodedNode.value.fx = centerX;
-	explodedNode.value.fy = centerY;
+	// Immediately remove nodes and links (no animation needed for switch)
+	graphData.nodes = graphData.nodes.filter(
+		(node) => node.type !== "website" && node.type !== "discover"
+	);
 
-	websiteNodes.forEach((node) => {
-		const d3Node = graphData.nodes.find((n) => n.id === node.id);
-		if (d3Node) {
-			d3Node.fx = centerX;
-			d3Node.fy = centerY;
-		}
-	});
+	graphData.links = graphData.links.filter(
+		(link) => link.type !== "website-link" && link.type !== "discover-link"
+	);
 
-	simulation.alpha(0.1).restart();
+	// Release the exploded cluster's fixed position
+	if (explodedNode.value) {
+		explodedNode.value.fx = null;
+		explodedNode.value.fy = null;
+	}
 
-	setTimeout(() => {
-		graphData.nodes = graphData.nodes.filter(
-			(node) => node.type !== "website" && node.type !== "discover"
-		);
+	websiteNodes = [];
+	explodedNode.value = null;
+	selectedWebsite.value = null;
 
-		graphData.links = graphData.links.filter(
-			(link) => link.type !== "website-link" && link.type !== "discover-link"
-		);
+	// Update simulation
+	simulation.nodes(graphData.nodes);
+	simulation.force("link").links(graphData.links);
 
-		websiteNodes = [];
-
-		if (explodedNode.value) {
-			explodedNode.value.fx = null;
-			explodedNode.value.fy = null;
-		}
-
-		explodedNode.value = null;
-		selectedWebsite.value = null;
-
-		simulation.nodes(graphData.nodes);
-		simulation.force("link").links(graphData.links);
-		simulation.alpha(0.5).restart();
-
-		renderGraph();
-	}, 300);
+	renderGraph();
 }
+
 
 async function handleDiscoverClick() {
 	if (!explodedNode.value) return;
@@ -1994,7 +2532,8 @@ async function initializeGraph() {
 		.select(graphContainer.value)
 		.append("svg")
 		.attr("width", width)
-		.attr("height", height);
+		.attr("height", height)
+		.style("overflow", "visible");
 
 	container = svg.append("g");
 
@@ -2018,36 +2557,45 @@ async function initializeGraph() {
 				.strength(0.03)
 		)
 		.force("charge", d3.forceManyBody().strength(-200))
-		.force("center", d3.forceCenter(0, 0))
+		.force("center", d3.forceCenter(width / 2, height / 2))
 		.force(
 			"collision",
 			d3.forceCollide().radius((d) => d.size * settings.nodeSize + 15)
 		)
-		.force("x", d3.forceX().strength(0.02))
-		.force("y", d3.forceY().strength(0.02));
+		.force("x", d3.forceX(width / 2).strength(0.02))
+		.force("y", d3.forceY(height / 2).strength(0.02));
 
 	renderGraph();
 
 	setTimeout(() => {
-		const bounds = container.node().getBBox();
-		if (bounds.width > 0 && bounds.height > 0) {
-			const fullWidth = bounds.width;
-			const fullHeight = bounds.height;
-			const midX = bounds.x + fullWidth / 2;
-			const midY = bounds.y + fullHeight / 2;
+		centerView();
+	}, 1000);
+}
 
-			const scale = Math.min(width / fullWidth, height / fullHeight) * 0.8;
-			const translate = [width / 2 - scale * midX, height / 2 - scale * midY];
+function centerView() {
+	if (!svg || !container || !graphContainer.value) return;
 
-			svg
-				.transition()
-				.duration(2000)
-				.call(
-					zoom.transform,
-					d3.zoomIdentity.translate(translate[0], translate[1]).scale(scale)
-				);
-		}
-	}, 500);
+	const width = graphContainer.value.clientWidth;
+	const height = graphContainer.value.clientHeight;
+	const bounds = container.node().getBBox();
+
+	if (bounds.width > 0 && bounds.height > 0) {
+		const fullWidth = bounds.width;
+		const fullHeight = bounds.height;
+		const midX = bounds.x + fullWidth / 2;
+		const midY = bounds.y + fullHeight / 2;
+
+		const scale = Math.min(width / fullWidth, height / fullHeight) * 0.7;
+		const translate = [width / 2 - scale * midX, height / 2 - scale * midY];
+
+		svg
+			.transition()
+			.duration(1500)
+			.call(
+				zoom.transform,
+				d3.zoomIdentity.translate(translate[0], translate[1]).scale(scale)
+			);
+	}
 }
 
 function renderGraph() {
@@ -2089,22 +2637,14 @@ function renderGraph() {
 		.attr("data-id", (d) => d.id)
 		.attr("r", (d) => d.size * settings.nodeSize)
 		.attr("fill", (d) => {
-			if (d.type === "discover") {
-				return "#4A90E2";
-			}
-			if (d.type === "website") {
-				return isDarkMode.value ? "#374151" : "#f4f4f4";
-			}
-			return isDarkMode.value ? "#374151" : "#f4f4f4";
+			if (d.type === "discover") return currentTheme.value.colors.primary;
+			if (d.type === "website") return currentTheme.value.colors.node;
+			return currentTheme.value.colors.node;
 		})
 		.attr("stroke", (d) => {
-			if (d.type === "discover") {
-				return "#357ABD";
-			}
-			if (d.type === "website") {
-				return isDarkMode.value ? "#4b5563" : "#d1d5db";
-			}
-			return isDarkMode.value ? "#4b5563" : "#d1d5db";
+			if (d.type === "discover") return currentTheme.value.colors.secondary;
+			if (d.type === "website") return currentTheme.value.colors.nodeStroke;
+			return currentTheme.value.colors.nodeStroke;
 		})
 		.attr("stroke-width", 2)
 		.call(drag(simulation));
@@ -2127,7 +2667,7 @@ function renderGraph() {
 		})
 		.style("fill", (d) => {
 			if (d.type === "discover") return "#ffffff";
-			return isDarkMode.value ? "#ffffff" : "#000000";
+			return currentTheme.value.colors.text;
 		})
 		.style("font-weight", (d) => (d.type === "discover" ? "400" : "500"))
 		.style('text-anchor', 'middle');
@@ -2148,10 +2688,10 @@ function renderGraph() {
 		nodes.attr("cx", (d) => d.x).attr("cy", (d) => d.y);
 
 		labels
-			.attr("x", (d) => d.x)
-			.attr("y", (d) => {
-				if (d.type === "website" || d.type === "discover") return d.y + 4;
-				return d.y + d.size * settings.nodeSize + 18;
+			.attr('x', d => d.x)
+			.attr('y', d => {
+				// All node types should have text below
+				return d.y + (d.size * settings.nodeSize) + 18;
 			});
 	});
 }
@@ -2233,6 +2773,7 @@ async function handleNodeClick(event, d) {
 async function showWebsiteDetails(event, websiteNode) {
 	selectedWebsite.value = websiteNode;
 	websiteDetails.value = null;
+	console.log("Showing details for website:", websiteNode);
 
 	const containerRect = graphContainer.value.getBoundingClientRect();
 	const nodeScreenX = event.pageX - containerRect.left;
@@ -2399,8 +2940,16 @@ function toggleRemoveSelection(websiteId) {
 	}
 }
 
-async function confirmRemoveWebsites() {
+async function confirmRemoveWebsites(deleteEntirely = false) {
 	if (!contextCluster.value || selectedWebsitesToRemove.value.length === 0) return;
+
+	const action = deleteEntirely ? 'delete' : 'remove';
+	const confirmed = confirm(
+		`Are you sure you want to ${action} ${selectedWebsitesToRemove.value.length} website(s)? ${deleteEntirely ? 'This will permanently delete them.' : 'They will be removed from this cluster only.'
+		}`
+	);
+
+	if (!confirmed) return;
 
 	try {
 		const clusterId = contextCluster.value.id;
@@ -2409,7 +2958,25 @@ async function confirmRemoveWebsites() {
 			const index = clusters.value[clusterId].websites.indexOf(websiteId);
 			if (index > -1) {
 				clusters.value[clusterId].websites.splice(index, 1);
-				delete websites.value[websiteId].cluster_id;
+			}
+
+			if (deleteEntirely) {
+				// Delete website entirely from all clusters and embeddings
+				delete websites.value[websiteId];
+				delete embeddings.value[websiteId];
+
+				// Remove from other clusters too
+				for (const cluster of Object.values(clusters.value)) {
+					const idx = cluster.websites.indexOf(websiteId);
+					if (idx > -1) {
+						cluster.websites.splice(idx, 1);
+					}
+				}
+			} else {
+				// Just remove cluster reference
+				if (websites.value[websiteId]) {
+					delete websites.value[websiteId].cluster_id;
+				}
 			}
 		}
 
@@ -2487,8 +3054,8 @@ function highlightConnections(node) {
 		.style('opacity', d =>
 			d.id === node.id || connectedNodeIds.has(d.id) ? 1 : 0.4
 		)
-		.attr('stroke', d =>
-			d.id === node.id || connectedNodeIds.has(d.id) ? '#4A90E2' : null
+		.attr("stroke", d =>
+			d.id === node.id || connectedNodeIds.has(d.id) ? currentTheme.value.colors.primary : null
 		)
 		.attr('stroke-width', d =>
 			d.id === node.id || connectedNodeIds.has(d.id) ? 3 : 2
@@ -2532,10 +3099,10 @@ function clearHighlights() {
 	// Always clear connection highlights
 	container.select('.nodes')
 		.selectAll('.node')
-		.attr('stroke', d => {
-			if (d.type === 'discover') return '#357ABD';
-			if (d.type === 'website') return isDarkMode.value ? '#4b5563' : '#d1d5db';
-			return isDarkMode.value ? '#4b5563' : '#d1d5db';
+		.attr("stroke", d => {
+			if (d.type === 'discover') return currentTheme.value.colors.secondary;
+			if (d.type === 'website') return currentTheme.value.colors.nodeStroke;
+			return currentTheme.value.colors.nodeStroke;
 		})
 		.attr('stroke-width', 2);
 
@@ -2545,10 +3112,10 @@ function clearHighlights() {
 			if (d.type === 'website-link' || d.type === 'discover-link') return 0.6;
 			return showConnections.value ? 0.4 : 0;
 		})
-		.style('stroke', d => {
-			if (d.type === 'discover-link') return '#95a5a6';
-			if (d.type === 'website-link') return '#adb5bd';
-			return '#adb5bd';
+		.style("stroke", d => {
+			if (d.type === 'discover-link') return currentTheme.value.colors.nodeStroke;
+			if (d.type === 'website-link') return currentTheme.value.colors.nodeStroke;
+			return currentTheme.value.colors.nodeStroke;
 		})
 		.style('stroke-width', d => {
 			if (d.type === 'website-link' || d.type === 'discover-link') return 1.5;
@@ -2567,39 +3134,29 @@ function closeSettings() {
 	showSettings.value = false;
 }
 
+function loadDarkModePreference() {
+	const saved = localStorage.getItem('darkMode');
+	if (saved !== null) {
+		isDarkMode.value = saved === 'true';
+		updateTheme();
+	}
+}
+
 function toggleDarkMode() {
-	isDarkMode.value = !isDarkMode.value;
-	updateTheme();
+	// Find the opposite theme (light <-> dark)
+	const newTheme = currentTheme.value.isDark
+		? themes.find(t => t.id === 'default-light')
+		: themes.find(t => t.id === 'default-dark');
+
+	if (newTheme) {
+		applyTheme(newTheme);
+	}
 }
 
 function updateTheme() {
-	if (!container) return;
+	if (!currentTheme.value || !container) return;
 
-	container
-		.select(".nodes")
-		.selectAll(".node")
-		.transition()
-		.duration(300)
-		.attr("fill", (d) => {
-			if (d.type === "discover") return "#4A90E2";
-			if (d.type === "website") return isDarkMode.value ? "#374151" : "#f4f4f4";
-			return isDarkMode.value ? "#374151" : "#f4f4f4";
-		})
-		.attr("stroke", (d) => {
-			if (d.type === "discover") return "#357ABD";
-			if (d.type === "website") return isDarkMode.value ? "#4b5563" : "#d1d5db";
-			return isDarkMode.value ? "#4b5563" : "#d1d5db";
-		});
-
-	container
-		.select(".labels")
-		.selectAll(".node-label")
-		.transition()
-		.duration(300)
-		.style("fill", (d) => {
-			if (d.type === "discover") return "#ffffff";
-			return isDarkMode.value ? "#ffffff" : "#000000";
-		});
+	applyThemeColors(currentTheme.value);
 }
 
 function updateNodeSizes() {
@@ -2641,26 +3198,7 @@ function resetSettings() {
 }
 
 function resetView() {
-	const width = graphContainer.value.clientWidth;
-	const height = graphContainer.value.clientHeight;
-	const bounds = container.node().getBBox();
-
-	if (bounds.width > 0 && bounds.height > 0) {
-		const fullWidth = bounds.width;
-		const fullHeight = bounds.height;
-		const midX = bounds.x + fullWidth / 2;
-		const midY = bounds.y + fullHeight / 2;
-		const scale = Math.min(width / fullWidth, height / fullHeight) * 0.8;
-		const translate = [width / 2 - scale * midX, height / 2 - scale * midY];
-
-		svg
-			.transition()
-			.duration(1000 / settings.animationSpeed)
-			.call(
-				zoom.transform,
-				d3.zoomIdentity.translate(translate[0], translate[1]).scale(scale)
-			);
-	}
+	centerView();
 }
 
 function toggleConnections() {
@@ -2730,7 +3268,6 @@ function normalizeTopicTerm(term) {
 	return normalized;
 }
 
-// Check if topics match (from backend)
 function topicsMatch(topic1, topic2) {
 	if (!topic1 || !topic2) return false;
 
@@ -2826,7 +3363,7 @@ Summary:`
 			summarizationModel.chat.completions.create({
 				messages: [{
 					role: "user",
-					content: `What is the main topic of this page in ONLY 1-2 words?
+					content: `Generate the main topic of this page using ONLY one or two words
 
 TITLE: ${metadata.title}
 SUMMARY: ${summary}
@@ -2922,14 +3459,11 @@ function findSimilarWebsites(targetEmbedding, excludeId = null, albumId = null) 
 	return similarities.sort((a, b) => b.similarity - a.similarity);
 }
 
-// Assign to cluster
 function assignToCluster(websiteId, topic, embedding, searchQuery, albumId = null) {
 	const normalizedTopic = normalizeTopicTerm(topic);
 
-	// Find similar websites
 	const similarWebsites = findSimilarWebsites(embedding, websiteId, albumId);
 
-	// Try to assign to existing cluster IN THIS ALBUM
 	for (const { websiteId: similarId, similarity } of similarWebsites) {
 		for (const [clusterId, cluster] of Object.entries(clusters.value)) {
 			if (cluster.album_id !== albumId) continue;
@@ -2937,7 +3471,6 @@ function assignToCluster(websiteId, topic, embedding, searchQuery, albumId = nul
 			if (cluster.websites.includes(similarId)) {
 				const clusterTopic = cluster.topic;
 
-				// High similarity
 				if (similarity >= SIMILARITY_THRESHOLD) {
 					if (!cluster.websites.includes(websiteId)) {
 						cluster.websites.push(websiteId);
@@ -2947,7 +3480,6 @@ function assignToCluster(websiteId, topic, embedding, searchQuery, albumId = nul
 					return clusterId;
 				}
 
-				// Loose similarity + topic match
 				if (
 					similarity >= LOOSE_SIMILARITY_THRESHOLD &&
 					topicsMatch(topic, clusterTopic)
@@ -2962,7 +3494,6 @@ function assignToCluster(websiteId, topic, embedding, searchQuery, albumId = nul
 		}
 	}
 
-	// Create new cluster
 	const newClusterId = generateId();
 	clusters.value[newClusterId] = {
 		id: newClusterId,
@@ -3028,6 +3559,10 @@ async function processWebsite(data) {
 		// Assign to cluster
 		const clusterId = assignToCluster(websiteId, topic, embedding, query, data.album);
 		websites.value[websiteId].cluster_id = clusterId;
+
+		addSimilarLinksToCluster(clusterId).catch(err =>
+			console.error("Error adding similar links:", err)
+		);
 
 		// Save to IndexedDB
 		await saveToIndexedDB();
@@ -3361,23 +3896,23 @@ onMounted(async () => {
 
 		platform.value = detectPlatform();
 
-		console.log("🚀 Component mounted, initializing graph...");
-		initializeGraph();
-		window.addEventListener("resize", handleResize);
+		console.log("🚀 Component mounted, initializing...");
 
 		await initDB();
+		loadThemePreference();
 		console.log("✅ IndexedDB ready");
 
 		await loadFromIndexedDB();
 
-		await loadModels();
+		initializeGraph();
+		window.addEventListener("resize", handleResize);
 
-		await loadData();
-		renderGraph();
-
-		// Set up message listener
 		messageListener = setupMessageListener();
 		console.log("✅ Message listener ready");
+
+		loadModels().catch(err => {
+			console.error("Model loading failed (non-fatal):", err);
+		});
 	} catch (err) {
 		error.value = `Initialization failed: ${err.message || err}`;
 		console.error("❌ Init error:", err);
