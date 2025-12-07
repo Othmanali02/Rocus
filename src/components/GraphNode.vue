@@ -363,6 +363,45 @@
 								:class="{ 'translate-x-6': showConnections }"></div>
 						</button>
 					</div>
+
+					<!-- In Settings Modal, add after Show Connections -->
+					<div class="h-px" :style="{ backgroundColor: currentTheme.colors.border }"></div>
+
+					<div class="space-y-4 pt-4">
+						<div class="font-medium" :style="{ color: currentTheme.colors.text }">
+							Data Management
+						</div>
+
+						<button @click="exportAllData"
+							class="w-full px-4 py-3 rounded-xl font-medium transition-all flex items-center justify-center gap-2"
+							:style="{
+								backgroundColor: currentTheme.colors.background,
+								color: currentTheme.colors.text,
+								border: `1px solid ${currentTheme.colors.border}`
+							}">
+							<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+									d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+							</svg>
+							Export All Data
+						</button>
+
+						<button @click="triggerImport"
+							class="w-full px-4 py-3 rounded-xl font-medium transition-all flex items-center justify-center gap-2"
+							:style="{
+								backgroundColor: currentTheme.colors.background,
+								color: currentTheme.colors.text,
+								border: `1px solid ${currentTheme.colors.border}`
+							}">
+							<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+									d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+							</svg>
+							Import Data
+						</button>
+						<input ref="importFileInput" type="file" accept=".rocus" style="display: none"
+							@change="handleImport" />
+					</div>
 				</div>
 
 				<button @click="resetSettings" class="w-full mt-8 px-6 py-3 rounded-xl font-medium transition-all"
@@ -459,6 +498,7 @@
 						d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
 				</svg>
 			</button>
+
 			<button v-if="explodedNode" @click="collapseNode"
 				class="p-4 bg-[#4A90E2] text-white rounded-2xl shadow-lg hover:shadow-xl hover:bg-[#357ABD] transition-all">
 				<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -849,6 +889,212 @@
 		}">
 			Mouse wheel to zoom • Click and drag to pan • Click clusters to explode
 		</div>
+
+		<button @click="showVersionHistory = true"
+			class="fixed bottom-8 right-24 z-[1000] px-3 py-2 rounded-lg text-xs font-mono transition-all" :style="{
+				backgroundColor: currentTheme.colors.surface,
+				color: currentTheme.colors.textSecondary,
+				border: `1px solid ${currentTheme.colors.border}`
+			}">
+			v1.0.0
+		</button>
+
+		<button @click="startTutorial" class="fixed top-6 left-10 z-[1000] p-2.5 rounded-xl opacity-30 transition-all"
+			:style="{
+				backgroundColor: currentTheme.colors.surface,
+				border: `1px solid ${currentTheme.colors.border}`
+			}">
+			<svg class="w-5 h-5" :style="{ color: currentTheme.colors.textSecondary }" fill="none" stroke="currentColor"
+				viewBox="0 0 24 24">
+				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+					d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+			</svg>
+		</button>
+
+		<div v-if="tutorialActive" class="fixed inset-0 z-[3000]">
+			<svg class="absolute inset-0 w-full h-full pointer-events-none">
+				<defs>
+					<mask id="tutorial-mask">
+						<rect x="0" y="0" width="100%" height="100%" fill="white" />
+						<rect v-if="tutorialHighlightRect.width" :x="tutorialHighlightRect.left - 8"
+							:y="tutorialHighlightRect.top - 8" :width="tutorialHighlightRect.width + 16"
+							:height="tutorialHighlightRect.height + 16" rx="12" fill="black" />
+					</mask>
+				</defs>
+				<rect x="0" y="0" width="100%" height="100%" fill="black" :opacity="0.85" mask="url(#tutorial-mask)" />
+			</svg>
+
+			<div v-if="tutorialHighlightRect.width"
+				class="absolute pointer-events-none transition-all duration-500 animate-pulse" :style="{
+					top: `${tutorialHighlightRect.top - 8}px`,
+					left: `${tutorialHighlightRect.left - 8}px`,
+					width: `${tutorialHighlightRect.width + 16}px`,
+					height: `${tutorialHighlightRect.height + 16}px`,
+					border: `3px solid ${currentTheme.colors.primary}`,
+					borderRadius: '12px',
+					boxShadow: `0 0 0 4px ${currentTheme.colors.primary}40, 0 0 20px ${currentTheme.colors.primary}`
+				}">
+			</div>
+
+			<!-- Tutorial Content Card -->
+			<div class="absolute bottom-8 left-1/2 transform -translate-x-1/2 z-10"
+				:class="{ 'top-1/2 -translate-y-1/2 bottom-auto': !tutorialSteps[tutorialStep]?.highlight }">
+				<div class="rounded-3xl p-6 max-w-xl w-[90vw] shadow-2xl animate-scaleIn" :style="{
+					backgroundColor: currentTheme.colors.surface,
+					border: `2px solid ${currentTheme.colors.primary}`
+				}">
+
+					<!-- Progress Bar -->
+					<div class="mb-4">
+						<div class="flex justify-between mb-2">
+							<span class="text-xs font-semibold" :style="{ color: currentTheme.colors.textSecondary }">
+								Step {{ tutorialStep + 1 }} of {{ tutorialSteps.length }}
+							</span>
+							<span class="text-xs font-semibold" :style="{ color: currentTheme.colors.primary }">
+								{{ Math.round(((tutorialStep + 1) / tutorialSteps.length) * 100) }}%
+							</span>
+						</div>
+						<div class="h-1.5 rounded-full overflow-hidden"
+							:style="{ backgroundColor: currentTheme.colors.border }">
+							<div class="h-full rounded-full transition-all duration-500" :style="{
+								width: `${((tutorialStep + 1) / tutorialSteps.length) * 100}%`,
+								backgroundColor: currentTheme.colors.primary
+							}">
+							</div>
+						</div>
+					</div>
+
+					<!-- Step Title -->
+					<h3 class="text-xl font-bold mb-3" :style="{ color: currentTheme.colors.text }">
+						{{ tutorialSteps[tutorialStep]?.title }}
+					</h3>
+
+					<!-- Step Description -->
+					<p class="mb-6 leading-relaxed text-sm" :style="{ color: currentTheme.colors.textSecondary }">
+						{{ tutorialSteps[tutorialStep]?.description }}
+					</p>
+
+					<!-- Navigation Buttons -->
+					<div class="flex gap-3">
+						<button v-if="tutorialStep > 0" @click="previousTutorialStep"
+							class="flex-1 px-4 py-2.5 rounded-xl font-medium transition-all text-sm" :style="{
+								backgroundColor: currentTheme.colors.background,
+								color: currentTheme.colors.textSecondary
+							}">
+							Previous
+						</button>
+						<button @click="nextTutorialStep"
+							class="flex-1 px-4 py-2.5 rounded-xl font-medium transition-all text-sm" :style="{
+								backgroundColor: currentTheme.colors.primary,
+								color: '#fff'
+							}">
+							{{ tutorialStep === tutorialSteps.length - 1 ? 'Finish' : 'Next' }}
+						</button>
+					</div>
+
+					<!-- Skip Button -->
+					<button @click="skipTutorial" class="w-full mt-3 text-xs transition-all hover:opacity-70"
+						:style="{ color: currentTheme.colors.textSecondary }">
+						Skip Tutorial
+					</button>
+				</div>
+			</div>
+		</div>
+
+		<div v-if="showVersionHistory" @click="showVersionHistory = false"
+			class="fixed inset-0 bg-black/50 backdrop-blur-sm z-[2000] flex items-center justify-center p-4 animate-fadeIn">
+			<div @click.stop
+				class="border rounded-3xl p-8 w-full max-w-2xl shadow-2xl animate-scaleIn max-h-[80vh] overflow-y-auto"
+				:style="{
+					backgroundColor: currentTheme.colors.surface,
+					borderColor: currentTheme.colors.border
+				}">
+
+				<div class="flex justify-between items-center mb-6">
+					<div>
+						<h3 class="text-2xl font-bold" :style="{ color: currentTheme.colors.text }">
+							Version History
+						</h3>
+						<p class="text-sm mt-1" :style="{ color: currentTheme.colors.textSecondary }">
+							Current version: v1.0.0
+						</p>
+					</div>
+					<button @click="showVersionHistory = false" class="p-2 rounded-xl transition-all">
+						<svg class="w-6 h-6" :style="{ color: currentTheme.colors.textSecondary }" fill="none"
+							stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+								d="M6 18L18 6M6 6l12 12" />
+						</svg>
+					</button>
+				</div>
+
+				<div class="space-y-6">
+					<div v-for="version in versionHistory" :key="version.version" class="p-4 rounded-xl transition-all"
+						:style="{
+							backgroundColor: currentTheme.colors.background,
+							borderLeft: `4px solid ${currentTheme.colors.primary}`
+						}">
+						<div class="flex items-start justify-between mb-3">
+							<div>
+								<h4 class="text-lg font-bold" :style="{ color: currentTheme.colors.text }">
+									{{ version.version }}
+								</h4>
+								<p class="text-xs" :style="{ color: currentTheme.colors.textSecondary }">
+									{{ version.date }}
+								</p>
+							</div>
+							<span class="px-3 py-1 rounded-full text-xs font-semibold" :style="{
+								backgroundColor: version.current ? currentTheme.colors.primary : currentTheme.colors.border,
+								color: version.current ? '#fff' : currentTheme.colors.textSecondary
+							}">
+								{{ version.current ? 'Current' : 'Previous' }}
+							</span>
+						</div>
+
+						<div v-if="version.features.length" class="mb-3">
+							<p class="text-sm font-semibold mb-2" :style="{ color: currentTheme.colors.text }">
+								Features
+							</p>
+							<ul class="space-y-1">
+								<li v-for="feature in version.features" :key="feature"
+									class="text-sm flex items-start gap-2"
+									:style="{ color: currentTheme.colors.textSecondary }">
+									<span class="text-green-500">•</span>
+									<span>{{ feature }}</span>
+								</li>
+							</ul>
+						</div>
+
+						<div v-if="version.improvements.length" class="mb-3">
+							<p class="text-sm font-semibold mb-2" :style="{ color: currentTheme.colors.text }">
+								Improvements
+							</p>
+							<ul class="space-y-1">
+								<li v-for="improvement in version.improvements" :key="improvement"
+									class="text-sm flex items-start gap-2"
+									:style="{ color: currentTheme.colors.textSecondary }">
+									<span class="text-blue-500">•</span>
+									<span>{{ improvement }}</span>
+								</li>
+							</ul>
+						</div>
+
+						<div v-if="version.bugFixes.length">
+							<p class="text-sm font-semibold mb-2" :style="{ color: currentTheme.colors.text }">
+								Bug Fixes
+							</p>
+							<ul class="space-y-1">
+								<li v-for="fix in version.bugFixes" :key="fix" class="text-sm flex items-start gap-2"
+									:style="{ color: currentTheme.colors.textSecondary }">
+									<span class="text-red-500">•</span>
+									<span>{{ fix }}</span>
+								</li>
+							</ul>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
 	</div>
 </template>
 
@@ -863,10 +1109,10 @@ import {
 	onUnmounted,
 	computed,
 } from "vue";
-import axios from "axios";
 import * as d3 from "d3";
 import { pipeline, env } from "@xenova/transformers";
 import { CreateMLCEngine } from "@mlc-ai/web-llm";
+
 
 // configuring transformers.js (embeddings)
 env.allowLocalModels = false;
@@ -1206,6 +1452,105 @@ const processingQueue = ref([]);
 const processedCount = ref(0);
 const isProcessing = ref(false);
 
+const importFileInput = ref(null); // file import
+const showVersionHistory = ref(false);
+
+const versionHistory = [
+	{
+		version: 'v1.0.0',
+		date: 'December 7th 2025',
+		current: true,
+		features: [
+			'AI-powered website clustering with local ML models',
+			'Album organization system for managing clusters',
+			'Theme picker with 15+ beautiful themes',
+			'Real-time search and node highlighting',
+			'Context menu for cluster operations (rename, delete, add/remove websites)',
+			'Import/Export functionality for data backup',
+			'Browser extension for quick website saving',
+			'Similar website discovery using Google Search API',
+		],
+		improvements: [
+			'Smooth node explosion/collapse animations',
+			'Persistent dark mode and theme preferences',
+			'Responsive graph layout with auto-centering',
+			'IndexedDB for local data storage',
+			'Album-based cluster isolation',
+		],
+		bugFixes: [
+			'Fixed node positioning on graph edges',
+			'Fixed theme consistency across interactions',
+			'Fixed album update errors with IndexedDB',
+			'Fixed search highlighting state management',
+		]
+	}
+];
+
+const tutorialActive = ref(false);
+const tutorialStep = ref(0);
+const tutorialHighlightRect = ref({ top: 0, left: 0, width: 0, height: 0 });
+const tutorialDemoCluster = ref(null);
+
+
+const tutorialSteps = [
+	{
+		title: 'Welcome to Rocus',
+		description: 'Rocus automatically organizes your saved websites using AI. Let\'s walk through how it works.',
+		highlight: null,
+		action: null
+	},
+	{
+		title: 'AI Models Loading',
+		description: 'Rocus uses local AI models that run in your browser. They download once and work offline. The indicator shows green when models are ready to process websites.',
+		highlight: 'model-status',
+		action: null
+	},
+	{
+		title: 'Browser Extension',
+		description: 'Install the Rocus extension to save websites. Click the extension icon, select an album (or quick save), and Rocus will automatically cluster similar content.',
+		highlight: null,
+		action: null
+	},
+	{
+		title: 'Albums',
+		description: 'Create albums to organize your clusters by topic, project, or any way you like. Click here to switch between albums or view all clusters at once.',
+		highlight: 'albums-dropdown',
+		action: null
+	},
+	{
+		title: 'Understanding Clusters',
+		description: 'Each circle (node) represents a topic of similar websites. Larger nodes contain more websites. The graph shows how different topics relate to each other.',
+		highlight: 'demo-cluster',
+		action: 'showDemoCluster'
+	},
+	{
+		title: 'Exploring Clusters',
+		description: 'Click any cluster to "explode" it and see the individual websites inside. Try clicking the highlighted cluster now!',
+		highlight: 'demo-cluster',
+		action: 'explodeDemoCluster'
+	},
+	{
+		title: 'Customization',
+		description: 'Click the theme button to choose from 15+ beautiful color schemes. Your preferences are saved automatically for next time.',
+		highlight: 'theme-button',
+		action: null
+	},
+	{
+		title: 'Search & Organize',
+		description: 'Use the search bar to find clusters and websites instantly. Right-click any cluster to rename, add websites, remove items, or discover similar content online.',
+		highlight: 'search-bar',
+		action: null
+	},
+	{
+		title: 'You\'re All Set!',
+		description: 'Start saving websites with the extension and watch Rocus organize them automatically. Your intelligent knowledge graph grows with you!',
+		highlight: null,
+		action: 'cleanup'
+	}
+];
+
+
+
 let embeddingModel = null; // transformers.js embedding model (MiniLM)
 let summarizationModel = null; // will point to the Web-LLM engine (chat-style)
 let db = null;
@@ -1219,11 +1564,8 @@ const queueProgress = computed(() => {
 });
 
 
-// Cloudflare worker URL for Google Search API
 const GOOGLE_SEARCH_WORKER_URL = 'https://rocus.othman90hijawi.workers.dev';
 
-
-// Graph information
 
 const graphContainer = ref(null);
 const tooltip = ref(null);
@@ -1286,6 +1628,136 @@ function getIconUrl(iconFileName) {
 		return iconFileName;
 	}
 	return new URL(`./images/${iconFileName}`, import.meta.url).href;
+}
+// Tutorial functions
+function startTutorial() {
+	tutorialActive.value = true;
+	tutorialStep.value = 0;
+	updateTutorialHighlight();
+}
+
+function nextTutorialStep() {
+	if (tutorialStep.value < tutorialSteps.length - 1) {
+		tutorialStep.value++;
+		updateTutorialHighlight();
+		performTutorialAction();
+	} else {
+		finishTutorial();
+	}
+}
+
+function previousTutorialStep() {
+	if (tutorialStep.value > 0) {
+		tutorialStep.value--;
+		updateTutorialHighlight();
+		performTutorialAction();
+	}
+}
+
+function skipTutorial() {
+	// Cleanup demo cluster
+	if (tutorialDemoCluster.value) {
+		collapseNode();
+		tutorialDemoCluster.value = null;
+	}
+	finishTutorial();
+}
+
+function finishTutorial() {
+	// Cleanup demo cluster
+	if (tutorialDemoCluster.value) {
+		collapseNode();
+		tutorialDemoCluster.value = null;
+	}
+
+	tutorialActive.value = false;
+	tutorialStep.value = 0;
+	tutorialHighlightRect.value = { top: 0, left: 0, width: 0, height: 0 };
+	localStorage.setItem('rocus-tutorial-completed', 'true');
+}
+
+function updateTutorialHighlight() {
+	const step = tutorialSteps[tutorialStep.value];
+
+	if (!step.highlight) {
+		tutorialHighlightRect.value = { top: 0, left: 0, width: 0, height: 0 };
+		return;
+	}
+
+	// Small delay to ensure DOM is ready
+	setTimeout(() => {
+		let element;
+
+		switch (step.highlight) {
+			case 'model-status':
+				// Find the model status button (3rd button in header with computer icon)
+				const buttons = document.querySelectorAll('.flex.items-center.gap-3 button');
+				element = buttons[2]; // Model status is 3rd button
+				break;
+
+			case 'albums-dropdown':
+				element = document.querySelector('.flex-1.max-w-2xl .relative button');
+				break;
+
+			case 'demo-cluster':
+				// Highlight a visible cluster node
+				if (tutorialDemoCluster.value) {
+					// Find the actual SVG circle element for the demo cluster
+					const node = container.select('.nodes')
+						.selectAll('.node')
+						.filter(d => d.id === tutorialDemoCluster.value.id)
+						.node();
+					element = node;
+				}
+				break;
+
+			case 'theme-button':
+				// Theme button is 1st button in header
+				const headerButtons = document.querySelectorAll('.flex.items-center.gap-3 button');
+				element = headerButtons[0];
+				break;
+
+			case 'search-bar':
+				element = document.querySelector('.fixed.top-24');
+				break;
+		}
+
+		if (element) {
+			const rect = element.getBoundingClientRect();
+			tutorialHighlightRect.value = {
+				top: rect.top,
+				left: rect.left,
+				width: rect.width,
+				height: rect.height
+			};
+		}
+	}, 100);
+}
+
+function performTutorialAction() {
+	const step = tutorialSteps[tutorialStep.value];
+
+	if (step.action === 'showDemoCluster') {
+		// Find a good cluster to demo
+		if (graphData.nodes.length > 0) {
+			const clusterNodes = graphData.nodes.filter(n => n.type === 'cluster');
+			if (clusterNodes.length > 0) {
+				tutorialDemoCluster.value = clusterNodes[0];
+				updateTutorialHighlight();
+			}
+		}
+	} else if (step.action === 'explodeDemoCluster') {
+		// Explode the demo cluster
+		if (tutorialDemoCluster.value && tutorialDemoCluster.value.websites.length > 0) {
+			explodeNode(tutorialDemoCluster.value);
+		}
+	} else if (step.action === 'cleanup') {
+		// Collapse any exploded node
+		if (tutorialDemoCluster.value) {
+			collapseNode();
+			tutorialDemoCluster.value = null;
+		}
+	}
 }
 
 const showNewDataNotification = ref(false);
@@ -1380,6 +1852,130 @@ function loadThemePreference() {
 	applyThemeColors(themes[0]);
 }
 
+async function exportAllData() {
+	try {
+		// Gather all data
+		const exportData = {
+			version: '1.0.0',
+			exportDate: new Date().toISOString(),
+			albums: Object.values(albums.value),
+			clusters: Object.values(clusters.value),
+			websites: Object.values(websites.value),
+			embeddings: embeddings.value,
+			theme: {
+				id: currentTheme.value.id,
+				isDark: currentTheme.value.isDark
+			}
+		};
+
+		// Convert to JSON
+		const jsonString = JSON.stringify(exportData, null, 2);
+		const blob = new Blob([jsonString], { type: 'application/json' });
+
+		// Create download link
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = `rocus-backup-${new Date().toISOString().split('T')[0]}.rocus`;
+		document.body.appendChild(a);
+		a.click();
+		document.body.removeChild(a);
+		URL.revokeObjectURL(url);
+
+		console.log('✅ Data exported successfully');
+	} catch (error) {
+		console.error('❌ Error exporting data:', error);
+		alert('Failed to export data');
+	}
+}
+
+// Trigger file input
+function triggerImport() {
+	importFileInput.value?.click();
+}
+
+// Import function
+async function handleImport(event) {
+	const file = event.target.files?.[0];
+	if (!file) return;
+
+	const confirmed = confirm(
+		'⚠️ Importing will replace ALL current data. Are you sure?\n\nMake sure you have a backup first!'
+	);
+
+	if (!confirmed) {
+		event.target.value = ''; // Reset input
+		return;
+	}
+
+	try {
+		const text = await file.text();
+		const importData = JSON.parse(text);
+
+		// Validate import data
+		if (!importData.version || !importData.albums || !importData.clusters || !importData.websites) {
+			throw new Error('Invalid Rocus file format');
+		}
+
+		isLoading.value = true;
+
+		// Clear existing data
+		albums.value = {};
+		clusters.value = {};
+		websites.value = {};
+		embeddings.value = {};
+
+		// Import albums
+		for (const album of importData.albums) {
+			albums.value[album.id] = album;
+		}
+
+		// Import clusters
+		for (const cluster of importData.clusters) {
+			clusters.value[cluster.id] = cluster;
+		}
+
+		// Import websites
+		for (const website of importData.websites) {
+			websites.value[website.id] = website;
+		}
+
+		// Import embeddings
+		embeddings.value = importData.embeddings || {};
+
+		// Apply theme if included
+		if (importData.theme) {
+			const theme = themes.find(t => t.id === importData.theme.id);
+			if (theme) {
+				applyTheme(theme);
+			}
+		}
+
+		// Save to IndexedDB
+		await saveToIndexedDB();
+		await loadData();
+
+		if (simulation) {
+			simulation.nodes(graphData.nodes);
+			simulation.force('link').links(graphData.links);
+			simulation.alpha(1).restart();
+			renderGraph();
+		}
+
+		isLoading.value = false;
+		event.target.value = ''; // Reset input
+
+		alert('✅ Data imported successfully!');
+		console.log('✅ Import complete');
+
+	} catch (error) {
+		isLoading.value = false;
+		console.error('❌ Error importing data:', error);
+		alert('Failed to import data: ' + error.message);
+		event.target.value = ''; // Reset input
+	}
+}
+
 const settings = reactive({
 	nodeSize: 1.0,
 	animationSpeed: 1.0,
@@ -1399,12 +1995,6 @@ let websiteNodes = [];
 let isDraggingSticky = false;
 let dragOffsetX = 0;
 let dragOffsetY = 0;
-
-const API_BASE_URL = "http://localhost:5000"; // no longer need the backend
-
-axios.defaults.withCredentials = true; // no longer need cookies
-axios.defaults.baseURL = API_BASE_URL; // no longer need ts
-
 
 const handleKeyDown = (event) => {
 	if (event.key === 'Escape') {
@@ -2148,7 +2738,7 @@ function openExternalLink(url) {
 }
 
 function processApiData(clustersData, similarities) {
-	console.log("Processing API data:", { clustersData, similarities });
+	console.log("Processing Cluster data:", { clustersData, similarities });
 
 	const nodes = clustersData.map((cluster, index) => {
 		const baseSize = Math.max(15, Math.min(40, cluster.website_count * 8 + 15));
@@ -3910,6 +4500,15 @@ onMounted(async () => {
 		messageListener = setupMessageListener();
 		console.log("✅ Message listener ready");
 
+		const tutorialCompleted = localStorage.getItem('rocus-tutorial-completed');
+		if (!tutorialCompleted) {
+			setTimeout(() => {
+				if (graphData.nodes.length > 0) {
+					startTutorial();
+				}
+			}, 3000);
+		}
+
 		loadModels().catch(err => {
 			console.error("Model loading failed (non-fatal):", err);
 		});
@@ -3929,6 +4528,20 @@ onBeforeUnmount(() => {
 onUnmounted(() => {
 	if (messageListener) {
 		window.removeEventListener("message", messageListener);
+	}
+});
+
+watch(tutorialActive, (isActive) => {
+	if (isActive) {
+		const handleResize = () => updateTutorialHighlight();
+		window.addEventListener('resize', handleResize);
+
+		const unwatchActive = watch(tutorialActive, (newValue) => {
+			if (!newValue) {
+				window.removeEventListener('resize', handleResize);
+				unwatchActive();
+			}
+		});
 	}
 });
 </script>
