@@ -725,45 +725,29 @@
 
 				<a :href="selectedWebsite.url" target="_blank" class="cursor-pointer transition-all hover:shadow-md"
 					:class="isDarkMode ? 'border-gray-700 bg-[#212121]' : 'border-gray-300 bg-white'">
-
-					<div v-if="websiteDetails.metadata.image" class="w-full my-4 h-36 mb-2 overflow-hidden rounded-lg">
-
+					<!-- Image -->
+					<div v-if="websiteDetails?.metadata?.image"
+						class="w-full my-4 h-36 mb-2 overflow-hidden rounded-lg">
 						<img :src="websiteDetails.metadata.image" class="w-full h-full object-cover" alt="preview" />
-
 					</div>
-
-
 
 					<!-- Title -->
-
 					<div class="font-semibold text-sm" :class="isDarkMode ? 'text-gray-800' : 'text-gray-700'">
-
-						{{ websiteDetails.metadata.title || selectedWebsite.domain }}
-
+						{{ websiteDetails?.metadata?.title || selectedWebsite.domain }}
 					</div>
-
-
 
 					<!-- Description -->
-
 					<div class="text-xs mt-1 line-clamp-2" :class="isDarkMode ? 'text-gray-700' : 'text-gray-700'">
-
-						{{ websiteDetails.metadata.description || "No description available" }}
-
+						{{ websiteDetails?.metadata?.description || "No description available" }}
 					</div>
-
-
 
 					<!-- Domain -->
-
 					<div class="text-xs mt-2 flex items-center gap-1"
 						:class="isDarkMode ? 'text-gray-400' : 'text-gray-500'">
-
 						🌐 {{ selectedWebsite.domain }}
-
 					</div>
-
 				</a>
+
 
 				<a :href="selectedWebsite.url" target="_blank"
 					class="inline-flex items-center gap-2 px-4 py-2 rounded-xl font-medium transition-all bg-[#212121] hover:bg-black text-white">
