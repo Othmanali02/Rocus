@@ -291,7 +291,3 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - ✅ Open source - audit the code yourself
 
 Your knowledge graph is yours alone.
-
----
-
-**Made with ❤️ using WebGPU and local AI**
