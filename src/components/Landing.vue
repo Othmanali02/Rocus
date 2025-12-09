@@ -48,7 +48,7 @@ const installExtension = () => {
                             class="text-[#1A1A1A] hover:text-[#4A90E2] transition-colors font-medium">Features</a>
                         <a href="#about"
                             class="text-[#1A1A1A] hover:text-[#4A90E2] transition-colors font-medium">About</a>
-                        <a href="https://github.com" target="_blank" rel="noopener noreferrer"
+                        <a href="https://github.com/Othmanali02/Rocus" target="_blank" rel="noopener noreferrer"
                             class="flex items-center space-x-2 text-[#1A1A1A] hover:text-[#4A90E2] transition-colors font-medium">
                             <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
                                 <path
@@ -104,7 +104,7 @@ const installExtension = () => {
                 <div class="px-4 py-3 space-y-3">
                     <a href="#features" class="block py-2 text-[#1A1A1A] hover:text-[#4A90E2] font-medium">Features</a>
                     <a href="#about" class="block py-2 text-[#1A1A1A] hover:text-[#4A90E2] font-medium">About</a>
-                    <a href="https://github.com" target="_blank"
+                    <a href="https://github.com/Othmanali02/Rocus" target="_blank"
                         class="block py-2 text-[#1A1A1A] hover:text-[#4A90E2] font-medium">GitHub</a>
                     <button class="block w-full text-left py-2 text-[#1A1A1A] hover:text-[#4A90E2] font-medium">
                         Donate
@@ -157,7 +157,7 @@ const installExtension = () => {
                                     d="M13 7l5 5m0 0l-5 5m5-5H6" />
                             </svg>
                         </button>
-                        <a href="https://github.com" target="_blank"
+                        <a href="https://github.com/Othmanali02/Rocus" target="_blank"
                             class="px-8 py-4 bg-white text-[#4A90E2] rounded-lg text-lg font-bold hover:bg-gray-50 transition-all border-2 border-[#4A90E2] flex items-center justify-center space-x-2">
                             <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
                                 <path
@@ -415,7 +415,7 @@ const installExtension = () => {
                         <h4 class="font-bold mb-4 text-[#4A90E2]">Community</h4>
                         <ul class="space-y-2 text-[#9A9A9A]">
                             <li>
-                                <a href="https://github.com" target="_blank"
+                                <a href="https://github.com/Othmanali02/Rocus" target="_blank"
                                     class="hover:text-white transition-colors">GitHub</a>
                             </li>
                             <li>
