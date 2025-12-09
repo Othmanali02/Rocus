@@ -1009,7 +1009,7 @@
 				color: currentTheme.colors.textSecondary,
 				border: `1px solid ${currentTheme.colors.border}`
 			}">
-			v1.0.0
+			v1.0.1
 		</button>
 
 		<!-- <button @click="startTutorial"
@@ -1741,7 +1741,7 @@ const versionHistory = [
 	{
 		version: 'v1.0.0',
 		date: 'December 7th 2025',
-		current: true,
+		current: false,
 		features: [
 			'AI-powered website clustering with local ML models',
 			'Album organization system for managing clusters',
