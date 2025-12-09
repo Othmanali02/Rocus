@@ -1164,7 +1164,7 @@ const themeClasses = computed(() => ({
 const themes = [
 	{
 		id: 'default-light',
-		name: 'Default Light',
+		name: 'Rocus Light',
 		description: 'Clean and minimal',
 		isDark: false,
 		preview: ['#f4f4f4', '#4A90E2', '#ffffff', '#e5e7eb'],
@@ -1183,7 +1183,7 @@ const themes = [
 	},
 	{
 		id: 'default-dark',
-		name: 'Default Dark',
+		name: 'Rocus Dark',
 		description: 'Easy on the eyes',
 		isDark: true,
 		preview: ['#212121', '#374151', '#4A90E2', '#1f2937'],
@@ -1198,6 +1198,139 @@ const themes = [
 			text: '#ffffff',
 			textSecondary: '#9ca3af',
 			border: '#374151'
+		}
+	},
+	{
+		id: 'girly-pop',
+		name: 'Girly Pop',
+		description: 'Pink dreams and sparkles',
+		isDark: false,
+		preview: ['#FFE5F1', '#FF69B4', '#FFB6D9', '#FFF0F5'],
+		colors: {
+			background: '#FFF0F5',
+			surface: '#FFE5F1',
+			primary: '#FF69B4',
+			secondary: '#FFB6D9',
+			accent: '#FF1493',
+			node: '#FFE5F1',
+			nodeStroke: '#FFB6D9',
+			text: '#C71585',
+			textSecondary: '#DB7093',
+			border: '#FFB6D9'
+		}
+	},
+	{
+		id: 'popped-out-80s',
+		name: "Popped Out 80's",
+		description: 'Neon nights',
+		isDark: true,
+		preview: ['#1A1A2E', '#FF006E', '#00F5FF', '#FFBE0B'],
+		colors: {
+			background: '#1A1A2E',
+			surface: '#16213E',
+			primary: '#FF006E',
+			secondary: '#00F5FF',
+			accent: '#FFBE0B',
+			node: '#0F3460',
+			nodeStroke: '#533483',
+			text: '#FF006E',
+			textSecondary: '#00F5FF',
+			border: '#533483'
+		}
+	},
+	{
+		id: 'pink-lemonade',
+		name: 'Pink Lemonade',
+		description: 'Sweet and tangy',
+		isDark: false,
+		preview: ['#FFF8E7', '#FF6B9D', '#FFC6D9', '#FFFACD'],
+		colors: {
+			background: '#FFF8E7',
+			surface: '#FFFACD',
+			primary: '#FF6B9D',
+			secondary: '#FFC6D9',
+			accent: '#FFB347',
+			node: '#FFF0F5',
+			nodeStroke: '#FFB6C1',
+			text: '#D63384',
+			textSecondary: '#FF69B4',
+			border: '#FFB6C1'
+		}
+	},
+	{
+		id: 'taro-bubble-tea',
+		name: 'Taro Bubble Tea',
+		description: 'Creamy purple goodness',
+		isDark: false,
+		preview: ['#F5F0FF', '#9B7EBD', '#C8B6E2', '#E5D4FF'],
+		colors: {
+			background: '#F5F0FF',
+			surface: '#E5D4FF',
+			primary: '#9B7EBD',
+			secondary: '#C8B6E2',
+			accent: '#7C5295',
+			node: '#E5D4FF',
+			nodeStroke: '#C8B6E2',
+			text: '#5A3E7B',
+			textSecondary: '#8B6EA8',
+			border: '#C8B6E2'
+		}
+	},
+	{
+		id: 'base-model-white-f150',
+		name: 'Base Model White 2008 4.6L F150 Supercrew',
+		description: 'Lé Truck',
+		isDark: false,
+		preview: ['#F8F9FA', '#003478', '#FFFFFF', '#C0C0C0'],
+		colors: {
+			background: '#F8F9FA',
+			surface: '#FFFFFF',
+			primary: '#003478',
+			secondary: '#0066CC',
+			accent: '#C0C0C0',
+			node: '#FFFFFF',
+			nodeStroke: '#D3D3D3',
+			text: '#2C3E50',
+			textSecondary: '#5A6C7D',
+			border: '#BDBDBD'
+		}
+	},
+	{
+		id: 'nyc',
+		name: 'NYC',
+		description: 'Empire State of mind',
+		isDark: true,
+		preview: ['#1C1C1E', '#FFD700', '#B8860B', '#2F2F2F'],
+		colors: {
+			background: '#1C1C1E',
+			surface: '#2F2F2F',
+			primary: '#FFD700',
+			secondary: '#FFA500',
+			accent: '#B8860B',
+			node: '#3A3A3C',
+			nodeStroke: '#48484A',
+			text: '#FFD700',
+			textSecondary: '#C0C0C0',
+			border: '#48484A'
+		}
+	},
+	{
+		id: 'downtown-ramallah-night',
+		name: 'Downtown Ramallah at Night',
+		description: 'Warm vintage moonlight',
+		isDark: true,
+		preview: ['#1A1511', '#E8C547', '#D4A574', '#2C2416'],
+		colors: {
+			background: '#1A1511',
+			surface: '#2C2416',
+			primary: '#E8C547',
+			secondary: '#D4A574',
+			accent: '#F4A460',
+			node: '#3D3020',
+			nodeStroke: '#5C4B2A',
+			text: '#E8C547',
+			textSecondary: '#C9A961',
+			border: '#5C4B2A'
 		}
 	},
 	{
