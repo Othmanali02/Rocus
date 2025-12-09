@@ -550,6 +550,26 @@
 				<span class="text-sm font-medium">Remove Websites</span>
 			</button>
 
+			<button @click="showAddConnectionModal" class="w-full flex items-center gap-3 px-4 py-3 transition-colors"
+				:style="{ color: currentTheme.colors.text }">
+				<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+						d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+				</svg>
+				<span class="text-sm font-medium">Add Connection</span>
+			</button>
+
+			<button @click="showRemoveConnectionModal"
+				class="w-full flex items-center gap-3 px-4 py-3 transition-colors"
+				:style="{ color: currentTheme.colors.text }">
+				<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+						d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+					<line x1="4" y1="4" x2="20" y2="20" stroke="currentColor" stroke-width="2" />
+				</svg>
+				<span class="text-sm font-medium">Remove Connection</span>
+			</button>
+
 			<div class="h-px mx-2" :style="{ backgroundColor: currentTheme.colors.border }"></div>
 
 			<button @click="deleteCluster"
@@ -685,6 +705,115 @@
 					<button @click="confirmRemoveWebsites(true)"
 						class="flex-1 px-6 py-3 bg-red-600 text-white rounded-xl font-medium hover:bg-red-700 transition-all">
 						Delete Entirely
+					</button>
+				</div>
+			</div>
+		</div>
+
+		<div v-if="showAddConnection" @click="closeAddConnectionModal"
+			class="fixed inset-0 bg-black/50 backdrop-blur-sm z-[2000] flex items-center justify-center p-4 animate-fadeIn">
+			<div @click.stop
+				class="rounded-3xl p-8 w-full max-w-2xl shadow-2xl animate-scaleIn border max-h-[80vh] overflow-y-auto"
+				:style="{
+					backgroundColor: currentTheme.colors.surface,
+					borderColor: currentTheme.colors.border
+				}">
+				<h3 class="text-2xl font-bold mb-6" :style="{ color: currentTheme.colors.text }">
+					Add Connection from "{{ contextCluster?.topic }}"
+				</h3>
+
+				<div class="mb-4">
+					<input v-model="connectionSearchTerm" type="text" placeholder="Search clusters..."
+						class="w-full px-4 py-3 border rounded-xl outline-none transition-all" :style="{
+							backgroundColor: currentTheme.colors.background,
+							borderColor: currentTheme.colors.border,
+							color: currentTheme.colors.text
+						}" />
+				</div>
+
+				<div class="space-y-2 mb-6">
+					<div v-for="cluster in availableClustersForConnection" :key="cluster.id"
+						class="flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-colors"
+						:class="selectedConnectionCluster === cluster.id ? 'ring-2' : ''" :style="{
+							borderColor: selectedConnectionCluster === cluster.id ? currentTheme.colors.primary : currentTheme.colors.border,
+							backgroundColor: selectedConnectionCluster === cluster.id ? `${currentTheme.colors.primary}10` : 'transparent'
+						}" @click="selectedConnectionCluster = cluster.id">
+						<input type="radio" :checked="selectedConnectionCluster === cluster.id" class="w-4 h-4" />
+						<div class="flex-1">
+							<div class="font-medium" :style="{ color: currentTheme.colors.text }">
+								{{ cluster.topic }}
+							</div>
+							<div class="text-sm" :style="{ color: currentTheme.colors.textSecondary }">
+								{{ cluster.website_count }} websites
+							</div>
+						</div>
+					</div>
+				</div>
+
+				<div class="flex gap-3">
+					<button @click="closeAddConnectionModal"
+						class="flex-1 px-6 py-3 rounded-xl font-medium transition-all" :style="{
+							backgroundColor: currentTheme.colors.background,
+							color: currentTheme.colors.textSecondary
+						}">
+						Cancel
+					</button>
+					<button @click="confirmAddConnection"
+						class="flex-1 px-6 py-3 bg-[#4A90E2] text-white rounded-xl font-medium hover:bg-[#357ABD] transition-all"
+						:disabled="!selectedConnectionCluster">
+						Add Connection
+					</button>
+				</div>
+			</div>
+		</div>
+
+		<div v-if="showRemoveConnection" @click="closeRemoveConnectionModal"
+			class="fixed inset-0 bg-black/50 backdrop-blur-sm z-[2000] flex items-center justify-center p-4 animate-fadeIn">
+			<div @click.stop
+				class="rounded-3xl p-8 w-full max-w-2xl shadow-2xl animate-scaleIn border max-h-[80vh] overflow-y-auto"
+				:style="{
+					backgroundColor: currentTheme.colors.surface,
+					borderColor: currentTheme.colors.border
+				}">
+				<h3 class="text-2xl font-bold mb-6" :style="{ color: currentTheme.colors.text }">
+					Remove Connection from "{{ contextCluster?.topic }}"
+				</h3>
+
+				<div v-if="connectedClusters.length > 0" class="space-y-2 mb-6">
+					<div v-for="cluster in connectedClusters" :key="cluster.id"
+						class="flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-colors"
+						:class="selectedConnectionToRemove === cluster.id ? 'ring-2 ring-red-500' : ''" :style="{
+							borderColor: selectedConnectionToRemove === cluster.id ? '#ef4444' : currentTheme.colors.border,
+							backgroundColor: selectedConnectionToRemove === cluster.id ? '#fee2e210' : 'transparent'
+						}" @click="selectedConnectionToRemove = cluster.id">
+						<input type="radio" :checked="selectedConnectionToRemove === cluster.id" class="w-4 h-4" />
+						<div class="flex-1">
+							<div class="font-medium" :style="{ color: currentTheme.colors.text }">
+								{{ cluster.topic }}
+							</div>
+							<div class="text-sm" :style="{ color: currentTheme.colors.textSecondary }">
+								Similarity: {{ (cluster.similarity * 100).toFixed(1) }}%
+							</div>
+						</div>
+					</div>
+				</div>
+
+				<div v-else class="text-center py-8" :style="{ color: currentTheme.colors.textSecondary }">
+					No connections to remove
+				</div>
+
+				<div class="flex gap-3">
+					<button @click="closeRemoveConnectionModal"
+						class="flex-1 px-6 py-3 rounded-xl font-medium transition-all" :style="{
+							backgroundColor: currentTheme.colors.background,
+							color: currentTheme.colors.textSecondary
+						}">
+						Cancel
+					</button>
+					<button @click="confirmRemoveConnection"
+						class="flex-1 px-6 py-3 bg-red-600 text-white rounded-xl font-medium hover:bg-red-700 transition-all"
+						:disabled="!selectedConnectionToRemove || connectedClusters.length === 0">
+						Remove Connection
 					</button>
 				</div>
 			</div>
@@ -1021,7 +1150,7 @@
 							Version History
 						</h3>
 						<p class="text-sm mt-1" :style="{ color: currentTheme.colors.textSecondary }">
-							Current version: v1.0.0
+							Current version: v1.0.1
 						</p>
 					</div>
 					<button @click="showVersionHistory = false" class="p-2 rounded-xl transition-all">
@@ -1595,6 +1724,21 @@ const showVersionHistory = ref(false);
 
 const versionHistory = [
 	{
+		version: 'v1.0.1',
+		date: 'December 9th 2025',
+		current: true,
+		features: [
+			'Creating manual connections between clusters',
+			'More comprehensive search that goes through description, metadata, and AI summary',
+		],
+		improvements: [
+			'More themes to choose from',
+		],
+		bugFixes: [
+
+		]
+	},
+	{
 		version: 'v1.0.0',
 		date: 'December 7th 2025',
 		current: true,
@@ -1791,6 +1935,190 @@ const showAddWebsites = ref(false);
 const showRemoveWebsites = ref(false);
 const selectedWebsitesToAdd = ref([]);
 const selectedWebsitesToRemove = ref([]);
+const showAddConnection = ref(false);
+const showRemoveConnection = ref(false);
+const selectedConnectionCluster = ref(null);
+const selectedConnectionToRemove = ref(null);
+const connectionSearchTerm = ref('');
+
+
+const availableClustersForConnection = computed(() => {
+	if (!contextCluster.value) return [];
+
+	const currentClusterId = contextCluster.value.id;
+	const currentAlbumId = contextCluster.value.album_id;
+
+	// Get all clusters in the same album
+	let available = Object.values(clusters.value).filter(cluster =>
+		cluster.id !== currentClusterId &&
+		cluster.album_id === currentAlbumId
+	);
+
+	// Filter by search term
+	if (connectionSearchTerm.value) {
+		const term = connectionSearchTerm.value.toLowerCase();
+		available = available.filter(cluster =>
+			cluster.topic?.toLowerCase().includes(term)
+		);
+	}
+
+	return available;
+});
+
+// Computed for connected clusters
+const connectedClusters = computed(() => {
+	if (!contextCluster.value) return [];
+
+	const currentClusterId = contextCluster.value.id;
+	const connections = [];
+
+	// Find all manual connections
+	if (clusters.value[currentClusterId]?.manual_connections) {
+		const manualConnections = clusters.value[currentClusterId].manual_connections;
+		for (const targetId of manualConnections) {
+			const targetCluster = clusters.value[targetId];
+			if (targetCluster) {
+				connections.push({
+					id: targetId,
+					topic: targetCluster.topic,
+					similarity: 8.0 // Manual connections shown as 100%
+				});
+			}
+		}
+	}
+
+	// Find existing similarity-based connections
+	if (rawSimilarities[currentClusterId]) {
+		Object.entries(rawSimilarities[currentClusterId]).forEach(([targetId, similarity]) => {
+			if (!connections.find(c => c.id === targetId)) {
+				const targetCluster = clusters.value[targetId];
+				if (targetCluster) {
+					connections.push({
+						id: targetId,
+						topic: targetCluster.topic,
+						similarity: similarity
+					});
+				}
+			}
+		});
+	}
+
+	return connections;
+});
+
+// Modal functions
+function showAddConnectionModal() {
+	showAddConnection.value = true;
+	selectedConnectionCluster.value = null;
+	connectionSearchTerm.value = '';
+	showContextMenu.value = false;
+}
+
+function closeAddConnectionModal() {
+	showAddConnection.value = false;
+	selectedConnectionCluster.value = null;
+	connectionSearchTerm.value = '';
+}
+
+function showRemoveConnectionModal() {
+	showRemoveConnection.value = true;
+	selectedConnectionToRemove.value = null;
+	showContextMenu.value = false;
+}
+
+function closeRemoveConnectionModal() {
+	showRemoveConnection.value = false;
+	selectedConnectionToRemove.value = null;
+}
+
+async function confirmAddConnection() {
+	if (!contextCluster.value || !selectedConnectionCluster.value) return;
+
+	try {
+		const sourceId = contextCluster.value.id;
+		const targetId = selectedConnectionCluster.value;
+
+		// Initialize manual_connections if not exists
+		if (!clusters.value[sourceId].manual_connections) {
+			clusters.value[sourceId].manual_connections = [];
+		}
+
+		// Add bidirectional connection
+		if (!clusters.value[sourceId].manual_connections.includes(targetId)) {
+			clusters.value[sourceId].manual_connections.push(targetId);
+		}
+
+		if (!clusters.value[targetId].manual_connections) {
+			clusters.value[targetId].manual_connections = [];
+		}
+
+		if (!clusters.value[targetId].manual_connections.includes(sourceId)) {
+			clusters.value[targetId].manual_connections.push(sourceId);
+		}
+
+		// Add to similarities for rendering
+		if (!rawSimilarities[sourceId]) {
+			rawSimilarities[sourceId] = {};
+		}
+		rawSimilarities[sourceId][targetId] = 1.0; // Manual connections = 100% similarity
+
+		if (!rawSimilarities[targetId]) {
+			rawSimilarities[targetId] = {};
+		}
+		rawSimilarities[targetId][sourceId] = 1.0;
+
+		await saveToIndexedDB();
+		await refreshData();
+
+		closeAddConnectionModal();
+		contextCluster.value = null;
+	} catch (error) {
+		console.error('Error adding connection:', error);
+		alert('Failed to add connection');
+	}
+}
+
+async function confirmRemoveConnection() {
+	if (!contextCluster.value || !selectedConnectionToRemove.value) return;
+
+	try {
+		const sourceId = contextCluster.value.id;
+		const targetId = selectedConnectionToRemove.value;
+
+		// Remove from manual connections
+		if (clusters.value[sourceId]?.manual_connections) {
+			const index = clusters.value[sourceId].manual_connections.indexOf(targetId);
+			if (index > -1) {
+				clusters.value[sourceId].manual_connections.splice(index, 1);
+			}
+		}
+
+		if (clusters.value[targetId]?.manual_connections) {
+			const index = clusters.value[targetId].manual_connections.indexOf(sourceId);
+			if (index > -1) {
+				clusters.value[targetId].manual_connections.splice(index, 1);
+			}
+		}
+
+		// Remove from similarities
+		if (rawSimilarities[sourceId]?.[targetId]) {
+			delete rawSimilarities[sourceId][targetId];
+		}
+
+		if (rawSimilarities[targetId]?.[sourceId]) {
+			delete rawSimilarities[targetId][sourceId];
+		}
+
+		await saveToIndexedDB();
+		await refreshData();
+
+		closeRemoveConnectionModal();
+		contextCluster.value = null;
+	} catch (error) {
+		console.error('Error removing connection:', error);
+		alert('Failed to remove connection');
+	}
+}
 
 const availableWebsites = computed(() => {
 	if (!contextCluster.value) return [];
@@ -2629,6 +2957,24 @@ async function fetchSimilarities() {
 			});
 		}
 
+		// FIRST: Preserve manual connections
+		for (const sourceClusterId of clusterIds) {
+			const sourceCluster = clusters.value[sourceClusterId];
+			if (!sourceCluster) continue;
+
+			similarities[sourceClusterId] = {};
+
+			// Add manual connections with similarity of 1.0
+			if (sourceCluster.manual_connections && sourceCluster.manual_connections.length > 0) {
+				for (const targetId of sourceCluster.manual_connections) {
+					if (clusterIds.includes(targetId)) {
+						similarities[sourceClusterId][targetId] = 1.0;
+					}
+				}
+			}
+		}
+
+		// THEN: Calculate embedding-based similarities
 		for (const sourceClusterId of clusterIds) {
 			const sourceCluster = clusters.value[sourceClusterId];
 			if (!sourceCluster || !sourceCluster.websites.length) continue;
@@ -2641,10 +2987,12 @@ async function fetchSimilarities() {
 			if (sourceEmbeddings.length === 0) continue;
 
 			const sourceAvgEmbedding = averageEmbeddings(sourceEmbeddings);
-			similarities[sourceClusterId] = {};
 
 			for (const targetClusterId of clusterIds) {
 				if (sourceClusterId === targetClusterId) continue;
+
+				// Skip if manual connection already exists
+				if (similarities[sourceClusterId][targetClusterId]) continue;
 
 				const targetCluster = clusters.value[targetClusterId];
 				if (!targetCluster || !targetCluster.websites.length) continue;
@@ -2908,24 +3256,60 @@ function performSearch() {
 		return;
 	}
 
+	// Deep search: clusters + websites + metadata + summaries
 	const matchingNodes = graphData.nodes.filter(node => {
 		if (node.type === 'cluster') {
-			return (
-				node.topic?.toLowerCase().includes(term) ||
-				node.websites?.some(website =>
-					website.title?.toLowerCase().includes(term) ||
-					website.url?.toLowerCase().includes(term) ||
-					website.domain?.toLowerCase().includes(term)
-				)
-			);
+			// Search cluster topic
+			if (node.topic?.toLowerCase().includes(term)) return true;
+
+			// Search within cluster's websites
+			return node.websites?.some(website => {
+				const title = website.title?.toLowerCase() || '';
+				const url = website.url?.toLowerCase() || '';
+				const domain = website.domain?.toLowerCase() || '';
+
+				// Get full website data for deep search
+				const fullWebsite = websites.value[website.id];
+				if (fullWebsite) {
+					const summary = fullWebsite.ai_summary?.toLowerCase() || '';
+					const description = fullWebsite.metadata?.description?.toLowerCase() || '';
+					const keywords = fullWebsite.metadata?.keywords?.toLowerCase() || '';
+
+					return title.includes(term) ||
+						url.includes(term) ||
+						domain.includes(term) ||
+						summary.includes(term) ||
+						description.includes(term) ||
+						keywords.includes(term);
+				}
+
+				return title.includes(term) || url.includes(term) || domain.includes(term);
+			});
 		}
+
 		if (node.type === 'website') {
-			return (
-				node.title?.toLowerCase().includes(term) ||
-				node.url?.toLowerCase().includes(term) ||
-				node.domain?.toLowerCase().includes(term)
-			);
+			const title = node.title?.toLowerCase() || '';
+			const url = node.url?.toLowerCase() || '';
+			const domain = node.domain?.toLowerCase() || '';
+
+			// Get full website data
+			const fullWebsite = websites.value[node.websiteId];
+			if (fullWebsite) {
+				const summary = fullWebsite.ai_summary?.toLowerCase() || '';
+				const description = fullWebsite.metadata?.description?.toLowerCase() || '';
+				const keywords = fullWebsite.metadata?.keywords?.toLowerCase() || '';
+
+				return title.includes(term) ||
+					url.includes(term) ||
+					domain.includes(term) ||
+					summary.includes(term) ||
+					description.includes(term) ||
+					keywords.includes(term);
+			}
+
+			return title.includes(term) || url.includes(term) || domain.includes(term);
 		}
+
 		return false;
 	});
 
@@ -4344,6 +4728,7 @@ function assignToCluster(websiteId, topic, embedding, searchQuery, albumId = nul
 		topic: topic,
 		websites: [websiteId],
 		similar_links: {},
+		manual_connections: [],
 		album_id: albumId,
 	};
 
