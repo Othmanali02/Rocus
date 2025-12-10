@@ -1045,6 +1045,272 @@
 			</div>
 		</button>
 
+		<div v-if="showCompatibilityCheck"
+			class="fixed inset-0 bg-black/60 backdrop-blur-sm z-[4000] flex items-center justify-center p-4 animate-fadeIn">
+			<div class="rounded-3xl p-8 w-full max-w-2xl shadow-2xl animate-scaleIn" :style="{
+				backgroundColor: currentTheme.colors.surface,
+				border: `2px solid ${compatibilityResults.overall === 'success' ? '#10b981' :
+					compatibilityResults.overall === 'error' ? '#ef4444' : currentTheme.colors.border}`
+			}">
+				<!-- Header -->
+				<div class="flex items-start justify-between mb-6">
+					<div>
+						<h3 class="text-2xl font-bold mb-2" :style="{ color: currentTheme.colors.text }">
+							System Compatibility Check
+						</h3>
+						<p class="text-sm" :style="{ color: currentTheme.colors.textSecondary }">
+							Verifying your browser can run Rocus AI models...
+						</p>
+					</div>
+					<div v-if="compatibilityResults.overall !== 'checking'"
+						class="w-12 h-12 rounded-full flex items-center justify-center" :style="{
+							backgroundColor: compatibilityResults.overall === 'success' ? '#10b98120' : '#ef444420'
+						}">
+						<svg v-if="compatibilityResults.overall === 'success'" class="w-7 h-7 text-green-500"
+							fill="currentColor" viewBox="0 0 20 20">
+							<path fill-rule="evenodd"
+								d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+								clip-rule="evenodd" />
+						</svg>
+						<svg v-else class="w-7 h-7 text-red-500" fill="currentColor" viewBox="0 0 20 20">
+							<path fill-rule="evenodd"
+								d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
+								clip-rule="evenodd" />
+						</svg>
+					</div>
+				</div>
+
+				<!-- Checks List -->
+				<div class="space-y-3 mb-6">
+					<!-- WebGPU Check -->
+					<div class="p-4 rounded-xl transition-all" :style="{
+						backgroundColor: currentTheme.colors.background,
+						border: `2px solid ${compatibilityResults.webgpu.status === 'success' ? '#10b981' :
+								compatibilityResults.webgpu.status === 'error' ? '#ef4444' :
+									compatibilityResults.webgpu.status === 'warning' ? '#f59e0b' :
+										currentTheme.colors.border
+							}`
+					}">
+						<div class="flex items-start gap-3">
+							<div class="flex-shrink-0 mt-0.5">
+								<div v-if="compatibilityResults.webgpu.status === 'checking'"
+									class="w-5 h-5 border-2 border-t-transparent rounded-full animate-spin"
+									:style="{ borderColor: currentTheme.colors.primary }"></div>
+								<svg v-else-if="compatibilityResults.webgpu.status === 'success'"
+									class="w-5 h-5 text-green-500" fill="currentColor" viewBox="0 0 20 20">
+									<path fill-rule="evenodd"
+										d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+										clip-rule="evenodd" />
+								</svg>
+								<svg v-else class="w-5 h-5 text-red-500" fill="currentColor" viewBox="0 0 20 20">
+									<path fill-rule="evenodd"
+										d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
+										clip-rule="evenodd" />
+								</svg>
+							</div>
+							<div class="flex-1 min-w-0">
+								<div class="font-semibold mb-1" :style="{ color: currentTheme.colors.text }">
+									WebGPU Support (Critical)
+								</div>
+								<div class="text-sm" :style="{ color: currentTheme.colors.textSecondary }">
+									{{ compatibilityResults.webgpu.message }}
+								</div>
+								<div v-if="compatibilityResults.webgpu.fix" class="text-xs mt-2 px-3 py-2 rounded-lg"
+									:style="{
+										backgroundColor: currentTheme.colors.surface,
+										color: currentTheme.colors.primary
+									}">
+									💡 Fix: {{ compatibilityResults.webgpu.fix }}
+								</div>
+							</div>
+						</div>
+					</div>
+
+					<!-- Memory Check -->
+					<div class="p-4 rounded-xl transition-all" :style="{
+						backgroundColor: currentTheme.colors.background,
+						border: `2px solid ${compatibilityResults.memory.status === 'success' ? '#10b981' :
+								compatibilityResults.memory.status === 'warning' ? '#f59e0b' :
+									currentTheme.colors.border
+							}`
+					}">
+						<div class="flex items-start gap-3">
+							<div class="flex-shrink-0 mt-0.5">
+								<div v-if="compatibilityResults.memory.status === 'checking'"
+									class="w-5 h-5 border-2 border-t-transparent rounded-full animate-spin"
+									:style="{ borderColor: currentTheme.colors.primary }"></div>
+								<svg v-else-if="compatibilityResults.memory.status === 'success'"
+									class="w-5 h-5 text-green-500" fill="currentColor" viewBox="0 0 20 20">
+									<path fill-rule="evenodd"
+										d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+										clip-rule="evenodd" />
+								</svg>
+								<svg v-else class="w-5 h-5 text-yellow-500" fill="currentColor" viewBox="0 0 20 20">
+									<path fill-rule="evenodd"
+										d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
+										clip-rule="evenodd" />
+								</svg>
+							</div>
+							<div class="flex-1 min-w-0">
+								<div class="font-semibold mb-1" :style="{ color: currentTheme.colors.text }">
+									Available Memory
+								</div>
+								<div class="text-sm" :style="{ color: currentTheme.colors.textSecondary }">
+									{{ compatibilityResults.memory.message }}
+								</div>
+								<div v-if="compatibilityResults.memory.fix" class="text-xs mt-2 px-3 py-2 rounded-lg"
+									:style="{
+										backgroundColor: currentTheme.colors.surface,
+										color: currentTheme.colors.primary
+									}">
+									💡 Fix: {{ compatibilityResults.memory.fix }}
+								</div>
+							</div>
+						</div>
+					</div>
+
+					<!-- IndexedDB Check -->
+					<div class="p-4 rounded-xl transition-all" :style="{
+						backgroundColor: currentTheme.colors.background,
+						border: `2px solid ${compatibilityResults.indexeddb.status === 'success' ? '#10b981' :
+								compatibilityResults.indexeddb.status === 'error' ? '#ef4444' :
+									currentTheme.colors.border
+							}`
+					}">
+						<div class="flex items-start gap-3">
+							<div class="flex-shrink-0 mt-0.5">
+								<div v-if="compatibilityResults.indexeddb.status === 'checking'"
+									class="w-5 h-5 border-2 border-t-transparent rounded-full animate-spin"
+									:style="{ borderColor: currentTheme.colors.primary }"></div>
+								<svg v-else-if="compatibilityResults.indexeddb.status === 'success'"
+									class="w-5 h-5 text-green-500" fill="currentColor" viewBox="0 0 20 20">
+									<path fill-rule="evenodd"
+										d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+										clip-rule="evenodd" />
+								</svg>
+								<svg v-else class="w-5 h-5 text-red-500" fill="currentColor" viewBox="0 0 20 20">
+									<path fill-rule="evenodd"
+										d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
+										clip-rule="evenodd" />
+								</svg>
+							</div>
+							<div class="flex-1 min-w-0">
+								<div class="font-semibold mb-1" :style="{ color: currentTheme.colors.text }">
+									Local Storage (IndexedDB)
+								</div>
+								<div class="text-sm" :style="{ color: currentTheme.colors.textSecondary }">
+									{{ compatibilityResults.indexeddb.message }}
+								</div>
+								<div v-if="compatibilityResults.indexeddb.fix" class="text-xs mt-2 px-3 py-2 rounded-lg"
+									:style="{
+										backgroundColor: currentTheme.colors.surface,
+										color: currentTheme.colors.primary
+									}">
+									💡 Fix: {{ compatibilityResults.indexeddb.fix }}
+								</div>
+							</div>
+						</div>
+					</div>
+
+					<!-- Cache API Check -->
+					<div class="p-4 rounded-xl transition-all" :style="{
+						backgroundColor: currentTheme.colors.background,
+						border: `2px solid ${compatibilityResults.cache.status === 'success' ? '#10b981' :
+								compatibilityResults.cache.status === 'error' ? '#ef4444' :
+									compatibilityResults.cache.status === 'warning' ? '#f59e0b' :
+										currentTheme.colors.border
+							}`
+					}">
+						<div class="flex items-start gap-3">
+							<div class="flex-shrink-0 mt-0.5">
+								<div v-if="compatibilityResults.cache.status === 'checking'"
+									class="w-5 h-5 border-2 border-t-transparent rounded-full animate-spin"
+									:style="{ borderColor: currentTheme.colors.primary }"></div>
+								<svg v-else-if="compatibilityResults.cache.status === 'success'"
+									class="w-5 h-5 text-green-500" fill="currentColor" viewBox="0 0 20 20">
+									<path fill-rule="evenodd"
+										d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+										clip-rule="evenodd" />
+								</svg>
+								<svg v-else-if="compatibilityResults.cache.status === 'warning'"
+									class="w-5 h-5 text-yellow-500" fill="currentColor" viewBox="0 0 20 20">
+									<path fill-rule="evenodd"
+										d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
+										clip-rule="evenodd" />
+								</svg>
+								<svg v-else class="w-5 h-5 text-red-500" fill="currentColor" viewBox="0 0 20 20">
+									<path fill-rule="evenodd"
+										d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
+										clip-rule="evenodd" />
+								</svg>
+							</div>
+							<div class="flex-1 min-w-0">
+								<div class="font-semibold mb-1" :style="{ color: currentTheme.colors.text }">
+									Cache API (Model Storage)
+								</div>
+								<div class="text-sm" :style="{ color: currentTheme.colors.textSecondary }">
+									{{ compatibilityResults.cache.message }}
+								</div>
+								<div v-if="compatibilityResults.cache.fix" class="text-xs mt-2 px-3 py-2 rounded-lg"
+									:style="{
+										backgroundColor: currentTheme.colors.surface,
+										color: currentTheme.colors.primary
+									}">
+									💡 Fix: {{ compatibilityResults.cache.fix }}
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+
+				<!-- Action Buttons -->
+				<div class="flex gap-3">
+					<button v-if="compatibilityResults.overall === 'success'" @click="() => {
+						showCompatibilityCheck = false;
+						localStorage.setItem('rocus-compatibility-checked', 'true');
+					}" class="flex-1 px-6 py-3 rounded-xl font-medium transition-all bg-green-500 hover:bg-green-600 text-white">
+						✓ Continue to Rocus
+					</button>
+					<button v-else-if="compatibilityResults.overall === 'error'" @click="() => {
+						showCompatibilityCheck = false;
+						localStorage.setItem('rocus-compatibility-checked', 'true');
+					}" class="flex-1 px-6 py-3 rounded-xl font-medium transition-all" :style="{
+				backgroundColor: currentTheme.colors.background,
+				color: currentTheme.colors.text
+			}">
+						Continue Anyway (May Not Work)
+					</button>
+					<button @click="checkSystemCompatibility" class="px-6 py-3 rounded-xl font-medium transition-all"
+						:style="{
+							backgroundColor: currentTheme.colors.primary,
+							color: '#fff'
+						}">
+						🔄 Re-check
+					</button>
+				</div>
+
+				<!-- Help Text -->
+				<div v-if="compatibilityResults.overall === 'error'" class="mt-4 p-4 rounded-xl" :style="{
+					backgroundColor: currentTheme.colors.background,
+					border: `1px solid ${currentTheme.colors.border}`
+				}">
+					<div class="text-sm font-semibold mb-2" :style="{ color: currentTheme.colors.text }">
+						⚠️ Rocus may not work properly
+					</div>
+					<div class="text-xs" :style="{ color: currentTheme.colors.textSecondary }">
+						Critical checks failed. Rocus requires WebGPU for AI processing. Try:
+						<ul class="list-disc list-inside mt-2 space-y-1">
+							<li>Using Chrome/Edge 113+ or Firefox Nightly</li>
+							<li>Opening in Incognito/Private mode</li>
+							<li>Enabling chrome://flags/#enable-unsafe-webgpu</li>
+							<li>Updating your GPU drivers</li>
+							<li>Checking browser console for specific errors</li>
+						</ul>
+					</div>
+				</div>
+			</div>
+		</div>
+
 		<div v-if="tutorialActive" class="fixed inset-0 z-[3000]">
 			<svg class="absolute inset-0 w-full h-full pointer-events-none">
 				<defs>
@@ -1330,6 +1596,45 @@ const themes = [
 		}
 	},
 	{
+		id: 'hangle',
+		name: 'Hangle',
+		description: 'https://hangle-geo.com',
+		isDark: false,
+		preview: ['#8fca5c', '#3ab3da', '#854f2b', '#ffffff'],
+		colors: {
+			background: '#8fca5c',
+			surface: '#3ab3da',
+			primary: '#854f2b',
+			secondary: '#ffffff',
+			accent: '#3ab3da',
+			node: '#ffffff',
+			nodeStroke: '#854f2b',
+			text: '#ffffff',
+			textSecondary: '#3ab3da',
+			border: '#854f2b'
+		}
+	},
+	{
+		id: 'scramble',
+		name: 'Anagram Scramble',
+		description: 'https://anagram-scramble.com',
+		isDark: false,
+		preview: ['#013b3f', '#ffae42', '#ffffe5', '#4d7cc3'],
+		colors: {
+			background: '#013b3f',
+			surface: '#4d7cc3',
+			primary: '#ffae42',
+			secondary: '#ffffe5',
+			accent: '#ffae42',
+			node: '#ffffe5',
+			nodeStroke: '#4d7cc3',
+			text: '#ffffe5',
+			textSecondary: '#ffae42',
+			border: '#4d7cc3'
+		}
+	},
+
+	{
 		id: 'girly-pop',
 		name: 'Girly Pop',
 		description: 'Pink dreams and sparkles',
@@ -1460,6 +1765,63 @@ const themes = [
 			text: '#E8C547',
 			textSecondary: '#C9A961',
 			border: '#5C4B2A'
+		}
+	},
+	{
+		id: 'old-city-birzeit',
+		name: 'Birzeit Old City',
+		description: 'Vintage stone, olive trees, and golden sun',
+		isDark: false,
+		preview: ['#E5D8C2', '#6B7A3A', '#D3A74A', '#F2E9D3'],
+		colors: {
+			background: '#F2E9D3',       // sun-washed limestone
+			surface: '#E5D8C2',          // vintage stone wall
+			primary: '#6B7A3A',          // old olive trees
+			secondary: '#8C9B54',        // lighter leaf green
+			accent: '#D3A74A',           // warm golden sun
+			node: '#E5D8C2',             // stone node
+			nodeStroke: '#CBBFA8',       // soft edge like aged stone
+			text: '#3A3A2E',             // deep neutral for readability
+			textSecondary: '#6F6B58',    // muted stone-gray
+			border: '#CBBFA8'            // subtle stone border
+		}
+	},
+	{
+		id: 'burgundy-royale',
+		name: 'Burgundy',
+		description: 'Color of the year award',
+		isDark: true,
+		preview: ['#4A0E1F', '#FFFFFF', '#B43757', '#2E0A15'],
+		colors: {
+			background: '#4A0E1F',
+			surface: '#2E0A15',
+			primary: '#FFFFFF',
+			secondary: '#B43757',
+			accent: '#FFCCD5',
+			node: '#3B0C19',
+			nodeStroke: '#7A1E33',
+			text: '#FFFFFF',
+			textSecondary: '#E6B3C2',
+			border: '#7A1E33'
+		}
+	},
+	{
+		id: 'lake-como',
+		name: 'Lake Como',
+		description: 'Je suis la bas',
+		isDark: false,
+		preview: ['#CFE6FA', '#1F73C8', '#7FB87A', '#F8E7B5'],
+		colors: {
+			background: '#CFE6FA',
+			surface: '#F8F5EC',
+			primary: '#1F73C8',
+			secondary: '#7FB87A',
+			accent: '#F2C94C',
+			node: '#F8F5EC',
+			nodeStroke: '#C7D7E4',
+			text: '#1F2D36',
+			textSecondary: '#54646E',
+			border: '#C7D7E4'
 		}
 	},
 	{
@@ -1772,6 +2134,14 @@ const tutorialActive = ref(false);
 const tutorialStep = ref(0);
 const tutorialHighlightRect = ref({ top: 0, left: 0, width: 0, height: 0 });
 const tutorialDemoCluster = ref(null);
+const showCompatibilityCheck = ref(false);
+const compatibilityResults = ref({
+	webgpu: { status: 'checking', message: '' },
+	memory: { status: 'checking', message: '' },
+	indexeddb: { status: 'checking', message: '' },
+	cache: { status: 'checking', message: '' },
+	overall: 'checking'
+});
 
 // Add new tutorial steps for empty state
 const tutorialStepsEmpty = [
@@ -1824,6 +2194,144 @@ const tutorialStepsEmpty = [
 		action: null
 	}
 ];
+
+async function checkSystemCompatibility() {
+	compatibilityResults.value = {
+		webgpu: { status: 'checking', message: 'Checking WebGPU support...' },
+		memory: { status: 'checking', message: 'Checking available memory...' },
+		indexeddb: { status: 'checking', message: 'Checking IndexedDB...' },
+		cache: { status: 'checking', message: 'Checking Cache API...' },
+		overall: 'checking'
+	};
+
+	let allPassed = true;
+
+	// 1. Check WebGPU
+	try {
+		if (!navigator.gpu) {
+			compatibilityResults.value.webgpu = {
+				status: 'error',
+				message: 'WebGPU not supported. Your browser/device doesn\'t support WebGPU.',
+				fix: 'Try Chrome/Edge 113+, or enable chrome://flags/#enable-unsafe-webgpu'
+			};
+			allPassed = false;
+		} else {
+			const adapter = await navigator.gpu.requestAdapter();
+			if (!adapter) {
+				compatibilityResults.value.webgpu = {
+					status: 'error',
+					message: 'WebGPU adapter not available. Hardware may not support it.',
+					fix: 'Update your GPU drivers or try a different browser'
+				};
+				allPassed = false;
+			} else {
+				compatibilityResults.value.webgpu = {
+					status: 'success',
+					message: 'WebGPU supported ✓'
+				};
+			}
+		}
+	} catch (err) {
+		compatibilityResults.value.webgpu = {
+			status: 'error',
+			message: `WebGPU check failed: ${err.message}`,
+			fix: 'Try using Chrome/Edge in incognito mode or update your browser'
+		};
+		allPassed = false;
+	}
+
+	// 2. Check Memory
+	try {
+		if (performance.memory) {
+			const memoryMB = performance.memory.jsHeapSizeLimit / (1024 * 1024);
+			if (memoryMB < 500) {
+				compatibilityResults.value.memory = {
+					status: 'warning',
+					message: `Low memory available: ${Math.round(memoryMB)}MB. May be slow.`,
+					fix: 'Close other tabs or restart your browser'
+				};
+			} else {
+				compatibilityResults.value.memory = {
+					status: 'success',
+					message: `Memory OK: ${Math.round(memoryMB)}MB available ✓`
+				};
+			}
+		} else {
+			compatibilityResults.value.memory = {
+				status: 'success',
+				message: 'Memory check not available (non-Chrome browser) ✓'
+			};
+		}
+	} catch (err) {
+		compatibilityResults.value.memory = {
+			status: 'warning',
+			message: 'Could not check memory'
+		};
+	}
+
+	// 3. Check IndexedDB
+	try {
+		const testDB = await new Promise((resolve, reject) => {
+			const request = indexedDB.open('_rocus_test', 1);
+			request.onsuccess = () => {
+				request.result.close();
+				indexedDB.deleteDatabase('_rocus_test');
+				resolve(true);
+			};
+			request.onerror = () => reject(request.error);
+		});
+		compatibilityResults.value.indexeddb = {
+			status: 'success',
+			message: 'IndexedDB working ✓'
+		};
+	} catch (err) {
+		compatibilityResults.value.indexeddb = {
+			status: 'error',
+			message: 'IndexedDB unavailable or blocked',
+			fix: 'Enable cookies and site data in browser settings'
+		};
+		allPassed = false;
+	}
+
+	// 4. Check Cache API (common Chrome issue)
+	try {
+		if ('caches' in window) {
+			// Try to open a cache
+			const cache = await caches.open('_rocus_test');
+			await caches.delete('_rocus_test');
+			compatibilityResults.value.cache = {
+				status: 'success',
+				message: 'Cache API working ✓'
+			};
+		} else {
+			compatibilityResults.value.cache = {
+				status: 'warning',
+				message: 'Cache API not available',
+				fix: 'This may affect model loading. Try incognito mode.'
+			};
+		}
+	} catch (err) {
+		if (err.message.includes('Cache') || err.message.includes('quota')) {
+			compatibilityResults.value.cache = {
+				status: 'error',
+				message: 'Cache API error (common Chrome issue)',
+				fix: 'Use incognito mode, or clear site data in Settings → Privacy'
+			};
+			// Don't fail entirely on cache issues
+		} else {
+			compatibilityResults.value.cache = {
+				status: 'warning',
+				message: `Cache check failed: ${err.message}`,
+				fix: 'Try incognito mode if models fail to load'
+			};
+		}
+	}
+
+	// Overall result
+	compatibilityResults.value.overall = allPassed ? 'success' : 'error';
+
+	return allPassed;
+}
 
 // Add new function for empty state tutorial
 function startTutorialEmpty() {
@@ -5140,17 +5648,40 @@ onMounted(async () => {
 		console.log("✅ Message listener ready");
 
 		const tutorialCompleted = localStorage.getItem('rocus-tutorial-completed');
-		if (!tutorialCompleted) {
-			// Wait a bit longer to ensure graph is rendered
+
+		// Check system compatibility first
+		const compatibilityCheckDone = localStorage.getItem('rocus-compatibility-checked');
+		if (!compatibilityCheckDone) {
+			showCompatibilityCheck.value = true;
+			await checkSystemCompatibility();
+
+			// Auto-close if all passed after 3 seconds
+			if (compatibilityResults.value.overall === 'success') {
+				setTimeout(() => {
+					showCompatibilityCheck.value = false;
+					localStorage.setItem('rocus-compatibility-checked', 'true');
+
+					// Start tutorial if not completed
+					if (!tutorialCompleted) {
+						setTimeout(() => {
+							if (graphData?.nodes?.length > 0) {
+								startTutorial();
+							} else {
+								startTutorialEmpty();
+							}
+						}, 500);
+					}
+				}, 3000);
+			}
+		} else if (!tutorialCompleted) {
+			// Skip straight to tutorial if compatibility already checked
 			setTimeout(() => {
-				// Check if we have any data to show
 				if (graphData?.nodes?.length > 0) {
 					startTutorial();
 				} else {
-					// No data yet, show modified tutorial
 					startTutorialEmpty();
 				}
-			}, 2000); // Reduced from 3000
+			}, 2000);
 		}
 
 		loadModels().catch(err => {
