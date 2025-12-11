@@ -1,36 +1,82 @@
 <script setup>
-import { ref, onMounted, onUnmounted } from "vue";
+import { ref, onMounted, onUnmounted, watch } from "vue";
 import { store } from "../router/store";
+import { useAnalytics } from '../composables/useAnalytics';
+
+const { trackEvent, analyticsLoaded, analyticsConsent } = useAnalytics();
 
 const mobileMenuOpen = ref(false);
 const scrolled = ref(false);
 const isDarkMode = ref(false);
 
+const props = defineProps({ user: Object });
+
+let maxScrollDepth = 0;
+const milestonesTracked = new Set();
 
 const handleScroll = () => {
     scrolled.value = window.scrollY > 150;
+
+    // Scroll depth tracking
+    const scrollHeight = document.documentElement.scrollHeight - window.innerHeight;
+    const scrollPercent = Math.round((window.scrollY / scrollHeight) * 100);
+
+    [25, 50, 75, 100].forEach((milestone) => {
+        if (scrollPercent >= milestone && !milestonesTracked.has(milestone)) {
+            trackEvent('scroll-depth', { depth: milestone + '%' });
+            milestonesTracked.add(milestone);
+        }
+    });
 };
 
-const props = defineProps({
-    user: Object,
-});
+const installExtension = () => {
+    trackEvent('install-extension-clicked', { source: 'landing-page' });
+    window.open("https://chrome.google.com/webstore/detail/your-extension-id", "_blank");
+};
+
+// Track landing page view and time on page
+const trackLandingPage = () => {
+    if (!analyticsLoaded.value || !analyticsConsent.value) return;
+
+    trackEvent('landing-page-view', { referrer: document.referrer || 'direct' });
+
+    const startTime = Date.now();
+    const trackTimeOnPage = () => {
+        const seconds = Math.round((Date.now() - startTime) / 1000);
+        trackEvent('time-on-landing-page', { seconds });
+    };
+
+    window.addEventListener('beforeunload', trackTimeOnPage);
+    onUnmounted(() => {
+        window.removeEventListener('beforeunload', trackTimeOnPage);
+        trackTimeOnPage(); // final event
+    });
+};
 
 onMounted(() => {
     window.addEventListener("scroll", handleScroll);
+
     console.log(store.user);
+
+    // Wait until analytics is loaded before tracking
+    if (analyticsLoaded.value && analyticsConsent.value) {
+        trackLandingPage();
+    } else {
+        const unwatch = watch([analyticsLoaded, analyticsConsent], ([loaded, consent]) => {
+            if (loaded && consent) {
+                trackLandingPage();
+                unwatch(); // stop watching
+            }
+        });
+    }
 });
 
 onUnmounted(() => {
     window.removeEventListener("scroll", handleScroll);
 });
-
-const installExtension = () => {
-    window.open(
-        "https://chrome.google.com/webstore/detail/your-extension-id",
-        "_blank"
-    );
-};
 </script>
+
+
 
 <template>
     <div class="bg-[#f4f4f4] min-h-screen overflow-y-auto">
@@ -106,9 +152,9 @@ const installExtension = () => {
                     <a href="#about" class="block py-2 text-[#1A1A1A] hover:text-[#4A90E2] font-medium">About</a>
                     <a href="https://github.com/Othmanali02/Rocus" target="_blank"
                         class="block py-2 text-[#1A1A1A] hover:text-[#4A90E2] font-medium">GitHub</a>
-                    <button class="block w-full text-left py-2 text-[#1A1A1A] hover:text-[#4A90E2] font-medium">
+                    <!-- <button class="block w-full text-left py-2 text-[#1A1A1A] hover:text-[#4A90E2] font-medium">
                         Donate
-                    </button>
+                    </button> -->
                     <!-- <button class="w-full px-4 py-2 text-[#4A90E2] border-2 border-[#4A90E2] rounded-lg font-semibold">
                         Sign In
                     </button> -->

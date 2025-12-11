@@ -4,108 +4,100 @@ const analyticsConsent = ref(null);
 const analyticsLoaded = ref(false);
 
 export function useAnalytics() {
-  const checkConsent = () => {
-    const consent = localStorage.getItem("rocus-analytics-consent");
-    analyticsConsent.value = consent === "true";
-    return analyticsConsent.value;
-  };
+	const checkConsent = () => {
+		const consent = localStorage.getItem("rocus-analytics-consent");
+		analyticsConsent.value = consent === "true";
+		return analyticsConsent.value;
+	};
 
-  const setConsent = (value) => {
-    analyticsConsent.value = value;
-    localStorage.setItem("rocus-analytics-consent", value.toString());
-    
-    if (value) {
-      loadUmami();
-    } else {
-      removeUmami();
-    }
-  };
+	const setConsent = (value) => {
+		analyticsConsent.value = value;
+		localStorage.setItem("rocus-analytics-consent", value.toString());
 
-  const loadUmami = () => {
-    if (analyticsLoaded.value) return;
+		if (value) {
+			loadUmami();
+		} else {
+			removeUmami();
+		}
+	};
 
-    const websiteId = import.meta.env.VITE_UMAMI_WEBSITE_ID;
-    const src = import.meta.env.VITE_UMAMI_SRC;
+	const loadUmami = () => {
+		if (analyticsLoaded.value) return;
 
-    console.log(" Umami config:", { websiteId, src });
+		const websiteId = import.meta.env.VITE_UMAMI_WEBSITE_ID;
+		const src = import.meta.env.VITE_UMAMI_SRC;
 
-    if (!websiteId || !src) {
-      console.warn("Umami not configured");
-      return;
-    }
+		if (!websiteId || !src) {
+			console.warn("Umami not configured");
+			return;
+		}
 
-    const script = document.createElement("script");
-    script.async = true;
-    script.defer = true;
-    script.src = src;
-    script.setAttribute("data-website-id", websiteId);
-    script.setAttribute("data-domains", "rocus.io");
-    script.setAttribute("data-auto-track", "true"); // CRITICAL
-    script.setAttribute("data-cache", "true");
-    
-    script.onload = () => {
-      console.log("Umami loaded");
-      analyticsLoaded.value = true;
-      
-      // Wait for umami to be available, then force track
-      let attempts = 0;
-      const checkUmami = setInterval(() => {
-        attempts++;
-        if (window.umami) {
-          console.log("window.umami available");
-          clearInterval(checkUmami);
-          
-          // Force immediate pageview
-          console.log("Forcing pageview");
-          window.umami.track('pageview');
-          
-          // Test event
-          console.log("Sending test event");
-          window.umami.track('app-loaded', { 
-            timestamp: Date.now(),
-            path: window.location.pathname
-          });
-        } else if (attempts > 20) {
-          console.error("window.umami never became available");
-          clearInterval(checkUmami);
-        }
-      }, 100);
-    };
-    
-    script.onerror = (error) => {
-      console.error(" Failed to load Umami:", error);
-    };
-    
-    document.head.appendChild(script);
-    console.log(" Umami script added to DOM");
-  };
+		const script = document.createElement("script");
+		script.async = true;
+		script.defer = true;
+		script.src = src;
+		script.setAttribute("data-website-id", websiteId);
+		script.setAttribute("data-domains", "rocus.io");
+		script.setAttribute("data-auto-track", "true"); // CRITICAL
+		script.setAttribute("data-cache", "true");
 
-  const removeUmami = () => {
-    const scripts = document.querySelectorAll("script[data-website-id]");
-    scripts.forEach((script) => script.remove());
-    analyticsLoaded.value = false;
-    console.log("Analytics disabled");
-  };
+		script.onload = () => {
+			analyticsLoaded.value = true;
 
-  const trackEvent = (eventName, eventData = {}) => {
-    if (!analyticsConsent.value || !analyticsLoaded.value) {
-      console.log("Not tracking:", eventName, "- consent:", analyticsConsent.value, "loaded:", analyticsLoaded.value);
-      return;
-    }
+			// Wait for umami to be available, then force track
+			let attempts = 0;
+			const checkUmami = setInterval(() => {
+				attempts++;
+				if (window.umami) {
+					console.log("window.umami available");
+					clearInterval(checkUmami);
 
-    if (window.umami) {
-      console.log("Tracking:", eventName, eventData);
-      window.umami.track(eventName, eventData);
-    } else {
-      console.error("window.umami not available");
-    }
-  };
+					// Force immediate pageview
+					console.log("Forcing pageview");
+					window.umami.track("pageview");
 
-  return {
-    analyticsConsent,
-    analyticsLoaded,
-    checkConsent,
-    setConsent,
-    trackEvent,
-  };
+					window.umami.track("app-loaded", {
+						timestamp: Date.now(),
+						path: window.location.pathname,
+					});
+				} else if (attempts > 20) {
+					console.error("window.umami never became available");
+					clearInterval(checkUmami);
+				}
+			}, 100);
+		};
+
+		script.onerror = (error) => {
+			console.error(" Failed to load Umami:", error);
+		};
+
+		document.head.appendChild(script);
+		console.log(" Umami script added to DOM");
+	};
+
+	const removeUmami = () => {
+		const scripts = document.querySelectorAll("script[data-website-id]");
+		scripts.forEach((script) => script.remove());
+		analyticsLoaded.value = false;
+	};
+
+	const trackEvent = (eventName, eventData = {}) => {
+		if (!analyticsConsent.value || !analyticsLoaded.value) {
+			return;
+		}
+
+		if (window.umami) {
+			window.umami.track(eventName, eventData);
+		} else {
+			console.error("window.umami not available");
+		}
+	};
+
+	return {
+		analyticsConsent,
+		analyticsLoaded,
+		checkConsent,
+		setConsent,
+		trackEvent,
+	};
 }
