@@ -5,6 +5,7 @@ import { RouterView } from "vue-router";
 import { provide, ref } from 'vue';
 import ConsentBanner from './components/ConsentBanner.vue';
 import { useAnalytics } from './composables/useAnalytics';
+import { inject } from 'vue';
 
 const { checkConsent, setConsent } = useAnalytics();
 
