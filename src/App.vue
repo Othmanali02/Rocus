@@ -2,12 +2,25 @@
 import GraphNode from './components/GraphNode.vue'
 import Landing from './components/Landing.vue';
 import { RouterView } from "vue-router";
+import { provide, ref } from 'vue';
+import ConsentBanner from './components/ConsentBanner.vue';
+import { useAnalytics } from './composables/useAnalytics';
+
+const { checkConsent, setConsent } = useAnalytics();
+
+const hasConsent = checkConsent();
+if (hasConsent) {
+  setConsent(true);
+}
+
+const currentTheme = inject('currentTheme');
+provide('currentTheme', currentTheme);
 
 </script>
 
 <template>
-  <RouterView :user="user" />
-
+  <RouterView />
+  <ConsentBanner />
 </template>
 
 <style></style>
