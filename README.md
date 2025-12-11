@@ -278,8 +278,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - **Discussions**: [GitHub Discussions](https://github.com/Othmanali02/rocus/discussions)
 - **Email**: othman.internet@gmail.com (if applicable)
 
----
-
 ## Privacy
 
 **Rocus is privacy-first by design:**
@@ -290,4 +288,51 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - ✅ All data stored in local IndexedDB
 - ✅ Open source - audit the code yourself
 
-Your knowledge graph is yours alone.
+## Privacy-First Analytics
+
+### What We Collect
+
+Rocus uses **[Umami](https://umami.is/)**, a privacy-first, open-source analytics platform, to understand how people use the application. **You must explicitly opt-in** via the consent banner.
+
+**If you consent, we collect:**
+- Anonymous page views and button clicks
+- Feature usage patterns (e.g., "cluster was exploded")
+- Error occurrences to identify bugs
+- Browser type and screen size
+- Country-level location (derived from IP, not stored)
+
+**We NEVER collect:**
+- Your website URLs, titles, or content
+- Your cluster names or topics
+- Your search queries or any personal data
+- IP addresses (not stored)
+- Cookies or tracking identifiers
+- Device fingerprints
+- Any cross-site tracking data
+
+### Why the Analytics?
+
+Anonymous analytics help us:
+- Identify which features are most valuable
+- Discover bugs and edge cases
+- Understand clustering mistakes
+- Prioritize improvements
+- Support more browsers and devices
+
+### You have full Control
+
+- **Opt out anytime**: Settings → "Help Improve Rocus" toggle off
+- **We respect DNT**: Do Not Track browser header is honored
+- **Review our code**: See exactly what's tracked in `src/composables/useAnalytics.js`
+- **Self-hosted**: Our analytics run on our own server, not third-party services.
+
+### For Privacy Enthusiasts
+
+Rocus is designed with privacy principles
+- No surveillance capitalism
+- No data brokering
+- No dark patterns
+- Full transparency
+- User control above all else
+
+See our full Privacy Policy for details.

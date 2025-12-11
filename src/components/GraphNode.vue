@@ -349,6 +349,22 @@
 					<div class="flex items-center justify-between">
 						<div>
 							<div class="font-medium" :style="{ color: currentTheme.colors.text }">
+								Help Improve Rocus
+							</div>
+							<div class="text-sm" :style="{ color: currentTheme.colors.textSecondary }">
+								Anonymous usage analytics
+							</div>
+						</div>
+						<button @click="toggleAnalytics" class="relative w-14 h-8 rounded-full transition-all"
+							:class="analyticsConsent ? 'bg-[#4A90E2]' : 'bg-gray-300'">
+							<div class="absolute top-1 left-1 w-6 h-6 bg-white rounded-full transition-transform duration-200"
+								:class="{ 'translate-x-6': analyticsConsent }"></div>
+						</button>
+					</div>
+
+					<div class="flex items-center justify-between">
+						<div>
+							<div class="font-medium" :style="{ color: currentTheme.colors.text }">
 								Show Connections
 							</div>
 							<div class="text-sm" :style="{ color: currentTheme.colors.textSecondary }">Display cluster
@@ -1086,9 +1102,9 @@
 					<div class="p-4 rounded-xl transition-all" :style="{
 						backgroundColor: currentTheme.colors.background,
 						border: `2px solid ${compatibilityResults.webgpu.status === 'success' ? '#10b981' :
-								compatibilityResults.webgpu.status === 'error' ? '#ef4444' :
-									compatibilityResults.webgpu.status === 'warning' ? '#f59e0b' :
-										currentTheme.colors.border
+							compatibilityResults.webgpu.status === 'error' ? '#ef4444' :
+								compatibilityResults.webgpu.status === 'warning' ? '#f59e0b' :
+									currentTheme.colors.border
 							}`
 					}">
 						<div class="flex items-start gap-3">
@@ -1130,8 +1146,8 @@
 					<div class="p-4 rounded-xl transition-all" :style="{
 						backgroundColor: currentTheme.colors.background,
 						border: `2px solid ${compatibilityResults.memory.status === 'success' ? '#10b981' :
-								compatibilityResults.memory.status === 'warning' ? '#f59e0b' :
-									currentTheme.colors.border
+							compatibilityResults.memory.status === 'warning' ? '#f59e0b' :
+								currentTheme.colors.border
 							}`
 					}">
 						<div class="flex items-start gap-3">
@@ -1173,8 +1189,8 @@
 					<div class="p-4 rounded-xl transition-all" :style="{
 						backgroundColor: currentTheme.colors.background,
 						border: `2px solid ${compatibilityResults.indexeddb.status === 'success' ? '#10b981' :
-								compatibilityResults.indexeddb.status === 'error' ? '#ef4444' :
-									currentTheme.colors.border
+							compatibilityResults.indexeddb.status === 'error' ? '#ef4444' :
+								currentTheme.colors.border
 							}`
 					}">
 						<div class="flex items-start gap-3">
@@ -1216,9 +1232,9 @@
 					<div class="p-4 rounded-xl transition-all" :style="{
 						backgroundColor: currentTheme.colors.background,
 						border: `2px solid ${compatibilityResults.cache.status === 'success' ? '#10b981' :
-								compatibilityResults.cache.status === 'error' ? '#ef4444' :
-									compatibilityResults.cache.status === 'warning' ? '#f59e0b' :
-										currentTheme.colors.border
+							compatibilityResults.cache.status === 'error' ? '#ef4444' :
+								compatibilityResults.cache.status === 'warning' ? '#f59e0b' :
+									currentTheme.colors.border
 							}`
 					}">
 						<div class="flex items-start gap-3">
@@ -1275,9 +1291,9 @@
 						showCompatibilityCheck = false;
 						localStorage.setItem('rocus-compatibility-checked', 'true');
 					}" class="flex-1 px-6 py-3 rounded-xl font-medium transition-all" :style="{
-				backgroundColor: currentTheme.colors.background,
-				color: currentTheme.colors.text
-			}">
+						backgroundColor: currentTheme.colors.background,
+						color: currentTheme.colors.text
+					}">
 						Continue Anyway (May Not Work)
 					</button>
 					<button @click="checkSystemCompatibility" class="px-6 py-3 rounded-xl font-medium transition-all"
@@ -1512,7 +1528,15 @@ import {
 import * as d3 from "d3";
 import { pipeline, env } from "@xenova/transformers";
 import { CreateMLCEngine } from "@mlc-ai/web-llm";
+import { useAnalytics } from '../composables/useAnalytics';
 
+const { trackEvent } = useAnalytics();
+const { analyticsConsent, setConsent } = useAnalytics();
+
+function toggleAnalytics() {
+	setConsent(!analyticsConsent.value);
+}
+// optional analytics only for tracking functional application parts, ZERO personal data is collected
 
 // configuring transformers.js (embeddings)
 env.allowLocalModels = false;
@@ -2546,6 +2570,8 @@ async function confirmAddConnection() {
 		const sourceId = contextCluster.value.id;
 		const targetId = selectedConnectionCluster.value;
 
+		trackEvent('manual_connection_added');
+
 		// Initialize manual_connections if not exists
 		if (!clusters.value[sourceId].manual_connections) {
 			clusters.value[sourceId].manual_connections = [];
@@ -2973,6 +2999,7 @@ async function exportAllData() {
 		URL.revokeObjectURL(url);
 
 		console.log('✅ Data exported successfully');
+		trackEvent('data_exported');
 	} catch (error) {
 		console.error('❌ Error exporting data:', error);
 		alert('Failed to export data');
@@ -3169,6 +3196,8 @@ async function fetchAlbums() {
 async function createAlbum(albumData) {
 	try {
 		if (!db) throw new Error("Database not initialized");
+
+		trackEvent('album_created');
 
 		const albumId = generateId();
 
@@ -3755,6 +3784,9 @@ function formatDate(dateString) {
 }
 
 function performSearch() {
+	trackEvent('search_performed', {
+		has_results: matchCount.value > 0
+	});
 	const term = searchInput.value.toLowerCase().trim();
 	searchTerm = term;
 
@@ -4083,6 +4115,9 @@ function updateConnections() {
 }
 
 function explodeNode(clusterNode) {
+	trackEvent('cluster_exploded', {
+		website_count: clusterNode.websites.length
+	});
 	if (explodedNode.value && explodedNode.value.id !== clusterNode.id) {
 		collapseNode();
 		setTimeout(() => {
@@ -5258,6 +5293,8 @@ async function processWebsite(data) {
 		const metadata = data.metadata || {};
 		const content = data.content || "";
 
+
+
 		console.log(`📝 Processing: ${metadata.title || data.url}`);
 
 		// Generate summary and topic (Web-LLM)
@@ -5309,6 +5346,10 @@ async function processWebsite(data) {
 		setTimeout(() => {
 			showNewDataNotification.value = false;
 		}, 4000);
+
+		trackEvent('website_saved', {
+			has_album: !!data.album
+		});
 
 		await refreshData();
 
