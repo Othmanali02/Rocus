@@ -1512,8 +1512,62 @@
 			</div>
 		</div>
 	</div>
-</template>
 
+	<div v-if="showBanner" class="fixed bottom-0 left-0 right-0 z-[9999] animate-slideInUp">
+		<div class="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
+			<div class="rounded-2xl shadow-2xl border backdrop-blur-xl" :style="{
+				backgroundColor: currentTheme.isDark ? 'rgba(0,0,0,0.95)' : 'rgba(255,255,255,0.95)',
+				borderColor: currentTheme.colors.border
+			}">
+				<div class="p-6">
+					<div class="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+						<div class="flex-shrink-0">
+							<div class="w-12 h-12 rounded-xl flex items-center justify-center"
+								:style="{ backgroundColor: currentTheme.colors.primary + '20' }">
+								<svg class="w-6 h-6" :style="{ color: currentTheme.colors.primary }" fill="none"
+									stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+										d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+								</svg>
+							</div>
+						</div>
+
+						<div class="flex-1 min-w-0">
+							<h3 class="text-lg font-bold mb-1" :style="{ color: currentTheme.colors.text }">
+								Help Rocus Become Better
+							</h3>
+							<p class="text-sm" :style="{ color: currentTheme.colors.textSecondary }">
+								We use privacy-first analytics to understand how Rocus is used. No personal data is
+								collected,
+								and you can opt out anytime in settings. To learn more, please refer to our <a
+									href="/privacy" :style="{ color: currentTheme.colors.text }">Privacy Policy</a>
+							</p>
+						</div>
+
+						<!-- Actions -->
+						<div class="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+							<button @click="decline" class="px-6 py-2.5 rounded-xl font-medium transition-all text-sm"
+								:style="{
+									backgroundColor: currentTheme.colors.background,
+									color: currentTheme.colors.textSecondary
+								}">
+								No Thanks
+							</button>
+							<button @click="accept"
+								class="px-6 py-2.5 rounded-xl font-medium transition-all text-sm shadow-lg" :style="{
+									backgroundColor: currentTheme.colors.primary,
+									color: '#fff'
+								}">
+								Accept & Help
+							</button>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+
+</template>
 
 <script setup>
 import {
@@ -1530,12 +1584,31 @@ import { pipeline, env } from "@xenova/transformers";
 import { CreateMLCEngine } from "@mlc-ai/web-llm";
 import { useAnalytics } from '../composables/useAnalytics';
 
-const { trackEvent } = useAnalytics();
-const { analyticsConsent, setConsent } = useAnalytics();
-
+const { analyticsConsent, setConsent, checkConsent, trackEvent } = useAnalytics();
+const showBanner = ref(false);
 function toggleAnalytics() {
 	setConsent(!analyticsConsent.value);
 }
+
+function promptConsent() {
+	const consent = localStorage.getItem('rocus-analytics-consent');
+	if (consent === null) {
+		setTimeout(() => {
+			showBanner.value = true;
+		}, 5000);
+	}
+}
+
+function accept() {
+	setConsent(true);
+	showBanner.value = false;
+}
+
+function decline() {
+	setConsent(false);
+	showBanner.value = false;
+}
+
 // optional analytics only for tracking functional application parts, ZERO personal data is collected
 
 // configuring transformers.js (embeddings)
@@ -2212,7 +2285,7 @@ const tutorialStepsEmpty = [
 		action: null
 	},
 	{
-		title: 'Get Started!',
+		title: 'Get Started',
 		description: 'Install the browser extension and start saving websites. Watch as Rocus builds your intelligent knowledge graph automatically!',
 		highlight: null,
 		action: null
@@ -2230,7 +2303,6 @@ async function checkSystemCompatibility() {
 
 	let allPassed = true;
 
-	// 1. Check WebGPU
 	try {
 		if (!navigator.gpu) {
 			compatibilityResults.value.webgpu = {
@@ -2264,7 +2336,6 @@ async function checkSystemCompatibility() {
 		allPassed = false;
 	}
 
-	// 2. Check Memory
 	try {
 		if (performance.memory) {
 			const memoryMB = performance.memory.jsHeapSizeLimit / (1024 * 1024);
@@ -2293,7 +2364,6 @@ async function checkSystemCompatibility() {
 		};
 	}
 
-	// 3. Check IndexedDB
 	try {
 		const testDB = await new Promise((resolve, reject) => {
 			const request = indexedDB.open('_rocus_test', 1);
@@ -2317,10 +2387,8 @@ async function checkSystemCompatibility() {
 		allPassed = false;
 	}
 
-	// 4. Check Cache API (common Chrome issue)
 	try {
 		if ('caches' in window) {
-			// Try to open a cache
 			const cache = await caches.open('_rocus_test');
 			await caches.delete('_rocus_test');
 			compatibilityResults.value.cache = {
@@ -2341,7 +2409,6 @@ async function checkSystemCompatibility() {
 				message: 'Cache API error (common Chrome issue)',
 				fix: 'Use incognito mode, or clear site data in Settings → Privacy'
 			};
-			// Don't fail entirely on cache issues
 		} else {
 			compatibilityResults.value.cache = {
 				status: 'warning',
@@ -2351,13 +2418,11 @@ async function checkSystemCompatibility() {
 		}
 	}
 
-	// Overall result
 	compatibilityResults.value.overall = allPassed ? 'success' : 'error';
 
 	return allPassed;
 }
 
-// Add new function for empty state tutorial
 function startTutorialEmpty() {
 	tutorialActive.value = true;
 	tutorialStep.value = 0;
@@ -3784,9 +3849,6 @@ function formatDate(dateString) {
 }
 
 function performSearch() {
-	trackEvent('search_performed', {
-		has_results: matchCount.value > 0
-	});
 	const term = searchInput.value.toLowerCase().trim();
 	searchTerm = term;
 
@@ -5354,6 +5416,7 @@ async function processWebsite(data) {
 		await refreshData();
 
 		console.log(`✅ Processed: ${websiteId}`);
+		promptConsent();
 	} catch (err) {
 		console.error("Error processing website:", err);
 	}
