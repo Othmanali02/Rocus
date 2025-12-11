@@ -32,7 +32,6 @@
                     </h2>
                     <div class="space-y-4" :style="{ color: currentTheme.colors.textSecondary }">
                         <div class="flex items-start gap-3">
-                            <span class="text-2xl">🔒</span>
                             <div>
                                 <strong :style="{ color: currentTheme.colors.text }">Your Data Stays Local</strong>
                                 <p>All your websites, clusters, embeddings, and AI processing happen entirely in your
@@ -40,7 +39,6 @@
                             </div>
                         </div>
                         <div class="flex items-start gap-3">
-                            <span class="text-2xl">🚫</span>
                             <div>
                                 <strong :style="{ color: currentTheme.colors.text }">No Fingerprinting</strong>
                                 <p>We don't use device fingerprinting, tracking pixels, or any invasive tracking
@@ -48,7 +46,6 @@
                             </div>
                         </div>
                         <div class="flex items-start gap-3">
-                            <span class="text-2xl">📊</span>
                             <div>
                                 <strong :style="{ color: currentTheme.colors.text }">Anonymous Analytics Only</strong>
                                 <p>If you consent, we collect only anonymized usage patterns to improve the product. No
@@ -56,7 +53,6 @@
                             </div>
                         </div>
                         <div class="flex items-start gap-3">
-                            <span class="text-2xl">🌐</span>
                             <div>
                                 <strong :style="{ color: currentTheme.colors.text }">Open Source & Auditable</strong>
                                 <p>Our code is public on GitHub. You can verify everything we say here by reading the
@@ -76,7 +72,7 @@
                             (privacy-first, open-source analytics):</p>
 
                         <div class="p-4 rounded-xl mb-4" :style="{ backgroundColor: currentTheme.colors.background }">
-                            <strong :style="{ color: currentTheme.colors.text }">✅ What We Collect:</strong>
+                            <strong :style="{ color: currentTheme.colors.text }">What We Collect:</strong>
                             <ul class="list-disc ml-6 mt-2 space-y-1">
                                 <li>Page views (e.g., "someone visited the main graph page")</li>
                                 <li>Button clicks (e.g., "theme button was clicked")</li>
@@ -89,7 +85,7 @@
                         </div>
 
                         <div class="p-4 rounded-xl" :style="{ backgroundColor: currentTheme.colors.background }">
-                            <strong :style="{ color: currentTheme.colors.text }">❌ What We DON'T Collect:</strong>
+                            <strong :style="{ color: currentTheme.colors.text }">What We DON'T Collect:</strong>
                             <ul class="list-disc ml-6 mt-2 space-y-1">
                                 <li>Your website URLs, titles, or content</li>
                                 <li>Your cluster names or topics</li>
@@ -161,7 +157,7 @@
                                 your browser's IndexedDB or use Settings → Reset</li>
                             <li><strong :style="{ color: currentTheme.colors.text }">Review Our Code:</strong> <a
                                     href="https://github.com/Othmanali02/Rocus" target="_blank" class="underline"
-                                    :style="{ color: currentTheme.colors.primary }">github.com/yourusername/rocus</a>
+                                    :style="{ color: currentTheme.colors.primary }">github.com/Othmanali02/rocus</a>
                             </li>
                         </ul>
                     </div>
@@ -214,7 +210,40 @@
 </template>
 
 <script setup>
-import { inject } from 'vue';
+import { ref, onMounted } from 'vue';
+import themesData from "./themes/themes"
 
-const currentTheme = inject('currentTheme');
+const currentTheme = ref({
+    id: 'default-light',
+    name: 'Default Light',
+    isDark: false,
+    colors: {
+        background: '#f4f4f4',
+        surface: '#ffffff',
+        primary: '#4A90E2',
+        secondary: '#357ABD',
+        accent: '#4A90E2',
+        node: '#f4f4f4',
+        nodeStroke: '#d1d5db',
+        text: '#000000',
+        textSecondary: '#6b7280',
+        border: '#e5e7eb'
+    }
+});
+
+function loadTheme() {
+    const savedThemeId = localStorage.getItem('theme');
+    if (savedThemeId) {
+        const theme = themesData.find(t => t.id === savedThemeId);
+        if (theme) {
+            currentTheme.value = theme;
+            console.log('🎨 Loaded theme:', theme.name);
+        }
+    }
+}
+
+onMounted(() => {
+    loadTheme();
+});
+
 </script>
