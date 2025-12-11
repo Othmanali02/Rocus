@@ -31,7 +31,7 @@ const handleScroll = () => {
 
 const installExtension = () => {
     trackEvent('install-extension-clicked', { source: 'landing-page' });
-    window.open("https://chrome.google.com/webstore/detail/your-extension-id", "_blank");
+    window.open("https://chrome.google.com/webstore/detail/bemfkhghgmeeognkfpmdiefnggocifaf", "_blank");
 };
 
 // Track landing page view and time on page
@@ -433,11 +433,10 @@ onUnmounted(() => {
                             <li>
                                 <a href="#features" class="hover:text-white transition-colors">Features</a>
                             </li>
+
                             <li>
-                                <a href="#" class="hover:text-white transition-colors">Roadmap</a>
-                            </li>
-                            <li>
-                                <a href="#" class="hover:text-white transition-colors">Documentation</a>
+                                <a href="https://github.com/Othmanali02/Rocus/blob/main/README.md"
+                                    class="hover:text-white transition-colors">Documentation</a>
                             </li>
                         </ul>
                     </div>
@@ -446,14 +445,9 @@ onUnmounted(() => {
                         <h4 class="font-bold mb-4 text-[#4A90E2]">Legal</h4>
                         <ul class="space-y-2 text-[#9A9A9A]">
                             <li>
-                                <a href="#" class="hover:text-white transition-colors">Privacy Policy</a>
+                                <a href="/privacy" class="hover:text-white transition-colors">Privacy Policy</a>
                             </li>
-                            <li>
-                                <a href="#" class="hover:text-white transition-colors">GDPR Compliance</a>
-                            </li>
-                            <li>
-                                <a href="#" class="hover:text-white transition-colors">Cookie Policy</a>
-                            </li>
+
                         </ul>
                     </div>
 
@@ -464,20 +458,14 @@ onUnmounted(() => {
                                 <a href="https://github.com/Othmanali02/Rocus" target="_blank"
                                     class="hover:text-white transition-colors">GitHub</a>
                             </li>
-                            <li>
-                                <a href="#" class="hover:text-white transition-colors">Support</a>
-                            </li>
-                            <li>
-                                <a href="#" class="hover:text-white transition-colors">Contact</a>
-                            </li>
+
                         </ul>
                     </div>
                 </div>
 
                 <div class="border-t border-[#9A9A9A] border-opacity-20 pt-8 text-center text-[#9A9A9A]">
                     <p>
-                        © 2025 Rocus. Open source software licensed under MIT. Your data,
-                        your control.
+                        © 2025 Rocus. Open source software licensed under MIT.
                     </p>
                 </div>
             </div>
