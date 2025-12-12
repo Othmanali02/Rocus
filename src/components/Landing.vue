@@ -31,7 +31,7 @@ const handleScroll = () => {
 
 const installExtension = () => {
     trackEvent('install-extension-clicked', { source: 'landing-page' });
-    window.open("https://chrome.google.com/webstore/detail/bemfkhghgmeeognkfpmdiefnggocifaf", "_blank");
+    window.open("https://chrome.google.com/webstore/detail/gpohhaehjannmncapdjlajknkhdcigck", "_blank");
 };
 
 // Track landing page view and time on page
