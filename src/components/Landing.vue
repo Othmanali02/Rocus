@@ -126,9 +126,9 @@ onUnmounted(() => {
                             Sign In
                         </a> -->
 
-                        <a href="/dashboard"
-                            class="px-5 py-2 bg-[#4A90E2] text-white rounded-lg hover:bg-[#3A7BC8] transition-all font-semibold shadow-lg shadow-[#4A90E2]/30">
-                            Launch App
+                        <a @click="installExtension"
+                            class="px-5 py-2 cursor-pointer bg-[#4A90E2] text-white rounded-lg hover:bg-[#3A7BC8] transition-all font-semibold shadow-lg shadow-[#4A90E2]/30">
+                            Install Extension
                         </a>
                     </div>
 
@@ -158,9 +158,9 @@ onUnmounted(() => {
                     <!-- <button class="w-full px-4 py-2 text-[#4A90E2] border-2 border-[#4A90E2] rounded-lg font-semibold">
                         Sign In
                     </button> -->
-                    <button class="w-full px-4 py-2 bg-[#4A90E2] text-white rounded-lg font-semibold">
-                        Launch App
-                    </button>
+                    <a href="/dashboard" class="w-full px-4 py-2 bg-[#4A90E2] text-white rounded-lg font-semibold">
+                        Install Extension
+                    </a>
                 </div>
             </div>
         </nav>
@@ -194,7 +194,7 @@ onUnmounted(() => {
                     </p>
 
                     <div class="flex flex-col sm:flex-row gap-4 justify-center">
-                        <button @click="installExtension"
+                        <a href="/dashboard"
                             class="group px-8 py-4 bg-[#4A90E2] text-white rounded-lg text-lg font-bold hover:bg-[#3A7BC8] transition-all shadow-xl shadow-[#4A90E2]/30 hover:shadow-2xl hover:shadow-[#4A90E2]/40 flex items-center justify-center space-x-2">
                             <span>Launch App</span>
                             <svg class="w-5 h-5 group-hover:translate-x-1 transition-transform" fill="none"
@@ -202,7 +202,7 @@ onUnmounted(() => {
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                     d="M13 7l5 5m0 0l-5 5m5-5H6" />
                             </svg>
-                        </button>
+                        </a>
                         <a href="https://github.com/Othmanali02/Rocus" target="_blank"
                             class="px-8 py-4 bg-white text-[#4A90E2] rounded-lg text-lg font-bold hover:bg-gray-50 transition-all border-2 border-[#4A90E2] flex items-center justify-center space-x-2">
                             <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
