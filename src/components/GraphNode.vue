@@ -1714,8 +1714,28 @@ import {
 } from "vue";
 import * as d3 from "d3";
 import { pipeline, env } from "@xenova/transformers";
-import { CreateMLCEngine } from "@mlc-ai/web-llm";
+import { CreateMLCEngine, prebuiltAppConfig } from "@mlc-ai/web-llm";
 import { useAnalytics } from '../composables/useAnalytics';
+
+const MODEL_CDN_BASE = 'https://models.rocus.io';
+
+const availableModels = ref([
+	{
+		id: 'Qwen2.5-0.5B-Rocus',
+		name: 'Fast (0.5B)',
+		description: 'Runs on all devices, basic summaries',
+		size: '~350MB',
+		speed: 'Very Fast',
+		quality: 'Basic',
+		url: `${MODEL_CDN_BASE}/Qwen2.5-0.5B-Instruct-q4f32_1-MLC`, // base URL
+		wasm: `${MODEL_CDN_BASE}/Qwen2.5-0.5B-Instruct-q4f32_1-MLC/Qwen2-0.5B-Instruct-q4f32_1-ctx4k_cs1k-webgpu.wasm`,
+		config: `${MODEL_CDN_BASE}/Qwen2.5-0.5B-Instruct-q4f32_1-MLC/mlc-chat-config.json`
+	},
+]);
+
+const selectedModel = ref('Qwen2.5-0.5B-Rocus');
+const engine = ref(null);
+const modelLoadingProgress = ref(0);
 
 const { analyticsConsent, setConsent, checkConsent, trackEvent } = useAnalytics();
 const showBanner = ref(false);
@@ -5752,23 +5772,44 @@ async function loadModels() {
 			}
 		);
 
-		// web-llm
-		loadingMessage.value = "Loading summarization model (Web-LLM)...";
-		// CreateMLCEngine will download/extract model and set up worker; progress callback mapped to UI
-		const webLLMModelName = "Qwen2.5-0.5B-Instruct-q4f32_1-MLC";
 
-		const MODEL_BASE_URL = "https://models.rocus.io";
-		summarizationModel = await CreateMLCEngine(webLLMModelName, {
-			baseUrl: `${MODEL_BASE_URL}/${webLLMModelName}`,
-			initProgressCallback: (progress) => {
-				if (progress && typeof progress.progress === "number") {
-					downloadProgress.value = 40 + Math.round(progress.progress * 60);
-				}
-				if (progress && progress.text) {
-					loadingMessage.value = progress.text;
-				}
-			},
-		});
+		// Load Web-LLM from self-hosted CDN
+		loadingMessage.value = "Loading AI model from Rocus CDN...";
+		const modelConfig = availableModels.value.find(m => m.id === selectedModel.value);
+		if (!modelConfig) throw new Error('Model configuration not found');
+
+		console.log(`Loading model from: ${modelConfig.url}`);
+
+		// Create custom model record with UNIQUE ID
+		const customModelRecord = {
+			model: modelConfig.url,
+			model_id: selectedModel.value, // This is now 'Qwen2.5-0.5B-Rocus'
+			model_lib: modelConfig.wasm,
+			vram_required_MB: 512,
+			low_resource_required: false,
+		};
+
+		summarizationModel = await CreateMLCEngine(
+			selectedModel.value, // 'Qwen2.5-0.5B-Rocus'
+			{
+				initProgressCallback: (progress) => {
+					if (progress && typeof progress.progress === 'number') {
+						modelLoadingProgress.value = Math.round(progress.progress * 100);
+					}
+					if (progress && progress.text) {
+						loadingMessage.value = progress.text;
+						console.log(`📦 ${progress.text}`);
+					}
+				},
+				appConfig: {
+					useIndexedDBCache: true,
+					model_list: [customModelRecord],
+				},
+				logLevel: 'WARN',
+			}
+		);
+
+		console.log('✅ Model loaded from Rocus CDN');
 
 		// quick sanity test for summarization LLM
 		try {
