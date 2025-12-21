@@ -1565,7 +1565,7 @@
 							Version History
 						</h3>
 						<p class="text-sm mt-1" :style="{ color: currentTheme.colors.textSecondary }">
-							Current version: v1.0.1
+							Current version: v1.0.1 (Beta)
 						</p>
 					</div>
 					<button @click="showVersionHistory = false" class="p-2 rounded-xl transition-all">
@@ -2403,7 +2403,7 @@ const tutorialStepsEmpty = [
 	},
 	{
 		title: 'AI Models Loading',
-		description: 'Rocus uses local AI models that run in your browser. They download once and work offline. The indicator shows green when models are ready to process websites.',
+		description: 'Rocus uses local AI models that run in your browser. They download once and work offline. AI runs entirely in your browser. First load may take ~30–60 seconds. The indicator shows green when models are ready to process websites.',
 		highlight: 'model-status',
 		action: null
 	},
