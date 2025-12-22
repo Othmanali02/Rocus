@@ -14,19 +14,19 @@ const router = createRouter({
 			path: "/",
 			name: "Home",
 			component: Landing,
-			props: () => ({ user: store.user }),
+			// props: () => ({ user: store.user }),
 		},
 		{
 			path: "/privacy",
 			name: "PrivacyPolicy",
 			component: PrivacyPolicy,
-			props: () => ({ user: store.user }),
+			// props: () => ({ user: store.user }),
 		},
 		{
 			path: "/dashboard",
 			name: "GraphNode",
 			component: GraphNode,
-			props: () => ({ user: store.user }),
+			// props: () => ({ user: store.user }),
 		},
 		// {
 		// 	path: "/redirect",

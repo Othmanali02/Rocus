@@ -394,7 +394,6 @@
 						</p>
 					</div>
 
-					<!-- Loading Progress -->
 					<div v-if="modelLoading" class="p-4 rounded-xl" :style="{
 						backgroundColor: currentTheme.colors.primary + '10',
 						border: `1px solid ${currentTheme.colors.primary}40`
@@ -550,6 +549,34 @@
 						</button>
 						<input ref="importFileInput" type="file" accept=".rocus" style="display: none"
 							@change="handleImport" />
+					</div>
+
+					<div class="h-px" :style="{ backgroundColor: currentTheme.colors.border }"></div>
+
+					<!-- AI Cache Management -->
+					<div class="space-y-4 pt-4">
+						<div class="font-medium" :style="{ color: currentTheme.colors.text }">
+							AI Models & Cache
+						</div>
+
+						<button @click="clearModelCache"
+							class="w-full px-4 py-3 rounded-xl font-medium transition-all flex items-center justify-center gap-2"
+							:style="{
+								backgroundColor: currentTheme.colors.background,
+								color: currentTheme.colors.error || '#ef4444',
+								border: `1px solid ${currentTheme.colors.error || '#ef4444'}`
+							}">
+							<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+									d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+							</svg>
+							Clear AI Model Cache
+						</button>
+
+						<p class="text-xs" :style="{ color: currentTheme.colors.textSecondary }">
+							If models fail to load or Chrome crashes, clear the cache and reload. This will re-download
+							models (~350MB).
+						</p>
 					</div>
 				</div>
 
@@ -1761,8 +1788,6 @@ function decline() {
 	setConsent(false);
 	showBanner.value = false;
 }
-
-// optional analytics only for tracking functional application parts, ZERO personal data is collected
 
 // configuring transformers.js (embeddings)
 env.allowLocalModels = false;
@@ -5749,6 +5774,58 @@ async function loadFromIndexedDB() {
 	}
 }
 
+async function clearModelCache() {
+	const confirmed = confirm(
+		'Reset AI Model Cache?\n\n' +
+		'This will delete downloaded AI models (~300–700MB) and reload the app.\n\n' +
+		'Your bookmarks, topics, clusters, and albums will NOT be deleted.'
+	);
+
+	if (!confirmed) return;
+
+	try {
+		// Delete only WebLLM / MLC IndexedDB databases
+		if (indexedDB.databases) {
+			const databases = await indexedDB.databases();
+			for (const db of databases) {
+				if (
+					db.name &&
+					(
+						db.name.startsWith('webllm/') ||
+						db.name.startsWith('webllm') ||
+						db.name.includes('mlc')
+					)
+				) {
+					console.log('Deleting IndexedDB:', db.name);
+					indexedDB.deleteDatabase(db.name);
+				}
+			}
+		}
+
+		// Clear related Cache Storage entries
+		if ('caches' in window) {
+			const keys = await caches.keys();
+			for (const key of keys) {
+				if (key.includes('webllm') || key.includes('mlc')) {
+					console.log('Deleting cache:', key);
+					await caches.delete(key);
+				}
+			}
+		}
+
+		alert('✅ AI model cache cleared.\n\nReloading…');
+		location.reload();
+
+	} catch (err) {
+		console.error('Failed to clear AI cache:', err);
+		alert(
+			'⚠️ Could not fully reset AI cache automatically.\n\n' +
+			'Please clear site data for rocus.io in browser settings.'
+		);
+	}
+}
+
+
 async function loadModels() {
 	modelLoading.value = true;
 	loadingMessage.value = "Loading AI models...";
@@ -5780,13 +5857,10 @@ async function loadModels() {
 
 		console.log(`Loading model from: ${modelConfig.url}`);
 
-		// Create custom model record with UNIQUE ID
 		const customModelRecord = {
 			model: modelConfig.url,
-			model_id: selectedModel.value, // This is now 'Qwen2.5-0.5B-Rocus'
+			model_id: selectedModel.value,
 			model_lib: modelConfig.wasm,
-			vram_required_MB: 512,
-			low_resource_required: false,
 		};
 
 		summarizationModel = await CreateMLCEngine(
@@ -5828,11 +5902,63 @@ async function loadModels() {
 		downloadProgress.value = 0;
 		console.log("✅ Models loaded successfully (embeddings + Web-LLM)");
 	} catch (err) {
-		error.value = `Failed to load models: ${err.message || err}`;
 		modelLoading.value = false;
-		console.error("❌ Model loading error:", err);
+		error.value = err.message || "Failed to load AI models";
+
+		let errorMessage = 'AI Models Failed to Load\n\n';
+
+		if (err.message.includes('QuotaExceededError') || err.message.includes('quota') || err.message.includes('storage')) {
+			errorMessage +=
+				'❌ Problem: Browser storage is full\n\n' +
+				'✅ Quick Fix:\n' +
+				'1. Go to Settings (⚙️ icon)\n' +
+				'2. Click "Clear AI Model Cache"\n' +
+				'3. Models will re-download fresh\n\n' +
+				'Or manually: Chrome Settings → Privacy → Clear browsing data';
+		} else if (err.message.includes('WebGPU not supported')) {
+			errorMessage +=
+				'❌ Problem: Your browser doesn\'t support WebGPU\n\n' +
+				'✅ Solutions:\n' +
+				'1. Update Chrome to version 113+ (Help → About Chrome)\n' +
+				'2. Enable chrome://flags/#enable-unsafe-webgpu\n' +
+				'3. Restart browser after enabling\n\n' +
+				'Older computers (pre-2016) may not support WebGPU.';
+		} else if (err.message.includes('No GPU adapter')) {
+			errorMessage +=
+				'❌ Problem: Hardware doesn\'t support WebGPU\n\n' +
+				'✅ What to try:\n' +
+				'1. Update GPU drivers from manufacturer site\n' +
+				'2. Check chrome://gpu shows "WebGPU: Hardware accelerated"\n' +
+				'3. Try different browser (Edge, Firefox Nightly)\n\n' +
+				'Very old hardware (2015 or older) is a hit or miss.';
+		} else if (err.message.includes('Failed to fetch') || err.message.includes('Network')) {
+			errorMessage +=
+				'❌ Problem: Network or cache error\n\n' +
+				'✅ Solutions:\n' +
+				'1. Try Incognito mode (Ctrl+Shift+N)\n' +
+				'2. Clear cache in Settings\n' +
+				'3. Check internet connection\n' +
+				'4. Disable VPN/ad blockers temporarily';
+		} else {
+			errorMessage +=
+				`❌ Error: ${err.message}\n\n` +
+				'✅ Try this:\n' +
+				'1. Clear AI cache in Settings (⚙️)\n' +
+				'2. Try Incognito mode\n' +
+				'3. Restart browser\n' +
+				'4. Check chrome://gpu for issues';
+		}
+
+
+		error.value = errorMessage;      // set the error text
+		showModelStatus.value = true;    // open the modal
+		modelLoading.value = false;      // stop loading state
+
+		return;
+
 	}
 }
+
 
 // Generate unique ID
 function generateId() {
