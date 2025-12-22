@@ -5952,7 +5952,6 @@ async function loadModels() {
 
 		error.value = errorMessage;      // set the error text
 		showModelStatus.value = true;    // open the modal
-		modelLoading.value = false;      // stop loading state
 
 		return;
 
