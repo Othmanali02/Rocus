@@ -2686,8 +2686,7 @@ const queueProgress = computed(() => {
 });
 
 
-const GOOGLE_SEARCH_WORKER_URL = 'https://rocus.othman90hijawi.workers.dev';
-
+const GOOGLE_SEARCH_API_URL = 'https://rocus.io/api/search';
 
 const graphContainer = ref(null);
 const tooltip = ref(null);
@@ -3872,19 +3871,17 @@ async function fetchWebsiteDetails(websiteId) {
 }
 
 
-// similar links 
-
 async function googleSearch(query, numResults = 10) {
 	if (!query || !query.trim()) {
-		console.warn("⚠️ Empty search query");
+		console.warn("Empty search query");
 		return [];
 	}
 
 	try {
-		console.log(`🔍 Searching Google via Cloudflare Worker for: '${query}'`);
+		console.log(`🔍 Searching Google via backend API for: '${query}'`);
 
-		// Call Cloudflare Worker instead of Google directly
-		const url = new URL(GOOGLE_SEARCH_WORKER_URL);
+		// Call your Node.js backend instead of Cloudflare Worker
+		const url = new URL(GOOGLE_SEARCH_API_URL);
 		url.searchParams.set('q', query);
 		url.searchParams.set('num', numResults.toString());
 
@@ -3892,18 +3889,26 @@ async function googleSearch(query, numResults = 10) {
 			method: 'GET',
 			headers: {
 				'Content-Type': 'application/json',
-			}
+			},
+			credentials: 'include' // Include credentials for CORS
 		});
 
 		if (!response.ok) {
 			const errorData = await response.json().catch(() => ({}));
+
+			// Handle rate limiting
+			if (response.status === 429) {
+				console.warn('⚠️ Rate limit exceeded. Please try again later.');
+				throw new Error('Rate limit exceeded. Please try again in 15 minutes.');
+			}
+
 			throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
 		}
 
 		const data = await response.json();
 
 		if (!data.success || !data.results) {
-			throw new Error('Invalid response from search worker');
+			throw new Error('Invalid response from search API');
 		}
 
 		console.log(`✅ Found ${data.results.length} search results`);
@@ -3911,6 +3916,13 @@ async function googleSearch(query, numResults = 10) {
 
 	} catch (error) {
 		console.error(`⚠️ Google search error for query '${query}':`, error);
+
+		// You can throw the error to handle it in the calling code
+		// or return empty array as before
+		if (error.message.includes('Rate limit')) {
+			throw error; // Propagate rate limit errors
+		}
+
 		return [];
 	}
 }
