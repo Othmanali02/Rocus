@@ -1885,7 +1885,7 @@ const themes = [
 			node: '#ffffff',
 			nodeStroke: '#854f2b',
 			text: '#ffffff',
-			textSecondary: '#3ab3da',
+			textSecondary: '#ffffff',
 			border: '#854f2b'
 		}
 	},
@@ -1908,7 +1908,25 @@ const themes = [
 			border: '#4d7cc3'
 		}
 	},
-
+	{
+		id: 'didi',
+		name: 'Didi Greedy',
+		description: 'Colorful and Wonderful',
+		isDark: true,
+		preview: ['#00A766', '#FF9FBF', '#2582B8', '#FFBC00'],
+		colors: {
+			background: '#00A766',      // green - main background
+			surface: '#FFBC00',         // white - cards/panels
+			primary: '#2582B8',         // orange - main interactive elements
+			secondary: '#FF6C1F',       // blue - secondary elements
+			accent: '#FFBC00',          // yellow - highlights
+			node: '#FF6C1F',            // pink - the graph nodes
+			nodeStroke: '#FF9FBF',      // blue - node borders
+			text: '#FFFFFF',            // white - main text on green
+			textSecondary: '#E0F2EC',   // very light green - secondary text
+			border: '#FFBC00'           // yellow - borders
+		}
+	},
 	{
 		id: 'girly-pop',
 		name: 'Girly Pop',
