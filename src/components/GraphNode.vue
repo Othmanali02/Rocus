@@ -746,6 +746,15 @@
 				<span class="text-sm font-medium">Remove Connection</span>
 			</button>
 
+			<button @click="showAddToAlbumModalFunction" class="w-full flex items-center gap-3 px-4 py-3 transition-colors"
+				:style="{ color: currentTheme.colors.text }">
+				<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+						d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+				</svg>
+				<span class="text-sm font-medium">Add to Album</span>
+			</button>
+
 			<div class="h-px mx-2" :style="{ backgroundColor: currentTheme.colors.border }"></div>
 
 			<button @click="deleteCluster"
@@ -990,6 +999,56 @@
 						class="flex-1 px-6 py-3 bg-red-600 text-white rounded-xl font-medium hover:bg-red-700 transition-all"
 						:disabled="!selectedConnectionToRemove || connectedClusters.length === 0">
 						Remove Connection
+					</button>
+				</div>
+			</div>
+		</div>
+
+		<div v-if="showAddToAlbumModal" @click="closeAddToAlbumModal"
+			class="fixed inset-0 bg-black/50 backdrop-blur-sm z-[2000] flex items-center justify-center p-4 animate-fadeIn">
+			<div @click.stop
+				class="rounded-3xl p-8 w-full max-w-2xl shadow-2xl animate-scaleIn border max-h-[80vh] overflow-y-auto"
+				:style="{
+					backgroundColor: currentTheme.colors.surface,
+					borderColor: currentTheme.colors.border
+				}">
+				<h3 class="text-2xl font-bold mb-6" :style="{ color: currentTheme.colors.text }">
+					Add "{{ contextCluster?.topic }}" to Album
+				</h3>
+
+				<div v-if="Object.values(albums).length > 0" class="space-y-2 mb-6">
+					<div v-for="album in Object.values(albums)" :key="album.id"
+						class="flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-colors"
+						:class="selectedAlbumForCluster === album.id ? 'ring-2' : ''" :style="{
+							borderColor: selectedAlbumForCluster === album.id ? currentTheme.colors.primary : currentTheme.colors.border,
+							backgroundColor: selectedAlbumForCluster === album.id ? `${currentTheme.colors.primary}10` : 'transparent'
+						}" @click="selectedAlbumForCluster = album.id">
+						<input type="radio" :checked="selectedAlbumForCluster === album.id" class="w-4 h-4" />
+						<img :src="getIconUrl(album.icon)" alt="Album icon" class="w-8 h-8 object-contain" />
+						<div class="flex-1">
+							<div class="font-medium" :style="{ color: currentTheme.colors.text }">
+								{{ album.name }}
+							</div>
+						</div>
+					</div>
+				</div>
+
+				<div v-else class="text-center py-8" :style="{ color: currentTheme.colors.textSecondary }">
+					No albums available. Create one first!
+				</div>
+
+				<div class="flex gap-3">
+					<button @click="closeAddToAlbumModal" class="flex-1 px-6 py-3 rounded-xl font-medium transition-all"
+						:style="{
+							backgroundColor: currentTheme.colors.background,
+							color: currentTheme.colors.textSecondary
+						}">
+						Cancel
+					</button>
+					<button @click="confirmAddToAlbum"
+						class="flex-1 px-6 py-3 bg-[#4A90E2] text-white rounded-xl font-medium hover:bg-[#357ABD] transition-all"
+						:disabled="!selectedAlbumForCluster || Object.values(albums).length === 0">
+						Add to Album
 					</button>
 				</div>
 			</div>
@@ -1803,6 +1862,8 @@ const matchCount = ref(0);
 const isSearchFocused = ref(false);
 const searchInputRef = ref(null);
 const showThemes = ref(false);
+const showAddToAlbumModal = ref(false);
+const selectedAlbumForCluster = ref(null);
 const currentTheme = ref({
 	id: 'default-light',
 	name: 'Default Light',
@@ -3609,6 +3670,45 @@ function closeModelStatus() {
 // 		renderGraph();
 // 	}
 // }
+
+function showAddToAlbumModalFunction() {
+	selectedAlbumForCluster.value = contextCluster.value?.album_id || null;
+	showAddToAlbumModal.value = true;
+	showContextMenu.value = false;
+}
+
+function closeAddToAlbumModal() {
+	showAddToAlbumModal.value = false;
+	selectedAlbumForCluster.value = null;
+}
+
+async function confirmAddToAlbum() {
+	if (!contextCluster.value || !selectedAlbumForCluster.value) return;
+
+	try {
+		const clusterId = contextCluster.value.id;
+		const albumId = selectedAlbumForCluster.value;
+
+		// Update cluster's album_id
+		clusters.value[clusterId].album_id = albumId;
+
+		// Update all websites in this cluster
+		for (const websiteId of clusters.value[clusterId].websites) {
+			if (websites.value[websiteId]) {
+				websites.value[websiteId].album_id = albumId;
+			}
+		}
+
+		await saveToIndexedDB();
+		await refreshData();
+
+		closeAddToAlbumModal();
+		contextCluster.value = null;
+	} catch (error) {
+		console.error('Error adding cluster to album:', error);
+		alert('Failed to add cluster to album');
+	}
+}
 
 function createNewAlbum() {
 	editingAlbum.value = null;
