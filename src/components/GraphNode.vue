@@ -746,7 +746,8 @@
 				<span class="text-sm font-medium">Remove Connection</span>
 			</button>
 
-			<button @click="showAddToAlbumModalFunction" class="w-full flex items-center gap-3 px-4 py-3 transition-colors"
+			<button @click="showAddToAlbumModalFunction"
+				class="w-full flex items-center gap-3 px-4 py-3 transition-colors"
 				:style="{ color: currentTheme.colors.text }">
 				<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -764,6 +765,23 @@
 						d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
 				</svg>
 				<span class="text-sm font-medium">Delete Cluster</span>
+			</button>
+		</div>
+
+		<!-- Website Node Context Menu -->
+		<div v-if="showWebsiteContextMenu" @click.stop
+			class="fixed z-[2500] rounded-xl shadow-2xl border overflow-hidden min-w-[180px] animate-scaleIn" :style="{
+				...contextMenuStyle,
+				backgroundColor: currentTheme.colors.surface,
+				borderColor: currentTheme.colors.border
+			}">
+			<button @click="editWebsiteTitle" class="w-full flex items-center gap-3 px-4 py-3 transition-colors"
+				:style="{ color: currentTheme.colors.text }">
+				<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+						d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+				</svg>
+				<span class="text-sm font-medium">Edit Title</span>
 			</button>
 		</div>
 
@@ -794,6 +812,39 @@
 					<button @click="confirmRename"
 						class="flex-1 px-6 py-3 bg-[#4A90E2] text-white rounded-xl font-medium hover:bg-[#357ABD] transition-all">
 						Rename
+					</button>
+				</div>
+			</div>
+		</div>
+
+		<!-- Edit Website Title Modal -->
+		<div v-if="showWebsiteEditModal" @click="closeWebsiteEditModal"
+			class="fixed inset-0 bg-black/50 backdrop-blur-sm z-[2000] flex items-center justify-center p-4 animate-fadeIn">
+			<div @click.stop class="rounded-3xl p-8 w-full max-w-md shadow-2xl animate-scaleIn border" :style="{
+				backgroundColor: currentTheme.colors.surface,
+				borderColor: currentTheme.colors.border
+			}">
+				<h3 class="text-2xl font-bold mb-6" :style="{ color: currentTheme.colors.text }">
+					Edit Website Title
+				</h3>
+				<input v-model="websiteTitleInput" @keyup.enter="confirmWebsiteEdit" type="text"
+					placeholder="Website title" class="w-full px-4 py-3 border rounded-xl outline-none transition-all"
+					:style="{
+						backgroundColor: currentTheme.colors.background,
+						borderColor: currentTheme.colors.border,
+						color: currentTheme.colors.text
+					}" />
+				<div class="flex gap-3 mt-6">
+					<button @click="closeWebsiteEditModal"
+						class="flex-1 px-6 py-3 rounded-xl font-medium transition-all" :style="{
+							backgroundColor: currentTheme.colors.background,
+							color: currentTheme.colors.textSecondary
+						}">
+						Cancel
+					</button>
+					<button @click="confirmWebsiteEdit"
+						class="flex-1 px-6 py-3 bg-[#4A90E2] text-white rounded-xl font-medium hover:bg-[#357ABD] transition-all">
+						Save
 					</button>
 				</div>
 			</div>
@@ -1864,6 +1915,12 @@ const searchInputRef = ref(null);
 const showThemes = ref(false);
 const showAddToAlbumModal = ref(false);
 const selectedAlbumForCluster = ref(null);
+
+const showWebsiteContextMenu = ref(false);
+const websiteContextNode = ref(null);
+const showWebsiteEditModal = ref(false);
+const websiteTitleInput = ref('');
+
 const currentTheme = ref({
 	id: 'default-light',
 	name: 'Default Light',
@@ -4478,6 +4535,36 @@ async function refreshData() {
 	}
 }
 
+function addProcessingPlaceholder(data) {
+	if (!graphData || !simulation) return { id: null };
+	const nodeId = `processing-${generateId()}`;
+	const width = graphContainer.value?.clientWidth || 800;
+	const height = graphContainer.value?.clientHeight || 600;
+	const node = {
+		id: nodeId,
+		title: (data.metadata?.title || data.url || 'New website').substring(0, 25),
+		size: 18,
+		baseSize: 18,
+		type: 'processing',
+		x: width / 2 + (Math.random() - 0.5) * 300,
+		y: height / 2 + (Math.random() - 0.5) * 300,
+		vx: 0,
+		vy: 0,
+	};
+	graphData.nodes.push(node);
+	simulation.nodes(graphData.nodes);
+	simulation.alpha(0.3).restart();
+	renderGraph();
+	return node;
+}
+
+function removeProcessingPlaceholder(nodeId) {
+	if (!nodeId || !graphData) return;
+	graphData.nodes = graphData.nodes.filter(n => n.id !== nodeId);
+	if (simulation) simulation.nodes(graphData.nodes);
+	renderGraph();
+}
+
 function updateConnections() {
 	if (rawClusters.length > 0) {
 		filterGraphByAlbum();
@@ -4783,11 +4870,13 @@ function renderGraph() {
 		.attr("r", (d) => d.size * settings.nodeSize)
 		.attr("fill", (d) => {
 			if (d.type === "discover") return currentTheme.value.colors.primary;
+			if (d.type === "processing") return currentTheme.value.colors.secondary;
 			if (d.type === "website") return currentTheme.value.colors.node;
 			return currentTheme.value.colors.node;
 		})
 		.attr("stroke", (d) => {
 			if (d.type === "discover") return currentTheme.value.colors.secondary;
+			if (d.type === "processing") return currentTheme.value.colors.nodeStroke;
 			if (d.type === "website") return currentTheme.value.colors.nodeStroke;
 			return currentTheme.value.colors.nodeStroke;
 		})
@@ -4800,6 +4889,7 @@ function renderGraph() {
 		.join("text")
 		.attr("class", "node-label")
 		.text((d) => {
+			if (d.type === "processing") return "Processing...";
 			if (d.type === "website")
 				return d.title.substring(0, 20) + (d.title.length > 20 ? "..." : "");
 			if (d.type === "discover") return "";
@@ -4807,6 +4897,7 @@ function renderGraph() {
 		})
 		.style("font-size", (d) => {
 			if (d.type === "website") return "8px";
+			if (d.type === "processing") return "9px";
 			if (d.type === "discover") return "18px";
 			return Math.max(10, (d.size * settings.nodeSize) / 3.5) + "px";
 		})
@@ -4883,6 +4974,8 @@ function handleNodeMouseOver(event, d) {
 		tooltipContent = `<strong>${d.title}</strong><br>${d.domain}<br>Click for details`;
 	} else if (d.type === "discover") {
 		tooltipContent = `<strong>Discover Similar</strong><br>Find related websites`;
+	} else if (d.type === "processing") {
+		tooltipContent = `<strong>Processing…</strong><br>${d.title}`;
 	}
 
 	tooltipEl
@@ -4905,6 +4998,8 @@ function handleNodeMouseOut() {
 
 async function handleNodeClick(event, d) {
 	event.stopPropagation();
+
+	if (d.type === 'processing') return;
 
 	if (d.type === "cluster") {
 		explodeNode(d);
@@ -4958,6 +5053,7 @@ function handleBackgroundClick() {
 	selectedWebsite.value = null;
 	showAlbumsDropdown.value = false;
 	closeContextMenu();
+	showWebsiteContextMenu.value = false;
 }
 
 function closeStickyNote() {
@@ -4974,14 +5070,17 @@ function handleNodeRightClick(event, d) {
 	event.preventDefault();
 	event.stopPropagation();
 
-	if (d.type !== 'cluster') return;
-
-	contextCluster.value = clusters.value[d.id];
-	contextMenuStyle.value = {
-		left: event.pageX + 'px',
-		top: event.pageY + 'px'
-	};
-	showContextMenu.value = true;
+	if (d.type === 'cluster') {
+		contextCluster.value = clusters.value[d.id];
+		contextMenuStyle.value = { left: event.pageX + 'px', top: event.pageY + 'px' };
+		showContextMenu.value = true;
+		showWebsiteContextMenu.value = false;
+	} else if (d.type === 'website') {
+		websiteContextNode.value = d;
+		contextMenuStyle.value = { left: event.pageX + 'px', top: event.pageY + 'px' };
+		showWebsiteContextMenu.value = true;
+		showContextMenu.value = false;
+	}
 }
 
 function closeContextMenu() {
@@ -4990,6 +5089,31 @@ function closeContextMenu() {
 }
 
 // Rename Functions
+function editWebsiteTitle() {
+	if (!websiteContextNode.value) return;
+	websiteTitleInput.value = websiteContextNode.value.title;
+	showWebsiteEditModal.value = true;
+	showWebsiteContextMenu.value = false;
+}
+
+function closeWebsiteEditModal() {
+	showWebsiteEditModal.value = false;
+	websiteTitleInput.value = '';
+	websiteContextNode.value = null;
+}
+
+async function confirmWebsiteEdit() {
+	if (!websiteTitleInput.value.trim() || !websiteContextNode.value) return;
+	const websiteId = websiteContextNode.value.websiteId;
+	const newTitle = websiteTitleInput.value.trim();
+	if (websites.value[websiteId]) {
+		websites.value[websiteId].title = newTitle;
+		await saveToIndexedDB();
+		await refreshData();
+	}
+	closeWebsiteEditModal();
+}
+
 function renameCluster() {
 	renameInput.value = contextCluster.value.topic;
 	showRenameModal.value = true;
@@ -5662,6 +5786,8 @@ async function processWebsite(data) {
 		return;
 	}
 
+	const placeholderNode = addProcessingPlaceholder(data);
+
 	try {
 		const websiteId = generateId();
 		const metadata = data.metadata || {};
@@ -5715,6 +5841,8 @@ async function processWebsite(data) {
 		// Save to IndexedDB
 		await saveToIndexedDB();
 
+		removeProcessingPlaceholder(placeholderNode.id);
+
 		showNewDataNotification.value = true;
 
 		setTimeout(() => {
@@ -5731,6 +5859,7 @@ async function processWebsite(data) {
 		promptConsent();
 	} catch (err) {
 		console.error("Error processing website:", err);
+		removeProcessingPlaceholder(placeholderNode.id);
 	}
 }
 
@@ -6524,5 +6653,24 @@ watch(tutorialActive, (isActive) => {
 	-webkit-line-clamp: 2;
 	-webkit-box-orient: vertical;
 	overflow: hidden;
+}
+
+:global(.node.processing) {
+	animation: pulse-processing 1.2s ease-in-out infinite;
+	cursor: default;
+}
+
+@keyframes pulse-processing {
+
+	0%,
+	100% {
+		opacity: 1;
+		filter: drop-shadow(0 2px 12px rgba(245, 158, 11, 0.8));
+	}
+
+	50% {
+		opacity: 0.35;
+		filter: drop-shadow(0 4px 20px rgba(245, 158, 11, 0.3));
+	}
 }
 </style>
