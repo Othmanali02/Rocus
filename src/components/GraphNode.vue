@@ -1732,16 +1732,11 @@
 <script setup>
 import {
 	ref,
-	reactive,
 	onMounted,
 	onBeforeUnmount,
 	watch,
 	onUnmounted,
-	computed,
 } from "vue";
-import * as d3 from "d3";
-import { pipeline, env } from "@xenova/transformers";
-import { CreateMLCEngine, prebuiltAppConfig } from "@mlc-ai/web-llm";
 import { useAnalytics } from '../composables/useAnalytics';
 
 const MODEL_CDN_BASE = 'https://models.rocus.io';
@@ -1803,6 +1798,14 @@ const matchCount = ref(0);
 const isSearchFocused = ref(false);
 const searchInputRef = ref(null);
 const showThemes = ref(false);
+const showAddToAlbumModal = ref(false);
+const selectedAlbumForCluster = ref(null);
+
+const showWebsiteContextMenu = ref(false);
+const websiteContextNode = ref(null);
+const showWebsiteEditModal = ref(false);
+const websiteTitleInput = ref('');
+
 const currentTheme = ref({
 	id: 'default-light',
 	name: 'Default Light',
@@ -1885,7 +1888,7 @@ const themes = [
 			node: '#ffffff',
 			nodeStroke: '#854f2b',
 			text: '#ffffff',
-			textSecondary: '#3ab3da',
+			textSecondary: '#ffffff',
 			border: '#854f2b'
 		}
 	},
@@ -1908,7 +1911,25 @@ const themes = [
 			border: '#4d7cc3'
 		}
 	},
-
+	{
+		id: 'didi',
+		name: 'Didi Greedy',
+		description: 'Colorful and Wonderful',
+		isDark: true,
+		preview: ['#00A766', '#FF9FBF', '#2582B8', '#FFBC00'],
+		colors: {
+			background: '#00A766',      // green - main background
+			surface: '#FFBC00',         // white - cards/panels
+			primary: '#2582B8',         // orange - main interactive elements
+			secondary: '#FF6C1F',       // blue - secondary elements
+			accent: '#FFBC00',          // yellow - highlights
+			node: '#FF6C1F',            // pink - the graph nodes
+			nodeStroke: '#FF9FBF',      // blue - node borders
+			text: '#FFFFFF',            // white - main text on green
+			textSecondary: '#E0F2EC',   // very light green - secondary text
+			border: '#FFBC00'           // yellow - borders
+		}
+	},
 	{
 		id: 'girly-pop',
 		name: 'Girly Pop',
@@ -2686,8 +2707,7 @@ const queueProgress = computed(() => {
 });
 
 
-const GOOGLE_SEARCH_WORKER_URL = 'https://rocus.othman90hijawi.workers.dev';
-
+const GOOGLE_SEARCH_API_URL = 'https://rocus.io/api/search';
 
 const graphContainer = ref(null);
 const tooltip = ref(null);
@@ -3593,6 +3613,45 @@ function closeModelStatus() {
 // 	}
 // }
 
+function showAddToAlbumModalFunction() {
+	selectedAlbumForCluster.value = contextCluster.value?.album_id || null;
+	showAddToAlbumModal.value = true;
+	showContextMenu.value = false;
+}
+
+function closeAddToAlbumModal() {
+	showAddToAlbumModal.value = false;
+	selectedAlbumForCluster.value = null;
+}
+
+async function confirmAddToAlbum() {
+	if (!contextCluster.value || !selectedAlbumForCluster.value) return;
+
+	try {
+		const clusterId = contextCluster.value.id;
+		const albumId = selectedAlbumForCluster.value;
+
+		// Update cluster's album_id
+		clusters.value[clusterId].album_id = albumId;
+
+		// Update all websites in this cluster
+		for (const websiteId of clusters.value[clusterId].websites) {
+			if (websites.value[websiteId]) {
+				websites.value[websiteId].album_id = albumId;
+			}
+		}
+
+		await saveToIndexedDB();
+		await refreshData();
+
+		closeAddToAlbumModal();
+		contextCluster.value = null;
+	} catch (error) {
+		console.error('Error adding cluster to album:', error);
+		alert('Failed to add cluster to album');
+	}
+}
+
 function createNewAlbum() {
 	editingAlbum.value = null;
 	albumForm.name = "";
@@ -3872,19 +3931,17 @@ async function fetchWebsiteDetails(websiteId) {
 }
 
 
-// similar links 
-
 async function googleSearch(query, numResults = 10) {
 	if (!query || !query.trim()) {
-		console.warn("⚠️ Empty search query");
+		console.warn("Empty search query");
 		return [];
 	}
 
 	try {
-		console.log(`🔍 Searching Google via Cloudflare Worker for: '${query}'`);
+		console.log(`🔍 Searching Google via backend API for: '${query}'`);
 
-		// Call Cloudflare Worker instead of Google directly
-		const url = new URL(GOOGLE_SEARCH_WORKER_URL);
+		// Call your Node.js backend instead of Cloudflare Worker
+		const url = new URL(GOOGLE_SEARCH_API_URL);
 		url.searchParams.set('q', query);
 		url.searchParams.set('num', numResults.toString());
 
@@ -3892,18 +3949,26 @@ async function googleSearch(query, numResults = 10) {
 			method: 'GET',
 			headers: {
 				'Content-Type': 'application/json',
-			}
+			},
+			credentials: 'include' // Include credentials for CORS
 		});
 
 		if (!response.ok) {
 			const errorData = await response.json().catch(() => ({}));
+
+			// Handle rate limiting
+			if (response.status === 429) {
+				console.warn('⚠️ Rate limit exceeded. Please try again later.');
+				throw new Error('Rate limit exceeded. Please try again in 15 minutes.');
+			}
+
 			throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
 		}
 
 		const data = await response.json();
 
 		if (!data.success || !data.results) {
-			throw new Error('Invalid response from search worker');
+			throw new Error('Invalid response from search API');
 		}
 
 		console.log(`✅ Found ${data.results.length} search results`);
@@ -3911,6 +3976,13 @@ async function googleSearch(query, numResults = 10) {
 
 	} catch (error) {
 		console.error(`⚠️ Google search error for query '${query}':`, error);
+
+		// You can throw the error to handle it in the calling code
+		// or return empty array as before
+		if (error.message.includes('Rate limit')) {
+			throw error; // Propagate rate limit errors
+		}
+
 		return [];
 	}
 }
@@ -4348,6 +4420,36 @@ async function refreshData() {
 	}
 }
 
+function addProcessingPlaceholder(data) {
+	if (!graphData || !simulation) return { id: null };
+	const nodeId = `processing-${generateId()}`;
+	const width = graphContainer.value?.clientWidth || 800;
+	const height = graphContainer.value?.clientHeight || 600;
+	const node = {
+		id: nodeId,
+		title: (data.metadata?.title || data.url || 'New website').substring(0, 25),
+		size: 18,
+		baseSize: 18,
+		type: 'processing',
+		x: width / 2 + (Math.random() - 0.5) * 300,
+		y: height / 2 + (Math.random() - 0.5) * 300,
+		vx: 0,
+		vy: 0,
+	};
+	graphData.nodes.push(node);
+	simulation.nodes(graphData.nodes);
+	simulation.alpha(0.3).restart();
+	renderGraph();
+	return node;
+}
+
+function removeProcessingPlaceholder(nodeId) {
+	if (!nodeId || !graphData) return;
+	graphData.nodes = graphData.nodes.filter(n => n.id !== nodeId);
+	if (simulation) simulation.nodes(graphData.nodes);
+	renderGraph();
+}
+
 function updateConnections() {
 	if (rawClusters.length > 0) {
 		filterGraphByAlbum();
@@ -4653,11 +4755,13 @@ function renderGraph() {
 		.attr("r", (d) => d.size * settings.nodeSize)
 		.attr("fill", (d) => {
 			if (d.type === "discover") return currentTheme.value.colors.primary;
+			if (d.type === "processing") return currentTheme.value.colors.secondary;
 			if (d.type === "website") return currentTheme.value.colors.node;
 			return currentTheme.value.colors.node;
 		})
 		.attr("stroke", (d) => {
 			if (d.type === "discover") return currentTheme.value.colors.secondary;
+			if (d.type === "processing") return currentTheme.value.colors.nodeStroke;
 			if (d.type === "website") return currentTheme.value.colors.nodeStroke;
 			return currentTheme.value.colors.nodeStroke;
 		})
@@ -4670,6 +4774,7 @@ function renderGraph() {
 		.join("text")
 		.attr("class", "node-label")
 		.text((d) => {
+			if (d.type === "processing") return "Processing...";
 			if (d.type === "website")
 				return d.title.substring(0, 20) + (d.title.length > 20 ? "..." : "");
 			if (d.type === "discover") return "";
@@ -4677,6 +4782,7 @@ function renderGraph() {
 		})
 		.style("font-size", (d) => {
 			if (d.type === "website") return "8px";
+			if (d.type === "processing") return "9px";
 			if (d.type === "discover") return "18px";
 			return Math.max(10, (d.size * settings.nodeSize) / 3.5) + "px";
 		})
@@ -4737,7 +4843,7 @@ function drag(simulation) {
 }
 
 // ==============================================
-// EVENT HANDLERS
+// SETTINGS MODAL (simple glue - kept here rather than a dedicated composable)
 // ==============================================
 function handleNodeMouseOver(event, d) {
 	const tooltipEl = d3.select(tooltip.value);
@@ -4753,6 +4859,8 @@ function handleNodeMouseOver(event, d) {
 		tooltipContent = `<strong>${d.title}</strong><br>${d.domain}<br>Click for details`;
 	} else if (d.type === "discover") {
 		tooltipContent = `<strong>Discover Similar</strong><br>Find related websites`;
+	} else if (d.type === "processing") {
+		tooltipContent = `<strong>Processing…</strong><br>${d.title}`;
 	}
 
 	tooltipEl
@@ -4775,6 +4883,8 @@ function handleNodeMouseOut() {
 
 async function handleNodeClick(event, d) {
 	event.stopPropagation();
+
+	if (d.type === 'processing') return;
 
 	if (d.type === "cluster") {
 		explodeNode(d);
@@ -4828,6 +4938,7 @@ function handleBackgroundClick() {
 	selectedWebsite.value = null;
 	showAlbumsDropdown.value = false;
 	closeContextMenu();
+	showWebsiteContextMenu.value = false;
 }
 
 function closeStickyNote() {
@@ -4844,14 +4955,17 @@ function handleNodeRightClick(event, d) {
 	event.preventDefault();
 	event.stopPropagation();
 
-	if (d.type !== 'cluster') return;
-
-	contextCluster.value = clusters.value[d.id];
-	contextMenuStyle.value = {
-		left: event.pageX + 'px',
-		top: event.pageY + 'px'
-	};
-	showContextMenu.value = true;
+	if (d.type === 'cluster') {
+		contextCluster.value = clusters.value[d.id];
+		contextMenuStyle.value = { left: event.pageX + 'px', top: event.pageY + 'px' };
+		showContextMenu.value = true;
+		showWebsiteContextMenu.value = false;
+	} else if (d.type === 'website') {
+		websiteContextNode.value = d;
+		contextMenuStyle.value = { left: event.pageX + 'px', top: event.pageY + 'px' };
+		showWebsiteContextMenu.value = true;
+		showContextMenu.value = false;
+	}
 }
 
 function closeContextMenu() {
@@ -4860,6 +4974,31 @@ function closeContextMenu() {
 }
 
 // Rename Functions
+function editWebsiteTitle() {
+	if (!websiteContextNode.value) return;
+	websiteTitleInput.value = websiteContextNode.value.title;
+	showWebsiteEditModal.value = true;
+	showWebsiteContextMenu.value = false;
+}
+
+function closeWebsiteEditModal() {
+	showWebsiteEditModal.value = false;
+	websiteTitleInput.value = '';
+	websiteContextNode.value = null;
+}
+
+async function confirmWebsiteEdit() {
+	if (!websiteTitleInput.value.trim() || !websiteContextNode.value) return;
+	const websiteId = websiteContextNode.value.websiteId;
+	const newTitle = websiteTitleInput.value.trim();
+	if (websites.value[websiteId]) {
+		websites.value[websiteId].title = newTitle;
+		await saveToIndexedDB();
+		await refreshData();
+	}
+	closeWebsiteEditModal();
+}
+
 function renameCluster() {
 	renameInput.value = contextCluster.value.topic;
 	showRenameModal.value = true;
@@ -5147,59 +5286,6 @@ function toggleSettings() {
 
 function closeSettings() {
 	showSettings.value = false;
-}
-
-function loadDarkModePreference() {
-	const saved = localStorage.getItem('darkMode');
-	if (saved !== null) {
-		isDarkMode.value = saved === 'true';
-		updateTheme();
-	}
-}
-
-function toggleDarkMode() {
-	// Find the opposite theme (light <-> dark)
-	const newTheme = currentTheme.value.isDark
-		? themes.find(t => t.id === 'default-light')
-		: themes.find(t => t.id === 'default-dark');
-
-	if (newTheme) {
-		applyTheme(newTheme);
-	}
-}
-
-function updateTheme() {
-	if (!currentTheme.value || !container) return;
-
-	applyThemeColors(currentTheme.value);
-}
-
-function updateNodeSizes() {
-	container
-		.select(".nodes")
-		.selectAll(".node")
-		.transition()
-		.duration(300 / settings.animationSpeed)
-		.attr("r", (d) => d.baseSize * settings.nodeSize);
-
-	container
-		.select(".labels")
-		.selectAll(".node-label")
-		.transition()
-		.duration(300 / settings.animationSpeed)
-		.style("font-size", (d) => {
-			if (d.type === "website") return "8px";
-			if (d.type === "discover") return "18px";
-			return Math.max(10, (d.baseSize * settings.nodeSize) / 3.5) + "px";
-		});
-
-	if (simulation) {
-		simulation.force(
-			"collision",
-			d3.forceCollide().radius((d) => d.baseSize * settings.nodeSize + 15)
-		);
-		simulation.alpha(0.3).restart();
-	}
 }
 
 function resetSettings() {
@@ -5532,6 +5618,8 @@ async function processWebsite(data) {
 		return;
 	}
 
+	const placeholderNode = addProcessingPlaceholder(data);
+
 	try {
 		const websiteId = generateId();
 		const metadata = data.metadata || {};
@@ -5585,6 +5673,8 @@ async function processWebsite(data) {
 		// Save to IndexedDB
 		await saveToIndexedDB();
 
+		removeProcessingPlaceholder(placeholderNode.id);
+
 		showNewDataNotification.value = true;
 
 		setTimeout(() => {
@@ -5601,6 +5691,7 @@ async function processWebsite(data) {
 		promptConsent();
 	} catch (err) {
 		console.error("Error processing website:", err);
+		removeProcessingPlaceholder(placeholderNode.id);
 	}
 }
 
@@ -5952,6 +6043,7 @@ async function loadModels() {
 
 		error.value = errorMessage;      // set the error text
 		showModelStatus.value = true;    // open the modal
+		modelLoading.value = false;      // stop loading state
 
 		return;
 
@@ -6001,134 +6093,6 @@ function setupMessageListener() {
 
 
 let messageListener = null;
-
-const handleResize = () => {
-	if (svg && graphContainer.value) {
-		const width = graphContainer.value.clientWidth;
-		const height = graphContainer.value.clientHeight;
-		svg.attr("width", width).attr("height", height);
-		selectedWebsite.value = null;
-	}
-};
-
-// Close dropdowns when clicking outside
-document.addEventListener("click", (e) => {
-	if (!e.target.closest(".albums-dropdown-container")) {
-		showAlbumsDropdown.value = false;
-	}
-});
-
-watch(
-	() => showConnections.value,
-	() => {
-		toggleConnections();
-	}
-);
-
-watch(
-	() => isDarkMode.value,
-	() => {
-		updateTheme();
-	}
-);
-
-async function checkAndRepairDatabase() {
-	try {
-		const testDB = await new Promise((resolve, reject) => {
-			const request = indexedDB.open('_health_check_', 1);
-			request.onsuccess = () => {
-				request.result.close();
-				indexedDB.deleteDatabase('_health_check_');
-				resolve(true);
-			};
-			request.onerror = () => reject(request.error);
-			request.onblocked = () => reject(new Error('IndexedDB blocked'));
-		});
-
-		console.log('✅ IndexedDB health check passed');
-		return true;
-
-	} catch (error) {
-		console.error('❌ IndexedDB corruption detected:', error);
-
-		const shouldReset = confirm(
-			'Database Error Detected\n\n' +
-			'Your browser storage appears corrupted. This happens when:\n' +
-			'• Browser crashed during save\n' +
-			'• Multiple tabs competed for storage\n' +
-			'• Storage quota exceeded\n\n' +
-			'Click OK to reset and fix the issue.\n' +
-			'Click Cancel to try manual fixes first.'
-		);
-
-		if (shouldReset) {
-			await resetDatabase();
-			location.reload();
-		} else {
-			alert(
-				'Manual Fix Instructions:\n\n' +
-				'Windows:\n' +
-				'1. Close ALL browser windows\n' +
-				'2. Delete: %USERPROFILE%\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\IndexedDB\n' +
-				'3. Restart browser\n\n' +
-				'Mac:\n' +
-				'1. Close ALL browser windows\n' +
-				'2. Delete: ~/Library/Application Support/Google/Chrome/Default/IndexedDB\n' +
-				'3. Restart browser\n\n' +
-				'Or use Chrome DevTools:\n' +
-				'F12 → Application → Storage → Clear site data'
-			);
-		}
-
-		return false;
-	}
-}
-
-async function resetDatabase() {
-	try {
-		console.log('Resetting database...');
-
-		// Close all DB connections
-		if (db) {
-			db.close();
-			db = null;
-		}
-
-		// Clear IndexedDB
-		const databases = await indexedDB.databases();
-		for (const dbInfo of databases) {
-			if (dbInfo.name && (dbInfo.name.includes('FunkyAIDB') || dbInfo.name.includes('mlc'))) {
-				await new Promise((resolve, reject) => {
-					const request = indexedDB.deleteDatabase(dbInfo.name);
-					request.onsuccess = () => resolve();
-					request.onerror = () => reject(request.error);
-					request.onblocked = () => {
-						console.warn(`Blocked deleting ${dbInfo.name}, forcing...`);
-						setTimeout(resolve, 1000);
-					};
-				});
-				console.log(`Deleted database: ${dbInfo.name}`);
-			}
-		}
-
-		if ('caches' in window) {
-			const cacheNames = await caches.keys();
-			for (const name of cacheNames) {
-				await caches.delete(name);
-				console.log(`Deleted cache: ${name}`);
-			}
-		}
-
-		localStorage.clear();
-
-		console.log('Database reset complete');
-
-	} catch (error) {
-		console.error('Reset failed:', error);
-		alert('Automatic reset failed. Please manually clear site data:\n\n' +
-			'Chrome DevTools (F12) → Application → Storage → Clear site data');
-	}
-}
 
 onMounted(async () => {
 	try {
@@ -6209,6 +6173,27 @@ onUnmounted(() => {
 		window.removeEventListener("message", messageListener);
 	}
 });
+
+// Close dropdowns when clicking outside
+document.addEventListener("click", (e) => {
+	if (!e.target.closest(".albums-dropdown-container")) {
+		showAlbumsDropdown.value = false;
+	}
+});
+
+watch(
+	() => showConnections.value,
+	() => {
+		toggleConnections();
+	}
+);
+
+watch(
+	() => isDarkMode.value,
+	() => {
+		updateTheme();
+	}
+);
 
 watch(tutorialActive, (isActive) => {
 	if (isActive) {
