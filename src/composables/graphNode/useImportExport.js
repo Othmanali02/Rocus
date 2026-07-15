@@ -40,19 +40,55 @@ function fromImportRecord(record) {
 	return { ...rest, topic: ai_label !== undefined ? ai_label : (topic ?? "") };
 }
 
+// `search_query` is a leaked internal prompt (the question Rocus asked
+// itself while summarizing the page), not something a user or another
+// tool needs - drop it from the portable file entirely. Internally the
+// app keeps writing/reading it as before (useDiscover.js falls back to
+// topic/title when it's missing, so dropping it here is safe).
+function toExportWebsite(website) {
+	const { search_query, ...rest } = toExportRecord(website);
+	return rest;
+}
+
+// Rocus's 3 built-in album icons are local asset filenames - meaningless
+// to a reader that isn't this app. Map them to portable emoji at the
+// export boundary (and back on import) so the app's own display is
+// unaffected; anything already portable (emoji, http(s), data:) passes
+// through untouched in both directions.
+const BUILTIN_ALBUM_ICONS = {
+	"RocusFileIcon.png": "📁",
+	"RocusFileIconColored.png": "🗂️",
+	"RocusFileIconDark.png": "📂",
+};
+const BUILTIN_ALBUM_ICONS_REVERSE = Object.fromEntries(
+	Object.entries(BUILTIN_ALBUM_ICONS).map(([filename, emoji]) => [emoji, filename])
+);
+
+function toExportAlbum(album) {
+	return { ...album, icon: BUILTIN_ALBUM_ICONS[album.icon] || album.icon };
+}
+
+function fromImportAlbum(album) {
+	return { ...album, icon: BUILTIN_ALBUM_ICONS_REVERSE[album.icon] || album.icon };
+}
+
 export async function exportAllData() {
 	try {
 		// Gather all data
 		const exportData = {
 			version: '1.0.0',
 			exportDate: new Date().toISOString(),
-			albums: Object.values(albums.value),
+			albums: Object.values(albums.value).map(toExportAlbum),
 			clusters: Object.values(clusters.value).map(toExportRecord),
-			websites: Object.values(websites.value).map(toExportRecord),
+			websites: Object.values(websites.value).map(toExportWebsite),
 			embeddings: embeddings.value,
-			theme: {
-				id: currentTheme.value.id,
-				isDark: currentTheme.value.isDark
+			// App-level display settings, not user data - namespaced so a
+			// reader knows not to try to interpret it as bookmark/cluster data.
+			_app_settings: {
+				theme: {
+					id: currentTheme.value.id,
+					isDark: currentTheme.value.isDark
+				}
 			}
 		};
 
@@ -116,7 +152,8 @@ export async function handleImport(event) {
 
 		// Import albums
 		for (const album of importData.albums) {
-			albums.value[album.id] = album;
+			const mapped = fromImportAlbum(album);
+			albums.value[mapped.id] = mapped;
 		}
 
 		// Import clusters
@@ -139,9 +176,11 @@ export async function handleImport(event) {
 			Object.entries(rawEmbeddings).map(([id, raw]) => [id, normalizeEmbeddingRecord(raw)])
 		);
 
-		// Apply theme if included
-		if (importData.theme) {
-			const theme = themes.find(t => t.id === importData.theme.id);
+		// Apply theme if included (new files carry it under _app_settings;
+		// fall back to the old top-level `theme` key for pre-existing exports)
+		const importedTheme = importData._app_settings?.theme || importData.theme;
+		if (importedTheme) {
+			const theme = themes.find(t => t.id === importedTheme.id);
 			if (theme) {
 				applyTheme(theme);
 			}
