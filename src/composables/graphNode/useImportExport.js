@@ -13,13 +13,32 @@ import {
 	loadData,
 	renderGraph,
 } from "./useGraphEngine";
-import { normalizeEmbeddingRecord } from "./utils";
+import { normalizeEmbeddingRecord, isDirtyAiLabel } from "./utils";
 
 // Backup export / restore for all app data (.rocus JSON files).
 
 const { trackEvent } = useAnalytics();
 
 export const importFileInput = ref(null);
+
+// `topic` is a generated caption (Web-LLM output), not a controlled
+// classification - the export calls it what it is (`ai_label`) so a reader
+// doesn't mistake it for authoritative taxonomy. Internally the app keeps
+// using `topic` (it's referenced throughout clustering/display code); this
+// mapping only applies at the export/import boundary.
+function toExportRecord(record) {
+	const { topic, ...rest } = record;
+	const exported = { ...rest, ai_label: topic ?? null };
+	if (isDirtyAiLabel(topic)) {
+		exported.ai_label_dirty = true;
+	}
+	return exported;
+}
+
+function fromImportRecord(record) {
+	const { ai_label, ai_label_dirty, topic, ...rest } = record;
+	return { ...rest, topic: ai_label !== undefined ? ai_label : (topic ?? "") };
+}
 
 export async function exportAllData() {
 	try {
@@ -28,8 +47,8 @@ export async function exportAllData() {
 			version: '1.0.0',
 			exportDate: new Date().toISOString(),
 			albums: Object.values(albums.value),
-			clusters: Object.values(clusters.value),
-			websites: Object.values(websites.value),
+			clusters: Object.values(clusters.value).map(toExportRecord),
+			websites: Object.values(websites.value).map(toExportRecord),
 			embeddings: embeddings.value,
 			theme: {
 				id: currentTheme.value.id,
@@ -102,12 +121,14 @@ export async function handleImport(event) {
 
 		// Import clusters
 		for (const cluster of importData.clusters) {
-			clusters.value[cluster.id] = cluster;
+			const mapped = fromImportRecord(cluster);
+			clusters.value[mapped.id] = mapped;
 		}
 
 		// Import websites
 		for (const website of importData.websites) {
-			websites.value[website.id] = website;
+			const mapped = fromImportRecord(website);
+			websites.value[mapped.id] = mapped;
 		}
 
 		// Import embeddings (normalize legacy bare-array vectors from pre-provenance

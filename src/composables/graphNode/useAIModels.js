@@ -14,7 +14,7 @@ import {
 	refreshData,
 } from "./useGraphEngine";
 import { addSimilarLinksToCluster } from "./useDiscover";
-import { generateId, wrapEmbedding, EMBEDDING_MODEL_ID } from "./utils";
+import { generateId, wrapEmbedding, EMBEDDING_MODEL_ID, cleanAiLabel } from "./utils";
 
 // configuring transformers.js (embeddings)
 env.allowLocalModels = false;
@@ -155,7 +155,7 @@ Search query:`
 		console.log("Topic and query processing complete");
 
 		// Extract results
-		const topic = topicResult.choices?.[0]?.message?.content?.trim() ?? "";
+		const topic = cleanAiLabel(topicResult.choices?.[0]?.message?.content ?? "");
 		const query = queryResult.choices?.[0]?.message?.content?.trim() ?? "";
 
 		console.log("Final results:", { summary, topic, query });

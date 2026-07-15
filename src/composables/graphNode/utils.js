@@ -70,6 +70,44 @@ export function averageEmbeddings(embeddingsArray) {
 	return avg;
 }
 
+// Model output for the per-page/per-cluster caption sometimes arrives wrapped
+// in stray quotes (a JSON/quote-wrapper parsing artifact) or cut off mid-word
+// by the token cap. This strips the wrapper and never returns a truncated tail.
+export function cleanAiLabel(raw, maxLength = 80) {
+	if (!raw) return "";
+
+	let cleaned = raw.trim();
+
+	// Strip one layer of wrapping quotes (", ', or “ ” smart quotes)
+	const quotePairs = [['"', '"'], ["'", "'"], ["“", "”"]];
+	for (const [open, close] of quotePairs) {
+		if (cleaned.startsWith(open) && cleaned.endsWith(close) && cleaned.length > 1) {
+			cleaned = cleaned.slice(open.length, -close.length).trim();
+			break;
+		}
+	}
+	// A lone leading quote with no matching close (truncated before the close
+	// quote was ever generated) - drop just the leading character.
+	if (/^["'“]/.test(cleaned)) {
+		cleaned = cleaned.slice(1).trim();
+	}
+
+	if (cleaned.length > maxLength) {
+		cleaned = cleaned.slice(0, maxLength).trim();
+	}
+
+	return cleaned;
+}
+
+// A label is "dirty" if it still carries the raw-model-output artifacts
+// cleanAiLabel is meant to strip - used to flag pre-existing records that
+// were written before this cleanup existed, without silently pretending
+// they're clean.
+export function isDirtyAiLabel(value) {
+	if (!value) return false;
+	return /^["'“]/.test(value.trim());
+}
+
 export function normalizeTopicTerm(term) {
 	if (!term) return "";
 
