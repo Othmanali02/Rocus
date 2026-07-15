@@ -9,7 +9,9 @@
 	"scripts": {
 		"dev": "vite",
 		"build": "vite build",
-		"preview": "vite preview"
+		"preview": "vite preview",
+		"test:export-roundtrip": "node tools/round-trip-test.mjs tools/fixtures/sample-v1.rocus && node tools/round-trip-test.mjs tools/fixtures/sample-v2.rocus",
+		"test:export-reader": "node tools/third-party-reader/read-rocus-export.mjs tools/fixtures/sample-v2.rocus"
 	},
 	"dependencies": {
 		"@mlc-ai/web-llm": "^0.2.80",
