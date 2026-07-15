@@ -14,7 +14,7 @@ import {
 	refreshData,
 } from "./useGraphEngine";
 import { addSimilarLinksToCluster } from "./useDiscover";
-import { generateId } from "./utils";
+import { generateId, wrapEmbedding, EMBEDDING_MODEL_ID } from "./utils";
 
 // configuring transformers.js (embeddings)
 env.allowLocalModels = false;
@@ -253,8 +253,8 @@ export async function processWebsite(data) {
 			processed_at: new Date().toISOString(),
 		};
 
-		// Store embedding separately
-		embeddings.value[websiteId] = embedding;
+		// Store embedding separately (wrapped with provenance: model, dim, normalized, created_at)
+		embeddings.value[websiteId] = wrapEmbedding(embedding);
 
 		// Assign to cluster
 		const clusterId = assignToCluster(websiteId, topic, embedding, query, data.album);
@@ -401,7 +401,7 @@ export async function loadModels() {
 		loadingMessage.value = "Loading embedding model (Transformers.js)...";
 		embeddingModel = await pipeline(
 			"feature-extraction",
-			"Xenova/all-MiniLM-L6-v2",
+			EMBEDDING_MODEL_ID,
 			{
 				progress_callback: (progress) => {
 					// keep the first half of the progress for embeddings

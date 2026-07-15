@@ -12,6 +12,7 @@ import {
 	averageEmbeddings,
 	normalizeTopicTerm,
 	topicsMatch,
+	normalizeEmbeddingRecord,
 } from "./utils";
 
 // Core data model + the D3 force-graph rendering engine. This is the one
@@ -184,7 +185,7 @@ export async function fetchSimilarities() {
 
 			const sourceWebsiteIds = sourceCluster.websites;
 			const sourceEmbeddings = sourceWebsiteIds
-				.map((id) => embeddings.value[id])
+				.map((id) => embeddings.value[id]?.v)
 				.filter(Boolean);
 
 			if (sourceEmbeddings.length === 0) continue;
@@ -202,7 +203,7 @@ export async function fetchSimilarities() {
 
 				const targetWebsiteIds = targetCluster.websites;
 				const targetEmbeddings = targetWebsiteIds
-					.map((id) => embeddings.value[id])
+					.map((id) => embeddings.value[id]?.v)
 					.filter(Boolean);
 
 				if (targetEmbeddings.length === 0) continue;
@@ -339,7 +340,7 @@ export async function saveToIndexedDB() {
 			try {
 				const plainEmbedding = {
 					id,
-					embedding: Array.from(embedding),
+					embedding: JSON.parse(JSON.stringify(embedding)),
 				};
 				await new Promise((resolve, reject) => {
 					const r = embeddingStore.put(plainEmbedding);
@@ -396,7 +397,7 @@ export async function loadFromIndexedDB() {
 
 		embeddingRequest.onsuccess = () => {
 			for (const item of embeddingRequest.result) {
-				embeddings.value[item.id] = item.embedding;
+				embeddings.value[item.id] = normalizeEmbeddingRecord(item.embedding);
 			}
 		};
 
@@ -440,7 +441,7 @@ export function findSimilarWebsites(targetEmbedding, excludeId = null, albumId =
 		const website = websites.value[websiteId];
 		if (!website || website.album_id !== albumId) continue;
 
-		const similarity = cosineSimilarity(targetEmbedding, embedding);
+		const similarity = cosineSimilarity(targetEmbedding, embedding.v);
 		similarities.push({ websiteId, similarity });
 	}
 
