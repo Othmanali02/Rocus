@@ -4,6 +4,39 @@ export function generateId() {
 	return Date.now().toString(36) + Math.random().toString(36).substr(2);
 }
 
+// Embedding provenance: the model that produced a vector, its dimensionality,
+// and whether it's L2-normalized are recorded on the vector itself so the
+// data outlives any one in-memory session (IndexedDB, .rocus exports).
+export const EMBEDDING_MODEL_ID = "Xenova/all-MiniLM-L6-v2";
+export const EMBEDDING_DIM = 384;
+
+export function wrapEmbedding(vector) {
+	return {
+		model: EMBEDDING_MODEL_ID,
+		dim: EMBEDDING_DIM,
+		normalized: true,
+		created_at: new Date().toISOString(),
+		v: vector,
+	};
+}
+
+// Accepts either an already-wrapped embedding record or a legacy bare
+// [float] array (pre-provenance IndexedDB entries / v1.0.0 export files).
+// Legacy vectors are tagged "unknown" so they're never silently compared
+// against vectors from a known model.
+export function normalizeEmbeddingRecord(raw) {
+	if (Array.isArray(raw)) {
+		return {
+			model: "unknown",
+			dim: raw.length,
+			normalized: null,
+			created_at: null,
+			v: raw,
+		};
+	}
+	return raw;
+}
+
 export function formatDate(dateString) {
 	if (!dateString) return "N/A";
 	const date = new Date(dateString);

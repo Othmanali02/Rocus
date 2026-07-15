@@ -13,6 +13,7 @@ import {
 	loadData,
 	renderGraph,
 } from "./useGraphEngine";
+import { normalizeEmbeddingRecord } from "./utils";
 
 // Backup export / restore for all app data (.rocus JSON files).
 
@@ -109,8 +110,13 @@ export async function handleImport(event) {
 			websites.value[website.id] = website;
 		}
 
-		// Import embeddings
-		embeddings.value = importData.embeddings || {};
+		// Import embeddings (normalize legacy bare-array vectors from pre-provenance
+		// exports to { model: "unknown", ..., v } so they're never silently compared
+		// against vectors from a known model)
+		const rawEmbeddings = importData.embeddings || {};
+		embeddings.value = Object.fromEntries(
+			Object.entries(rawEmbeddings).map(([id, raw]) => [id, normalizeEmbeddingRecord(raw)])
+		);
 
 		// Apply theme if included
 		if (importData.theme) {
