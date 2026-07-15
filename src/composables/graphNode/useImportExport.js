@@ -13,107 +13,36 @@ import {
 	loadData,
 	renderGraph,
 } from "./useGraphEngine";
-import { normalizeEmbeddingRecord, isDirtyAiLabel } from "./utils";
+import { normalizeEmbeddingRecord } from "./utils";
+import {
+	CURRENT_VERSION,
+	WEBSITE_FIELDS,
+	CLUSTER_FIELDS,
+	ALBUM_FIELDS,
+	assertDeclaredFields,
+	toExportWebsite,
+	toExportCluster,
+	toExportAlbum,
+	fromImportRecord,
+	fromImportAlbum,
+	migrateToCurrentVersion,
+} from "./rocusExportFormat";
 
 // Backup export / restore for all app data (.rocus JSON files).
+// The export/import <-> internal-shape mapping itself lives in
+// rocusExportFormat.js (kept Vue/browser-free so it's independently
+// testable); this file is just the browser-facing orchestration
+// (gathering live state, file download/upload, IndexedDB persistence).
 
 const { trackEvent } = useAnalytics();
 
 export const importFileInput = ref(null);
 
-// Declared export schema per record type. Fields are inconsistently
-// written internally (e.g. cluster_id only exists after a website is
-// assigned to a cluster, updated_at only after an album is edited) -
-// every declared field is always present in the export, explicit `null`
-// when the app never set it, so a reader can tell "absent" apart from
-// "the writer forgot".
-const WEBSITE_FIELDS = [
-	"id", "url", "title", "domain", "ai_label", "ai_label_dirty",
-	"ai_summary", "metadata", "album_id", "cluster_id", "processed_at",
-];
-const CLUSTER_FIELDS = [
-	"id", "ai_label", "ai_label_dirty", "websites",
-	"similar_links", "manual_connections", "album_id",
-];
-const ALBUM_FIELDS = ["id", "name", "icon", "cluster_ids", "created_at", "updated_at"];
-
-function withDeclaredFields(record, fields) {
-	const result = {};
-	for (const field of fields) {
-		result[field] = field in record ? record[field] : null;
-	}
-	return result;
-}
-
-// Fails loudly (aborts the export) if a declared field is missing, rather
-// than silently shipping an incomplete record - a safety net for schema
-// drift if a new write path forgets a field withDeclaredFields would
-// otherwise paper over.
-function assertDeclaredFields(record, fields, typeName) {
-	for (const field of fields) {
-		if (!(field in record)) {
-			throw new Error(`Export validation failed: ${typeName} "${record.id}" is missing declared field "${field}"`);
-		}
-	}
-}
-
-// `topic` is a generated caption (Web-LLM output), not a controlled
-// classification - the export calls it what it is (`ai_label`) so a reader
-// doesn't mistake it for authoritative taxonomy. Internally the app keeps
-// using `topic` (it's referenced throughout clustering/display code); this
-// mapping only applies at the export/import boundary.
-function toExportRecord(record) {
-	const { topic, ...rest } = record;
-	return { ...rest, ai_label: topic ?? null, ai_label_dirty: isDirtyAiLabel(topic) };
-}
-
-function fromImportRecord(record) {
-	const { ai_label, ai_label_dirty, topic, ...rest } = record;
-	return { ...rest, topic: ai_label !== undefined ? ai_label : (topic ?? "") };
-}
-
-// `search_query` is a leaked internal prompt (the question Rocus asked
-// itself while summarizing the page), not something a user or another
-// tool needs - drop it from the portable file entirely. Internally the
-// app keeps writing/reading it as before (useDiscover.js falls back to
-// topic/title when it's missing, so dropping it here is safe).
-function toExportWebsite(website) {
-	const { search_query, ...rest } = toExportRecord(website);
-	return withDeclaredFields(rest, WEBSITE_FIELDS);
-}
-
-function toExportCluster(cluster) {
-	return withDeclaredFields(toExportRecord(cluster), CLUSTER_FIELDS);
-}
-
-// Rocus's 3 built-in album icons are local asset filenames - meaningless
-// to a reader that isn't this app. Map them to portable emoji at the
-// export boundary (and back on import) so the app's own display is
-// unaffected; anything already portable (emoji, http(s), data:) passes
-// through untouched in both directions.
-const BUILTIN_ALBUM_ICONS = {
-	"RocusFileIcon.png": "📁",
-	"RocusFileIconColored.png": "🗂️",
-	"RocusFileIconDark.png": "📂",
-};
-const BUILTIN_ALBUM_ICONS_REVERSE = Object.fromEntries(
-	Object.entries(BUILTIN_ALBUM_ICONS).map(([filename, emoji]) => [emoji, filename])
-);
-
-function toExportAlbum(album) {
-	const mapped = { ...album, icon: BUILTIN_ALBUM_ICONS[album.icon] || album.icon };
-	return withDeclaredFields(mapped, ALBUM_FIELDS);
-}
-
-function fromImportAlbum(album) {
-	return { ...album, icon: BUILTIN_ALBUM_ICONS_REVERSE[album.icon] || album.icon };
-}
-
 export async function exportAllData() {
 	try {
 		// Gather all data
 		const exportData = {
-			version: '1.0.0',
+			version: CURRENT_VERSION,
 			exportDate: new Date().toISOString(),
 			albums: Object.values(albums.value).map(toExportAlbum),
 			clusters: Object.values(clusters.value).map(toExportCluster),
@@ -178,12 +107,14 @@ export async function handleImport(event) {
 
 	try {
 		const text = await file.text();
-		const importData = JSON.parse(text);
+		const rawImportData = JSON.parse(text);
 
 		// Validate import data
-		if (!importData.version || !importData.albums || !importData.clusters || !importData.websites) {
+		if (!rawImportData.version || !rawImportData.albums || !rawImportData.clusters || !rawImportData.websites) {
 			throw new Error('Invalid Rocus file format');
 		}
+
+		const importData = migrateToCurrentVersion(rawImportData);
 
 		isLoading.value = true;
 
