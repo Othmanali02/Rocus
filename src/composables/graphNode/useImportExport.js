@@ -21,6 +21,42 @@ const { trackEvent } = useAnalytics();
 
 export const importFileInput = ref(null);
 
+// Declared export schema per record type. Fields are inconsistently
+// written internally (e.g. cluster_id only exists after a website is
+// assigned to a cluster, updated_at only after an album is edited) -
+// every declared field is always present in the export, explicit `null`
+// when the app never set it, so a reader can tell "absent" apart from
+// "the writer forgot".
+const WEBSITE_FIELDS = [
+	"id", "url", "title", "domain", "ai_label", "ai_label_dirty",
+	"ai_summary", "metadata", "album_id", "cluster_id", "processed_at",
+];
+const CLUSTER_FIELDS = [
+	"id", "ai_label", "ai_label_dirty", "websites",
+	"similar_links", "manual_connections", "album_id",
+];
+const ALBUM_FIELDS = ["id", "name", "icon", "cluster_ids", "created_at", "updated_at"];
+
+function withDeclaredFields(record, fields) {
+	const result = {};
+	for (const field of fields) {
+		result[field] = field in record ? record[field] : null;
+	}
+	return result;
+}
+
+// Fails loudly (aborts the export) if a declared field is missing, rather
+// than silently shipping an incomplete record - a safety net for schema
+// drift if a new write path forgets a field withDeclaredFields would
+// otherwise paper over.
+function assertDeclaredFields(record, fields, typeName) {
+	for (const field of fields) {
+		if (!(field in record)) {
+			throw new Error(`Export validation failed: ${typeName} "${record.id}" is missing declared field "${field}"`);
+		}
+	}
+}
+
 // `topic` is a generated caption (Web-LLM output), not a controlled
 // classification - the export calls it what it is (`ai_label`) so a reader
 // doesn't mistake it for authoritative taxonomy. Internally the app keeps
@@ -28,11 +64,7 @@ export const importFileInput = ref(null);
 // mapping only applies at the export/import boundary.
 function toExportRecord(record) {
 	const { topic, ...rest } = record;
-	const exported = { ...rest, ai_label: topic ?? null };
-	if (isDirtyAiLabel(topic)) {
-		exported.ai_label_dirty = true;
-	}
-	return exported;
+	return { ...rest, ai_label: topic ?? null, ai_label_dirty: isDirtyAiLabel(topic) };
 }
 
 function fromImportRecord(record) {
@@ -47,7 +79,11 @@ function fromImportRecord(record) {
 // topic/title when it's missing, so dropping it here is safe).
 function toExportWebsite(website) {
 	const { search_query, ...rest } = toExportRecord(website);
-	return rest;
+	return withDeclaredFields(rest, WEBSITE_FIELDS);
+}
+
+function toExportCluster(cluster) {
+	return withDeclaredFields(toExportRecord(cluster), CLUSTER_FIELDS);
 }
 
 // Rocus's 3 built-in album icons are local asset filenames - meaningless
@@ -65,7 +101,8 @@ const BUILTIN_ALBUM_ICONS_REVERSE = Object.fromEntries(
 );
 
 function toExportAlbum(album) {
-	return { ...album, icon: BUILTIN_ALBUM_ICONS[album.icon] || album.icon };
+	const mapped = { ...album, icon: BUILTIN_ALBUM_ICONS[album.icon] || album.icon };
+	return withDeclaredFields(mapped, ALBUM_FIELDS);
 }
 
 function fromImportAlbum(album) {
@@ -79,7 +116,7 @@ export async function exportAllData() {
 			version: '1.0.0',
 			exportDate: new Date().toISOString(),
 			albums: Object.values(albums.value).map(toExportAlbum),
-			clusters: Object.values(clusters.value).map(toExportRecord),
+			clusters: Object.values(clusters.value).map(toExportCluster),
 			websites: Object.values(websites.value).map(toExportWebsite),
 			embeddings: embeddings.value,
 			// App-level display settings, not user data - namespaced so a
@@ -91,6 +128,12 @@ export async function exportAllData() {
 				}
 			}
 		};
+
+		// Fail loudly rather than silently ship a record that's missing a
+		// field the schema declares it must have.
+		for (const album of exportData.albums) assertDeclaredFields(album, ALBUM_FIELDS, "album");
+		for (const cluster of exportData.clusters) assertDeclaredFields(cluster, CLUSTER_FIELDS, "cluster");
+		for (const website of exportData.websites) assertDeclaredFields(website, WEBSITE_FIELDS, "website");
 
 		// Convert to JSON
 		const jsonString = JSON.stringify(exportData, null, 2);
