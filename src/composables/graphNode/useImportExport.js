@@ -20,11 +20,15 @@ import {
 	CLUSTER_FIELDS,
 	ALBUM_FIELDS,
 	assertDeclaredFields,
+	normalizeUrl,
 	toExportWebsite,
 	toExportCluster,
 	toExportAlbum,
+	buildManualEdges,
 	fromImportRecord,
 	fromImportAlbum,
+	fromImportCluster,
+	fromImportEdges,
 	migrateToCurrentVersion,
 } from "./rocusExportFormat";
 
@@ -41,12 +45,16 @@ export const importFileInput = ref(null);
 export async function exportAllData() {
 	try {
 		// Gather all data
+		const clustersById = clusters.value;
+		const existingUris = new Set(Object.values(websites.value).map((w) => normalizeUrl(w.url)));
+
 		const exportData = {
 			version: CURRENT_VERSION,
 			exportDate: new Date().toISOString(),
-			albums: Object.values(albums.value).map(toExportAlbum),
-			clusters: Object.values(clusters.value).map(toExportCluster),
-			websites: Object.values(websites.value).map(toExportWebsite),
+			albums: Object.values(albums.value).map((a) => toExportAlbum(a, clustersById)),
+			clusters: Object.values(clustersById).map((c) => toExportCluster(c, existingUris)),
+			websites: Object.values(websites.value).map((w) => toExportWebsite(w, clustersById)),
+			edges: buildManualEdges(clustersById),
 			embeddings: embeddings.value,
 			// App-level display settings, not user data - namespaced so a
 			// reader knows not to try to interpret it as bookmark/cluster data.
@@ -130,11 +138,17 @@ export async function handleImport(event) {
 			albums.value[mapped.id] = mapped;
 		}
 
-		// Import clusters
+		// uri -> raw export website record, used to resolve similar_links
+		// {ref} entries back to a full url/title/domain blob below.
+		const uriToWebsite = new Map(importData.websites.map((w) => [w.uri, w]));
+
+		// Import clusters, then reconstruct the bidirectional manual_connections
+		// arrays from the top-level deduped edges list.
 		for (const cluster of importData.clusters) {
-			const mapped = fromImportRecord(cluster);
+			const mapped = fromImportCluster(cluster, uriToWebsite);
 			clusters.value[mapped.id] = mapped;
 		}
+		fromImportEdges(clusters.value, importData.edges);
 
 		// Import websites
 		for (const website of importData.websites) {
