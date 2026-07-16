@@ -12,8 +12,12 @@ import {
 	toExportWebsite,
 	toExportCluster,
 	toExportAlbum,
+	buildManualEdges,
 	fromImportRecord,
 	fromImportAlbum,
+	fromImportCluster,
+	fromImportEdges,
+	normalizeUrl,
 	migrateToCurrentVersion,
 } from "../src/composables/graphNode/rocusExportFormat.js";
 import { normalizeEmbeddingRecord } from "../src/composables/graphNode/utils.js";
@@ -26,25 +30,30 @@ if (!filePath) {
 
 const raw = JSON.parse(await readFile(filePath, "utf8"));
 
-// Stage 0: get to a canonical v2.0.0 export (this is also what a real
-// v1.0.0 backup goes through on import in the running app).
+// Stage 0: get to a canonical current-version export (this is also what a
+// real older backup goes through on import in the running app).
 const export1 = migrateToCurrentVersion(raw);
 
 // Stage 1 ("import"): map export-shape records back to internal runtime shape.
 const internalAlbums = export1.albums.map(fromImportAlbum);
-const internalClusters = export1.clusters.map(fromImportRecord);
+const uriToWebsite = new Map(export1.websites.map((w) => [w.uri, w]));
+const internalClustersArr = export1.clusters.map((c) => fromImportCluster(c, uriToWebsite));
+const internalClustersById = Object.fromEntries(internalClustersArr.map((c) => [c.id, c]));
+fromImportEdges(internalClustersById, export1.edges);
 const internalWebsites = export1.websites.map(fromImportRecord);
 const internalEmbeddings = Object.fromEntries(
 	Object.entries(export1.embeddings || {}).map(([id, raw]) => [id, normalizeEmbeddingRecord(raw)])
 );
 
 // Stage 2 ("export again"): map internal runtime shape back to export shape.
+const existingUris = new Set(internalWebsites.map((w) => normalizeUrl(w.url)));
 const export2 = {
 	...export1,
 	exportDate: export1.exportDate, // real app would set `new Date().toISOString()` here; excluded from comparison below
-	albums: internalAlbums.map(toExportAlbum),
-	clusters: internalClusters.map(toExportCluster),
-	websites: internalWebsites.map(toExportWebsite),
+	albums: internalAlbums.map((a) => toExportAlbum(a, internalClustersById)),
+	clusters: internalClustersArr.map((c) => toExportCluster(c, existingUris)),
+	websites: internalWebsites.map((w) => toExportWebsite(w, internalClustersById)),
+	edges: buildManualEdges(internalClustersById),
 	embeddings: internalEmbeddings,
 };
 
