@@ -1,19 +1,23 @@
 {
-  "version": "2.0.0",
+  "version": "3.0.0",
   "exportDate": "2026-01-10T12:00:00.000Z",
   "albums": [
     {
-      "id": "album1",
+      "$type": "io.rocus.album",
+      "local_id": "album1",
       "name": "Security",
       "icon": "🗂️",
-      "cluster_ids": [],
+      "cluster_ids": [
+        "cluster1"
+      ],
       "created_at": "2026-01-01T00:00:00.000Z",
       "updated_at": null
     }
   ],
   "clusters": [
     {
-      "id": "cluster1",
+      "$type": "io.rocus.cluster",
+      "local_id": "cluster1",
       "ai_label": "\"Chaos Communication Congress: Updates",
       "ai_label_dirty": true,
       "websites": [
@@ -21,26 +25,27 @@
         "site2"
       ],
       "similar_links": {},
-      "manual_connections": [],
+      "suggestions": {},
       "album_id": "album1"
     },
     {
-      "id": "cluster2",
+      "$type": "io.rocus.cluster",
+      "local_id": "cluster2",
       "ai_label": "Apple iPod",
       "ai_label_dirty": false,
       "websites": [
         "site3"
       ],
       "similar_links": {},
-      "manual_connections": [
-        "cluster1"
-      ],
+      "suggestions": {},
       "album_id": null
     }
   ],
   "websites": [
     {
-      "id": "site1",
+      "$type": "io.rocus.bookmark",
+      "local_id": "site1",
+      "uri": "https://events.ccc.de/congress/2025/infos/index.html",
       "url": "https://events.ccc.de/congress/2025/infos/index.html",
       "title": "39th Chaos Communication Congress Infos",
       "domain": "events.ccc.de",
@@ -53,7 +58,9 @@
       "processed_at": "2026-01-05T00:00:00.000Z"
     },
     {
-      "id": "site2",
+      "$type": "io.rocus.bookmark",
+      "local_id": "site2",
+      "uri": "https://news.ycombinator.com/item?id=46464426",
       "url": "https://news.ycombinator.com/item?id=46464426",
       "title": "39th Chaos Communication Congress Videos | Hacker News",
       "domain": "news.ycombinator.com",
@@ -66,7 +73,9 @@
       "processed_at": "2026-01-05T00:01:00.000Z"
     },
     {
-      "id": "site3",
+      "$type": "io.rocus.bookmark",
+      "local_id": "site3",
+      "uri": "https://www.ebay.com/itm/187971359679",
       "url": "https://www.ebay.com/itm/187971359679",
       "title": "Apple iPod nano 7th Generation 16GB Lot of 12",
       "domain": "www.ebay.com",
@@ -77,6 +86,14 @@
       "album_id": null,
       "cluster_id": "cluster2",
       "processed_at": "2026-01-06T00:00:00.000Z"
+    }
+  ],
+  "edges": [
+    {
+      "$type": "io.rocus.link",
+      "from": "cluster1",
+      "to": "cluster2",
+      "source": "manual"
     }
   ],
   "embeddings": {
