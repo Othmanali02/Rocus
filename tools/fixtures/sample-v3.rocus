@@ -1,0 +1,140 @@
+{
+  "version": "3.0.0",
+  "exportDate": "2026-01-10T12:00:00.000Z",
+  "albums": [
+    {
+      "$type": "io.rocus.album",
+      "local_id": "album1",
+      "name": "Security",
+      "icon": "🗂️",
+      "cluster_ids": [
+        "cluster1"
+      ],
+      "created_at": "2026-01-01T00:00:00.000Z",
+      "updated_at": null
+    }
+  ],
+  "clusters": [
+    {
+      "$type": "io.rocus.cluster",
+      "local_id": "cluster1",
+      "ai_label": "\"Chaos Communication Congress: Updates",
+      "ai_label_dirty": true,
+      "websites": [
+        "site1",
+        "site2"
+      ],
+      "similar_links": {},
+      "suggestions": {},
+      "album_id": "album1"
+    },
+    {
+      "$type": "io.rocus.cluster",
+      "local_id": "cluster2",
+      "ai_label": "Apple iPod",
+      "ai_label_dirty": false,
+      "websites": [
+        "site3"
+      ],
+      "similar_links": {},
+      "suggestions": {},
+      "album_id": null
+    }
+  ],
+  "websites": [
+    {
+      "$type": "io.rocus.bookmark",
+      "local_id": "site1",
+      "uri": "https://events.ccc.de/congress/2025/infos/index.html",
+      "url": "https://events.ccc.de/congress/2025/infos/index.html",
+      "title": "39th Chaos Communication Congress Infos",
+      "domain": "events.ccc.de",
+      "ai_label": "\"39th Chaos Communication Congress: Celebrating",
+      "ai_label_dirty": true,
+      "ai_summary": "Information page for the 39th Chaos Communication Congress.",
+      "metadata": {},
+      "album_id": "album1",
+      "cluster_id": "cluster1",
+      "processed_at": "2026-01-05T00:00:00.000Z"
+    },
+    {
+      "$type": "io.rocus.bookmark",
+      "local_id": "site2",
+      "uri": "https://news.ycombinator.com/item?id=46464426",
+      "url": "https://news.ycombinator.com/item?id=46464426",
+      "title": "39th Chaos Communication Congress Videos | Hacker News",
+      "domain": "news.ycombinator.com",
+      "ai_label": "CCC",
+      "ai_label_dirty": false,
+      "ai_summary": "Hacker News discussion of the CCC videos.",
+      "metadata": {},
+      "album_id": "album1",
+      "cluster_id": null,
+      "processed_at": "2026-01-05T00:01:00.000Z"
+    },
+    {
+      "$type": "io.rocus.bookmark",
+      "local_id": "site3",
+      "uri": "https://www.ebay.com/itm/187971359679",
+      "url": "https://www.ebay.com/itm/187971359679",
+      "title": "Apple iPod nano 7th Generation 16GB Lot of 12",
+      "domain": "www.ebay.com",
+      "ai_label": "Apple iPod",
+      "ai_label_dirty": false,
+      "ai_summary": "eBay listing for a lot of Apple iPod nano units.",
+      "metadata": {},
+      "album_id": null,
+      "cluster_id": "cluster2",
+      "processed_at": "2026-01-06T00:00:00.000Z"
+    }
+  ],
+  "edges": [
+    {
+      "$type": "io.rocus.link",
+      "from": "cluster1",
+      "to": "cluster2",
+      "source": "manual"
+    }
+  ],
+  "embeddings": {
+    "site1": {
+      "model": "unknown",
+      "dim": 3,
+      "normalized": null,
+      "created_at": null,
+      "v": [
+        0.1,
+        0.2,
+        0.3
+      ]
+    },
+    "site2": {
+      "model": "unknown",
+      "dim": 3,
+      "normalized": null,
+      "created_at": null,
+      "v": [
+        0.15,
+        0.25,
+        0.35
+      ]
+    },
+    "site3": {
+      "model": "unknown",
+      "dim": 3,
+      "normalized": null,
+      "created_at": null,
+      "v": [
+        0.9,
+        0.8,
+        0.7
+      ]
+    }
+  },
+  "_app_settings": {
+    "theme": {
+      "id": "default-dark",
+      "isDark": true
+    }
+  }
+}
