@@ -360,16 +360,16 @@
 							<span class="font-semibold" :style="{ color: currentTheme.colors.text }">
 								AI Model
 							</span>
-							<span v-if="summarizationModel"
+							<span v-if="summarizationModel || processingMode === 'commercial'"
 								class="px-2 py-1 rounded-full text-xs bg-green-500 text-white">
-								Loaded
+								{{ processingMode === 'commercial' ? 'Cloud' : 'Loaded' }}
 							</span>
 							<span v-else class="px-2 py-1 rounded-full text-xs bg-gray-500 text-white">
 								Not Loaded
 							</span>
 						</div>
 						<p class="text-sm" :style="{ color: currentTheme.colors.textSecondary }">
-							Qwen2.5-0.5B (Self-hosted)
+							{{ processingMode === 'commercial' ? 'Claude Haiku (Anthropic)' : 'Qwen2.5-0.5B (Self-hosted)' }}
 						</p>
 					</div>
 
@@ -509,6 +509,22 @@
 							:class="showConnections ? 'bg-[#4A90E2]' : 'bg-gray-300'">
 							<div class="absolute top-1 left-1 w-6 h-6 bg-white rounded-full transition-transform duration-200"
 								:class="{ 'translate-x-6': showConnections }"></div>
+						</button>
+					</div>
+
+					<div class="flex items-center justify-between">
+						<div>
+							<div class="font-medium" :style="{ color: currentTheme.colors.text }">
+								Cloud AI Processing
+							</div>
+							<div class="text-sm" :style="{ color: currentTheme.colors.textSecondary }">
+								Use Claude instead of local processing.
+							</div>
+						</div>
+						<button @click="handleToggleProcessingMode" class="relative w-14 h-8 rounded-full transition-all"
+							:class="processingMode === 'commercial' ? 'bg-[#4A90E2]' : 'bg-gray-300'">
+							<div class="absolute top-1 left-1 w-6 h-6 bg-white rounded-full transition-transform duration-200"
+								:class="{ 'translate-x-6': processingMode === 'commercial' }"></div>
 						</button>
 					</div>
 
@@ -954,7 +970,7 @@
 					backgroundColor: currentTheme.colors.surface,
 					borderColor: currentTheme.colors.border
 				}">
-				<h3 class="text-2xl font-bold mb-6" :style="{ color: currentTheme.colors.text }">
+				<h3 class="text-2xl capitalize font-bold mb-6" :style="{ color: currentTheme.colors.text }">
 					Add Connection from "{{ contextCluster?.topic }}"
 				</h3>
 
@@ -976,7 +992,7 @@
 						}" @click="selectedConnectionCluster = cluster.id">
 						<input type="radio" :checked="selectedConnectionCluster === cluster.id" class="w-4 h-4" />
 						<div class="flex-1">
-							<div class="font-medium" :style="{ color: currentTheme.colors.text }">
+							<div class="font-medium capitalize" :style="{ color: currentTheme.colors.text }">
 								{{ cluster.topic }}
 							</div>
 							<div class="text-sm" :style="{ color: currentTheme.colors.textSecondary }">
@@ -1011,7 +1027,7 @@
 					backgroundColor: currentTheme.colors.surface,
 					borderColor: currentTheme.colors.border
 				}">
-				<h3 class="text-2xl font-bold mb-6" :style="{ color: currentTheme.colors.text }">
+				<h3 class="text-2xl font-bold mb-6 capitalize" :style="{ color: currentTheme.colors.text }">
 					Remove Connection from "{{ contextCluster?.topic }}"
 				</h3>
 
@@ -1024,7 +1040,7 @@
 						}" @click="selectedConnectionToRemove = cluster.id">
 						<input type="radio" :checked="selectedConnectionToRemove === cluster.id" class="w-4 h-4" />
 						<div class="flex-1">
-							<div class="font-medium" :style="{ color: currentTheme.colors.text }">
+							<div class="font-medium capitalize" :style="{ color: currentTheme.colors.text }">
 								{{ cluster.topic }}
 							</div>
 							<div class="text-sm" :style="{ color: currentTheme.colors.textSecondary }">
@@ -1189,7 +1205,7 @@
 						<h3 class="text-2xl font-bold" :style="{ color: currentTheme.colors.text }">
 							Discover Similar Websites
 						</h3>
-						<p class="text-sm mt-1" :style="{ color: currentTheme.colors.textSecondary }">
+						<p class="text-sm mt-1 capitalize" :style="{ color: currentTheme.colors.textSecondary }">
 							Found {{ similarWebsites.length }} websites related to
 							<strong>{{ explodedNode?.topic }}</strong>
 						</p>
@@ -1933,6 +1949,8 @@ import {
 	loadModels,
 	clearModelCache,
 	setupMessageListener,
+	processingMode,
+	setProcessingMode,
 } from '../composables/graphNode/useAIModels';
 
 import {
@@ -2054,6 +2072,10 @@ function toggleSettings() {
 
 function closeSettings() {
 	showSettings.value = false;
+}
+
+function handleToggleProcessingMode() {
+	setProcessingMode(processingMode.value === 'commercial' ? 'local' : 'commercial');
 }
 
 function resetSettings() {
@@ -2322,6 +2344,7 @@ watch(tutorialActive, (isActive) => {
 	font-size: 12px;
 	font-weight: 500;
 	text-anchor: middle;
+	text-transform: capitalize;
 	dominant-baseline: central;
 	pointer-events: none;
 	transition: all 0.3s ease;

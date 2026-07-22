@@ -14,7 +14,7 @@ import {
 	refreshData,
 } from "./useGraphEngine";
 import { addSimilarLinksToCluster } from "./useDiscover";
-import { generateId, wrapEmbedding, EMBEDDING_MODEL_ID, cleanAiLabel } from "./utils";
+import { generateId, wrapEmbedding, EMBEDDING_MODEL_ID, cleanAiLabel, toTitleCase } from "./utils";
 
 // configuring transformers.js (embeddings)
 env.allowLocalModels = false;
@@ -40,6 +40,30 @@ export const availableModels = ref([
 
 export const selectedModel = ref('Qwen2.5-0.5B-Rocus');
 export const engine = ref(null);
+
+const HAIKU_SUMMARIZE_URL = import.meta.env.VITE_ROCUS_SUM;
+const PROCESSING_MODE_KEY = 'rocus-processing-mode';
+
+// 'local' (on-device WebLLM) or 'commercial' (Claude Haiku, proxied through
+// rocus-search-api). Read synchronously at module init - before loadModels()
+// ever runs from GraphNode.vue's onMounted - so commercial mode never
+// triggers the ~350MB local WebLLM download.
+export const processingMode = ref(
+	localStorage.getItem(PROCESSING_MODE_KEY) === 'commercial' ? 'commercial' : 'local'
+);
+
+export function setProcessingMode(mode) {
+	if (mode !== 'local' && mode !== 'commercial') return;
+	const switchingToLocal = mode === 'local' && processingMode.value !== 'local';
+	processingMode.value = mode;
+	localStorage.setItem(PROCESSING_MODE_KEY, mode);
+
+	if (switchingToLocal && !summarizationModel) {
+		loadSummarizationEngine().catch(err =>
+			console.error("On-demand local model load failed:", err)
+		);
+	}
+}
 export const modelLoadingProgress = ref(0);
 
 export const modelLoading = ref(false);
@@ -125,7 +149,7 @@ Summary:`
 			summarizationModel.chat.completions.create({
 				messages: [{
 					role: "user",
-					content: `Generate the main topic of this page using ONLY one or two words
+					content: `Name the underlying subject or category this page is about, using ONLY one or two words like a noun phrase. Do not just repeat or rephrase words from the title - identify what it's actually about.
 
 TITLE: ${metadata.title}
 SUMMARY: ${summary}
@@ -179,16 +203,91 @@ Search query:`
 	}
 }
 
-// Helper: Extract topic from title
+async function callHaikuSummarizeOnce(metadata, contentChunk) {
+	console.log("Yup this is is being called.");
+	const response = await fetch(HAIKU_SUMMARIZE_URL, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		credentials: 'include',
+		body: JSON.stringify({
+			title: metadata.title || '',
+			description: metadata.description || '',
+			domain: metadata.domain || '',
+			content: contentChunk,
+		}),
+	});
+
+	if (!response.ok) {
+		const errorData = await response.json().catch(() => ({}));
+		if (response.status === 429) {
+			throw new Error('Rate limit exceeded. Please try again in 15 minutes.');
+		}
+		throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+	}
+
+	const data = await response.json();
+	console.log(data);
+	if (!data.success || !data.summary) {
+		throw new Error('Invalid response from summarize API');
+	}
+	return data;
+}
+
+// Commercial-mode equivalent of generateSummaryAndTopic: one consolidated
+// Claude Haiku call (proxied through rocus-search-api) instead of a 3-step
+// local prompt chain. Same return shape ({ summary, topic, query }) so
+// processWebsite can use either path interchangeably. On failure, retries
+// once, then falls back to the same extractive fallback local mode uses.
+export async function generateSummaryTopicQueryViaHaiku(metadata, content) {
+	console.log("The generateSummaryTopicQueryViaHaiku is being called fosho.");
+	const contentChunk = content.substring(0, 2500);
+
+	for (let attempt = 0; attempt < 2; attempt++) {
+		try {
+			const data = await callHaikuSummarizeOnce(metadata, contentChunk);
+			console.log("HAIKU DATA", data);
+			return {
+				summary: data.summary || extractFallbackSummary(content, metadata),
+				topic: data.topic,
+				query: data.search_query || `${metadata.title || ''} ${metadata.domain || ''}`.trim(),
+			};
+		} catch (err) {
+			console.error(`Haiku summarize attempt ${attempt + 1} failed:`, err);
+		}
+	}
+
+	return {
+		summary: extractFallbackSummary(content, metadata),
+		topic: extractTopic(metadata.title, metadata.keywords) || 'General',
+		query: `${metadata.title || ''} ${metadata.domain || ''}`.trim(),
+	};
+}
+
+// Helper: Extract topic from title. Purely keyword-based (no real
+// understanding) - so it deliberately filters out the question/auxiliary
+// words that dominate article-title phrasing (e.g. "Are Peanuts Good For
+// You?" would otherwise yield "Are Peanuts" instead of "Peanuts").
 export function extractTopic(title, keywords) {
 	if (!title) return null;
-	const stopWords = new Set(['the', 'a', 'an', 'of', 'in', 'on', 'at', 'to', 'for', 'and', 'or']);
-	return title
+	const stopWords = new Set([
+		'the', 'a', 'an', 'of', 'in', 'on', 'at', 'to', 'for', 'and', 'or',
+		'is', 'are', 'was', 'were', 'be', 'been', 'being',
+		'do', 'does', 'did', 'can', 'could', 'will', 'would', 'should', 'shall', 'may', 'might', 'must',
+		'you', 'your', 'yours', 'we', 'our', 'ours', 'they', 'their', 'it', 'its',
+		'what', 'why', 'how', 'when', 'where', 'which', 'who', 'whom',
+		'this', 'that', 'these', 'those',
+		'good', 'bad', 'best', 'worst', 'top', 'new',
+		'vs', 'guide', 'tips', 'ways', 'things', 'need', 'know', 'make', 'get',
+		'all', 'some', 'more', 'most', 'much', 'many', 'no', 'not', 'yes', 'if',
+		'so', 'than', 'then', 'but', 'with', 'without', 'about', 'into', 'from', 'by', 'as',
+	]);
+	const topic = title
 		.toLowerCase()
 		.split(/\W+/)
 		.filter(w => !stopWords.has(w) && w.length > 2)
 		.slice(0, 2)
 		.join(' ');
+	return toTitleCase(topic);
 }
 
 // Helper: Extractive fallback summary
@@ -205,10 +304,30 @@ export function extractFallbackSummary(content, metadata) {
 	return sentences.slice(0, 2).join('. ') + '.';
 }
 
+// Echoes completion back to the browser extension (mirrors the existing
+// REQUEST_ALBUMS -> ALBUMS_RESPONSE pattern) so a hidden background tab
+// opened for a quick-add knows it's safe to close. No-op for the regular
+// manual-popup save flow, which never sets extensionRequestId.
+function notifyExtensionProcessed(data, success) {
+	if (!data.extensionRequestId) return;
+	window.postMessage({
+		source: "page-summarizer-extension",
+		type: "PAGE_METADATA_PROCESSED",
+		requestId: data.extensionRequestId,
+		success,
+	}, "*");
+}
+
 // Process website
 export async function processWebsite(data) {
-	if (!embeddingModel || !summarizationModel) {
-		console.error("Models not loaded");
+	if (!embeddingModel) {
+		console.error("Embedding model not loaded");
+		notifyExtensionProcessed(data, false);
+		return;
+	}
+	if (processingMode.value === 'local' && !summarizationModel) {
+		console.error("Local summarization model not loaded");
+		notifyExtensionProcessed(data, false);
 		return;
 	}
 
@@ -223,11 +342,11 @@ export async function processWebsite(data) {
 
 		console.log(`📝 Processing: ${metadata.title || data.url}`);
 
-		// Generate summary and topic (Web-LLM)
-		const { summary, topic, query } = await generateSummaryAndTopic(
-			metadata,
-			content
-		);
+		// Generate summary and topic (Web-LLM locally, or Claude Haiku in commercial mode)
+		const { summary, topic, query } =
+			processingMode.value === 'commercial'
+				? await generateSummaryTopicQueryViaHaiku(metadata, content)
+				: await generateSummaryAndTopic(metadata, content);
 
 		// Generate embedding from summary (Transformers.js)
 		const embeddingText =
@@ -282,11 +401,33 @@ export async function processWebsite(data) {
 		await refreshData();
 
 		console.log(`✅ Processed: ${websiteId}`);
+		notifyExtensionProcessed(data, true);
 		promptConsent();
 	} catch (err) {
 		console.error("Error processing website:", err);
 		removeProcessingPlaceholder(placeholderNode.id);
+		notifyExtensionProcessed(data, false);
 	}
+}
+
+const COMMERCIAL_CONCURRENCY = 4;
+
+// Network-bound Haiku calls (unlike local WebGPU inference) can run in
+// parallel. Workers check items.length against the live reactive array on
+// every iteration, so items pushed mid-batch (setupMessageListener can queue
+// more while a batch is in flight) are still picked up.
+async function processQueueConcurrently(items, limit) {
+	let nextIndex = 0;
+	async function worker() {
+		while (true) {
+			const i = nextIndex++;
+			if (i >= items.length) return;
+			await processWebsite(items[i]);
+			processedCount.value++;
+		}
+	}
+	const workerCount = Math.min(limit, items.length);
+	await Promise.all(Array.from({ length: workerCount }, () => worker()));
 }
 
 export async function processQueue() {
@@ -295,9 +436,13 @@ export async function processQueue() {
 	isProcessing.value = true;
 	processedCount.value = 0;
 
-	for (const item of processingQueue.value) {
-		await processWebsite(item);
-		processedCount.value++;
+	if (processingMode.value === 'commercial') {
+		await processQueueConcurrently(processingQueue.value, COMMERCIAL_CONCURRENCY);
+	} else {
+		for (const item of processingQueue.value) {
+			await processWebsite(item);
+			processedCount.value++;
+		}
 	}
 
 	processingQueue.value = [];
@@ -391,6 +536,57 @@ export async function clearModelCache() {
 	}
 }
 
+// Loads the local WebLLM summarization engine. Extracted out of loadModels()
+// so it can also be called on-demand when a user switches from commercial
+// back to local mode mid-session (see setProcessingMode above).
+async function loadSummarizationEngine() {
+	loadingMessage.value = "Loading AI model from Rocus CDN...";
+	const modelConfig = availableModels.value.find(m => m.id === selectedModel.value);
+	if (!modelConfig) throw new Error('Model configuration not found');
+
+	console.log(`Loading model from: ${modelConfig.url}`);
+
+	const customModelRecord = {
+		model: modelConfig.url,
+		model_id: selectedModel.value,
+		model_lib: modelConfig.wasm,
+	};
+
+	summarizationModel = await CreateMLCEngine(
+		selectedModel.value, // 'Qwen2.5-0.5B-Rocus'
+		{
+			initProgressCallback: (progress) => {
+				if (progress && typeof progress.progress === 'number') {
+					modelLoadingProgress.value = Math.round(progress.progress * 100);
+				}
+				if (progress && progress.text) {
+					loadingMessage.value = progress.text;
+					console.log(`📦 ${progress.text}`);
+				}
+			},
+			appConfig: {
+				useIndexedDBCache: true,
+				model_list: [customModelRecord],
+			},
+			logLevel: 'WARN',
+		}
+	);
+
+	console.log('✅ Model loaded from Rocus CDN');
+
+	// quick sanity test for summarization LLM
+	try {
+		await summarizationModel.chat.completions.create({
+			messages: [{ role: "user", content: "Say hi" }],
+			max_tokens: 5,
+			temperature: 0.4,
+		});
+	} catch (e) {
+		// Non-fatal: keep engine but warn
+		console.warn("Web-LLM sanity test failed (non-fatal)", e);
+	}
+}
+
 export async function loadModels() {
 	modelLoading.value = true;
 	loadingMessage.value = "Loading AI models...";
@@ -415,57 +611,16 @@ export async function loadModels() {
 		);
 
 
-		// Load Web-LLM from self-hosted CDN
-		loadingMessage.value = "Loading AI model from Rocus CDN...";
-		const modelConfig = availableModels.value.find(m => m.id === selectedModel.value);
-		if (!modelConfig) throw new Error('Model configuration not found');
-
-		console.log(`Loading model from: ${modelConfig.url}`);
-
-		const customModelRecord = {
-			model: modelConfig.url,
-			model_id: selectedModel.value,
-			model_lib: modelConfig.wasm,
-		};
-
-		summarizationModel = await CreateMLCEngine(
-			selectedModel.value, // 'Qwen2.5-0.5B-Rocus'
-			{
-				initProgressCallback: (progress) => {
-					if (progress && typeof progress.progress === 'number') {
-						modelLoadingProgress.value = Math.round(progress.progress * 100);
-					}
-					if (progress && progress.text) {
-						loadingMessage.value = progress.text;
-						console.log(`📦 ${progress.text}`);
-					}
-				},
-				appConfig: {
-					useIndexedDBCache: true,
-					model_list: [customModelRecord],
-				},
-				logLevel: 'WARN',
-			}
-		);
-
-		console.log('✅ Model loaded from Rocus CDN');
-
-		// quick sanity test for summarization LLM
-		try {
-			await summarizationModel.chat.completions.create({
-				messages: [{ role: "user", content: "Say hi" }],
-				max_tokens: 5,
-				temperature: 0.4,
-			});
-		} catch (e) {
-			// Non-fatal: keep engine but warn
-			console.warn("Web-LLM sanity test failed (non-fatal)", e);
+		if (processingMode.value === 'local') {
+			await loadSummarizationEngine();
+			console.log("✅ Models loaded successfully (embeddings + Web-LLM)");
+		} else {
+			console.log("✅ Commercial mode - skipping local WebLLM download");
 		}
 
 		modelLoading.value = false;
 		loadingMessage.value = "";
 		downloadProgress.value = 0;
-		console.log("✅ Models loaded successfully (embeddings + Web-LLM)");
 	} catch (err) {
 		modelLoading.value = false;
 		error.value = err.message || "Failed to load AI models";

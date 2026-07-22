@@ -70,6 +70,13 @@ export function averageEmbeddings(embeddingsArray) {
 	return avg;
 }
 
+// Capitalizes each word of a short topic/label (e.g. "machine learning" ->
+// "Machine Learning"), normalizing whatever case the source produced.
+export function toTitleCase(str) {
+	if (!str) return str;
+	return str.replace(/\S+/g, (word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase());
+}
+
 // Model output for the per-page/per-cluster caption sometimes arrives wrapped
 // in stray quotes (a JSON/quote-wrapper parsing artifact) or cut off mid-word
 // by the token cap. This strips the wrapper and never returns a truncated tail.
@@ -96,7 +103,7 @@ export function cleanAiLabel(raw, maxLength = 80) {
 		cleaned = cleaned.slice(0, maxLength).trim();
 	}
 
-	return cleaned;
+	return toTitleCase(cleaned);
 }
 
 // A label is "dirty" if it still carries the raw-model-output artifacts
