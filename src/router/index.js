@@ -1,12 +1,11 @@
 import { createRouter, createWebHistory } from "vue-router";
-import { ref } from "vue";
 import GraphNode from "@/components/GraphNode.vue";
 import Landing from "../components/Landing.vue";
-import { store } from "./store";
+import Redirect from "../components/Redirect.vue";
 import PrivacyPolicy from "@/components/PrivacyPolicy.vue";
 
-// var user = ref(null);
-
+// The dashboard itself is free/open to everyone (no sign-in wall) - signing
+// in only unlocks the Premium Cloud AI toggle inside it. See usePremium.js.
 const router = createRouter({
 	history: createWebHistory(),
 	routes: [
@@ -14,35 +13,22 @@ const router = createRouter({
 			path: "/",
 			name: "Home",
 			component: Landing,
-			// props: () => ({ user: store.user }),
 		},
 		{
 			path: "/privacy",
 			name: "PrivacyPolicy",
 			component: PrivacyPolicy,
-			// props: () => ({ user: store.user }),
 		},
 		{
 			path: "/dashboard",
 			name: "GraphNode",
 			component: GraphNode,
-			// props: () => ({ user: store.user }),
 		},
-		// {
-		// 	path: "/redirect",
-		// 	name: "Redirect",
-		// 	component: Redirect,
-		// 	props: () => ({ user: store.user }),
-		// },
-		// {
-		// 	path: "/teams/:teamId",
-		// 	name: "TeamDetails",
-		// 	component: TeamDetails,
-		// 	props: (route) => ({
-		// 		user: store.user,
-		// 		...route.params,
-		// 	}),
-		// },
+		{
+			path: "/redirect",
+			name: "Redirect",
+			component: Redirect,
+		},
 	],
 });
 
