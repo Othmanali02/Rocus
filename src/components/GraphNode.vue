@@ -369,7 +369,7 @@
 							</span>
 						</div>
 						<p class="text-sm" :style="{ color: currentTheme.colors.textSecondary }">
-							{{ processingMode === 'commercial' ? 'Claude Haiku (Anthropic)' : 'Qwen2.5-0.5B (Self-hosted)' }}
+							{{ processingMode === 'commercial' ? 'Claude Haiku (Anthropic)' : 'Selfhosted' }}
 						</p>
 					</div>
 
@@ -514,14 +514,20 @@
 
 					<div class="flex items-center justify-between">
 						<div>
-							<div class="font-medium" :style="{ color: currentTheme.colors.text }">
+							<div class="font-medium flex items-center gap-2"
+								:style="{ color: currentTheme.colors.text }">
 								Cloud AI Processing
+								<span v-if="!isPremium" class="text-[10px] font-bold px-1.5 py-0.5 rounded-md"
+									style="background-color: #4A90E220; color: #4A90E2;">
+									PREMIUM
+								</span>
 							</div>
 							<div class="text-sm" :style="{ color: currentTheme.colors.textSecondary }">
 								Use Claude instead of local processing.
 							</div>
 						</div>
-						<button @click="handleToggleProcessingMode" class="relative w-14 h-8 rounded-full transition-all"
+						<button @click="handleToggleProcessingMode"
+							class="relative w-14 h-8 rounded-full transition-all"
 							:class="processingMode === 'commercial' ? 'bg-[#4A90E2]' : 'bg-gray-300'">
 							<div class="absolute top-1 left-1 w-6 h-6 bg-white rounded-full transition-transform duration-200"
 								:class="{ 'translate-x-6': processingMode === 'commercial' }"></div>
@@ -1567,16 +1573,12 @@
 
 				<!-- Action Buttons -->
 				<div class="flex gap-3">
-					<button v-if="compatibilityResults.overall === 'success'" @click="() => {
-						showCompatibilityCheck = false;
-						localStorage.setItem('rocus-compatibility-checked', 'true');
-					}" class="flex-1 px-6 py-3 rounded-xl font-medium transition-all bg-green-500 hover:bg-green-600 text-white">
+					<button v-if="compatibilityResults.overall === 'success'" @click="dismissCompatibilityCheck"
+						class="flex-1 px-6 py-3 rounded-xl font-medium transition-all bg-green-500 hover:bg-green-600 text-white">
 						✓ Continue to Rocus
 					</button>
-					<button v-else-if="compatibilityResults.overall === 'error'" @click="() => {
-						showCompatibilityCheck = false;
-						localStorage.setItem('rocus-compatibility-checked', 'true');
-					}" class="flex-1 px-6 py-3 rounded-xl font-medium transition-all" :style="{
+					<button v-else-if="compatibilityResults.overall === 'error'" @click="dismissCompatibilityCheck"
+						class="flex-1 px-6 py-3 rounded-xl font-medium transition-all" :style="{
 						backgroundColor: currentTheme.colors.background,
 						color: currentTheme.colors.text
 					}">
@@ -1851,7 +1853,10 @@
 				</div>
 			</div>
 		</div>
+
 	</div>
+	<PremiumUpsell />
+
 
 </template>
 
@@ -1864,6 +1869,8 @@ import {
 	onUnmounted,
 } from "vue";
 import { useAnalytics } from '../composables/useAnalytics';
+import PremiumUpsell from './PremiumUpsell.vue';
+import { isPremium, openPremiumModal } from '../composables/graphNode/usePremium';
 
 import { formatDate } from '../composables/graphNode/utils';
 
@@ -2074,7 +2081,20 @@ function closeSettings() {
 	showSettings.value = false;
 }
 
+function dismissCompatibilityCheck() {
+	showCompatibilityCheck.value = false;
+	localStorage.setItem('rocus-compatibility-checked', 'true');
+}
+
 function handleToggleProcessingMode() {
+	console.log(processingMode.value !== 'commercial');
+	console.log(isPremium.value);
+	if (processingMode.value !== 'commercial' && !isPremium.value) {
+		console.log(processingMode.value, "Clicked");
+
+		openPremiumModal();
+		return;
+	}
 	setProcessingMode(processingMode.value === 'commercial' ? 'local' : 'commercial');
 }
 

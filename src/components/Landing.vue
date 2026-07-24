@@ -2,6 +2,7 @@
 import { ref, onMounted, onUnmounted, watch } from "vue";
 import { store } from "../router/store";
 import { useAnalytics } from '../composables/useAnalytics';
+import { API_BASE } from './constants/config';
 
 const { trackEvent, analyticsLoaded, analyticsConsent } = useAnalytics();
 
@@ -111,20 +112,20 @@ onUnmounted(() => {
                             <span>Donate</span>
                         </button> -->
                         <div v-if="store.user">
-                            <a href="/profile"
+                            <a href="/dashboard"
                                 class="px-5 py-2 text-[#4A90E2] capitalize border-2 border-[#4A90E2] rounded-lg hover:bg-[#4A90E2] hover:text-white transition-all font-semibold">
-                                {{ store.user.username }}
+                                {{ store.user.name }}
                             </a>
-                            <a v-if="store.user" href="http://localhost:5000/auth/logout"
+                            <a :href="`${API_BASE}/api/auth/logout`"
                                 class="px-5 py-2 mx-3 text-red-500 capitalize border-2 border-red-500 rounded-lg hover:bg-red-500 hover:text-white transition-all font-semibold">
                                 Logout
                             </a>
                         </div>
 
-                        <!-- <a v-else href="http://localhost:5000/auth/login"
+                        <a v-else :href="`${API_BASE}/api/auth/login`"
                             class="px-5 py-2 text-[#4A90E2] border-2 border-[#4A90E2] rounded-lg hover:bg-[#4A90E2] hover:text-white transition-all font-semibold">
                             Sign In
-                        </a> -->
+                        </a>
 
                         <a @click="installExtension"
                             class="px-5 py-2 cursor-pointer bg-[#4A90E2] text-white rounded-lg hover:bg-[#3A7BC8] transition-all font-semibold shadow-lg shadow-[#4A90E2]/30">
@@ -155,9 +156,10 @@ onUnmounted(() => {
                     <!-- <button class="block w-full text-left py-2 text-[#1A1A1A] hover:text-[#4A90E2] font-medium">
                         Donate
                     </button> -->
-                    <!-- <button class="w-full px-4 py-2 text-[#4A90E2] border-2 border-[#4A90E2] rounded-lg font-semibold">
+                    <a v-if="!store.user" :href="`${API_BASE}/api/auth/login`"
+                        class="block w-full px-4 py-2 text-[#4A90E2] border-2 border-[#4A90E2] rounded-lg font-semibold text-center">
                         Sign In
-                    </button> -->
+                    </a>
                     <a href="/dashboard" class="w-full px-4 py-2 bg-[#4A90E2] text-white rounded-lg font-semibold">
                         Install Extension
                     </a>

@@ -1,27 +1,29 @@
 <script setup>
 import axios from 'axios';
 import { onMounted } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
+import { store } from '../router/store';
+import { API_BASE } from './constants/config';
 
 const route = useRoute();
+const router = useRouter();
+
 onMounted(async () => {
-    let queryString = Object.keys(route.query)
+    const queryString = Object.keys(route.query)
         .map(key => `${key}=${encodeURIComponent(route.query[key])}`)
         .join('&');
 
-    const finalUrl = "http://localhost:5000/auth/redirect?" + queryString;
+    const finalUrl = `${API_BASE}/api/auth/redirect?${queryString}`;
 
     try {
-        console.log("making the request");
         const response = await axios.get(finalUrl, { withCredentials: true });
-        console.log(response);
         if (response.status === 200) {
-            console.log('Redirecting...');
-
-            window.location.href = '/';
+            store.user = response.data;
+            router.push('/dashboard');
         }
     } catch (error) {
         console.error('Error in request:', error);
+        router.push('/');
     }
 });
 </script>
