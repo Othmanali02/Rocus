@@ -77,7 +77,8 @@ export function setProcessingMode(mode) {
 			console.error("Compatibility check failed:", err)
 		);
 		if (!summarizationModel) {
-			loadSummarizationEngine().catch(err =>
+			summarizationReadyPromise = loadSummarizationEngine();
+			summarizationReadyPromise.catch(err =>
 				console.error("On-demand local model load failed:", err)
 			);
 		}
@@ -107,6 +108,32 @@ export function closeModelStatus() {
 // them preserves that exact behavior across the module boundary.
 export let embeddingModel = null; // transformers.js embedding model (MiniLM)
 export let summarizationModel = null; // will point to the Web-LLM engine (chat-style)
+
+// In-flight load promises, so processWebsite can wait for a model that's
+// already loading instead of failing outright. Concretely: a quick-add into
+// a freshly-created hidden background tab (extension flow) sees the page's
+// document finish loading almost immediately, but this Vue app still needs
+// a few seconds after that to actually fetch+init the embedding model -
+// without this, that guard below would fire before the model was ever given
+// a chance to finish, silently dropping the save.
+let embeddingReadyPromise = null;
+let summarizationReadyPromise = null;
+
+async function waitFor(promiseGetter, isReady, timeoutMs = 40000) {
+	if (isReady()) return true;
+	const promise = promiseGetter();
+	if (!promise) return false; // never started loading - nothing to wait for
+	try {
+		await Promise.race([
+			promise,
+			new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), timeoutMs)),
+		]);
+	} catch {
+		// timed out, or the load itself failed - fall through to the isReady()
+		// check below either way
+	}
+	return isReady();
+}
 
 export const processingQueue = ref([]);
 export const processedCount = ref(0);
@@ -356,14 +383,20 @@ function notifyExtensionProcessed(data, success) {
 // Process website
 export async function processWebsite(data) {
 	if (!embeddingModel) {
-		console.error("Embedding model not loaded");
-		notifyExtensionProcessed(data, false);
-		return;
+		const ready = await waitFor(() => embeddingReadyPromise, () => !!embeddingModel);
+		if (!ready) {
+			console.error("Embedding model not loaded");
+			notifyExtensionProcessed(data, false);
+			return;
+		}
 	}
 	if (processingMode.value === 'local' && !summarizationModel) {
-		console.error("Local summarization model not loaded");
-		notifyExtensionProcessed(data, false);
-		return;
+		const ready = await waitFor(() => summarizationReadyPromise, () => !!summarizationModel);
+		if (!ready) {
+			console.error("Local summarization model not loaded");
+			notifyExtensionProcessed(data, false);
+			return;
+		}
 	}
 
 	const placeholderNode = addProcessingPlaceholder(data);
@@ -633,7 +666,7 @@ export async function loadModels() {
 	try {
 		// transformers.js
 		loadingMessage.value = "Loading embedding model (Transformers.js)...";
-		embeddingModel = await pipeline(
+		embeddingReadyPromise = pipeline(
 			"feature-extraction",
 			EMBEDDING_MODEL_ID,
 			{
@@ -647,10 +680,12 @@ export async function loadModels() {
 				},
 			}
 		);
+		embeddingModel = await embeddingReadyPromise;
 
 
 		if (processingMode.value === 'local') {
-			await loadSummarizationEngine();
+			summarizationReadyPromise = loadSummarizationEngine();
+			await summarizationReadyPromise;
 			console.log("✅ Models loaded successfully (embeddings + Web-LLM)");
 		} else {
 			console.log("✅ Commercial mode - skipping local WebLLM download");
