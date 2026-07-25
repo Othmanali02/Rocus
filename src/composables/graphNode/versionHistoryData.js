@@ -2,9 +2,24 @@
 
 export const versionHistory = [
 	{
+		version: 'v1.1.0',
+		date: 'July 25th 2026',
+		current: true,
+		features: [
+			'Cloud AI Processing powered by Claude — everyone gets a free daily taste, Premium unlocks unlimited use',
+		],
+		improvements: [
+			'Faster first load — the system compatibility check only runs when you actually use local processing',
+			'The status icon in the header now shows "ready" immediately instead of a loading flash',
+		],
+		bugFixes: [
+			'Fixed the compatibility check modal appearing for Cloud Processing users who never touch the local model',
+		]
+	},
+	{
 		version: 'v1.0.1',
 		date: 'December 9th 2025',
-		current: true,
+		current: false,
 		features: [
 			'Creating manual connections between clusters',
 			'More comprehensive search that goes through description, metadata, and AI summary',

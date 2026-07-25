@@ -15,6 +15,8 @@ import {
 } from "./useGraphEngine";
 import { addSimilarLinksToCluster } from "./useDiscover";
 import { generateId, wrapEmbedding, EMBEDDING_MODEL_ID, cleanAiLabel, toTitleCase } from "./utils";
+import { openPremiumModal } from "./usePremium";
+import { runCompatibilityCheckIfNeeded } from "./useCompatibilityCheck";
 
 // configuring transformers.js (embeddings)
 env.allowLocalModels = false;
@@ -48,8 +50,17 @@ const PROCESSING_MODE_KEY = 'rocus-processing-mode';
 // rocus-search-api). Read synchronously at module init - before loadModels()
 // ever runs from GraphNode.vue's onMounted - so commercial mode never
 // triggers the ~350MB local WebLLM download.
+//
+// New users (key never set) default into commercial mode - everyone gets a
+// rationed daily taste of cloud processing before hitting a paywall, gated
+// server-side by quota rather than by mode. Any existing stored value is
+// respected as-is, whether it got there via an explicit user choice or via
+// the (now-removed) auto-downgrade watcher that used to force non-premium
+// users back to local - both wrote through this same localStorage key, so
+// there's no way to tell those two cases apart after the fact.
+const storedProcessingMode = localStorage.getItem(PROCESSING_MODE_KEY);
 export const processingMode = ref(
-	localStorage.getItem(PROCESSING_MODE_KEY) === 'commercial' ? 'commercial' : 'local'
+	storedProcessingMode === null ? 'commercial' : (storedProcessingMode === 'commercial' ? 'commercial' : 'local')
 );
 
 export function setProcessingMode(mode) {
@@ -58,10 +69,18 @@ export function setProcessingMode(mode) {
 	processingMode.value = mode;
 	localStorage.setItem(PROCESSING_MODE_KEY, mode);
 
-	if (switchingToLocal && !summarizationModel) {
-		loadSummarizationEngine().catch(err =>
-			console.error("On-demand local model load failed:", err)
+	if (switchingToLocal) {
+		// WebGPU/memory/IndexedDB readiness only matters once someone actually
+		// enters local mode - runCompatibilityCheckIfNeeded no-ops if already
+		// checked, so this is safe to call on every switch.
+		runCompatibilityCheckIfNeeded().catch(err =>
+			console.error("Compatibility check failed:", err)
 		);
+		if (!summarizationModel) {
+			loadSummarizationEngine().catch(err =>
+				console.error("On-demand local model load failed:", err)
+			);
+		}
 	}
 }
 export const modelLoadingProgress = ref(0);
@@ -203,6 +222,18 @@ Search query:`
 	}
 }
 
+// Thrown specifically when the backend's freemium daily quota is exhausted
+// (distinguishable from the pre-existing IP-based rate limiter, which is a
+// generic 429 with no `code` field) - callers should not retry or silently
+// fall back on this one, unlike a transient network/server error.
+export class QuotaExceededError extends Error {
+	constructor(message, details) {
+		super(message);
+		this.name = 'QuotaExceededError';
+		this.details = details;
+	}
+}
+
 async function callHaikuSummarizeOnce(metadata, contentChunk) {
 	console.log("Yup this is is being called.");
 	const response = await fetch(HAIKU_SUMMARIZE_URL, {
@@ -219,6 +250,9 @@ async function callHaikuSummarizeOnce(metadata, contentChunk) {
 
 	if (!response.ok) {
 		const errorData = await response.json().catch(() => ({}));
+		if (errorData.code === 'COMMERCIAL_QUOTA_EXCEEDED') {
+			throw new QuotaExceededError(errorData.message || 'Commercial quota exceeded', errorData);
+		}
 		if (response.status === 429) {
 			throw new Error('Rate limit exceeded. Please try again in 15 minutes.');
 		}
@@ -252,6 +286,7 @@ export async function generateSummaryTopicQueryViaHaiku(metadata, content) {
 				query: data.search_query || `${metadata.title || ''} ${metadata.domain || ''}`.trim(),
 			};
 		} catch (err) {
+			if (err instanceof QuotaExceededError) throw err; // propagate: no retry, no silent fallback
 			console.error(`Haiku summarize attempt ${attempt + 1} failed:`, err);
 		}
 	}
@@ -407,6 +442,9 @@ export async function processWebsite(data) {
 		console.error("Error processing website:", err);
 		removeProcessingPlaceholder(placeholderNode.id);
 		notifyExtensionProcessed(data, false);
+		if (err instanceof QuotaExceededError) {
+			openPremiumModal();
+		}
 	}
 }
 
