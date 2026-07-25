@@ -1,15 +1,20 @@
 <script setup>
 import { currentTheme } from '../composables/graphNode/useThemes';
 import { isPremium, showPremiumModal, openPremiumModal, closePremiumModal, signInUrl } from '../composables/graphNode/usePremium';
+import { setProcessingMode } from '../composables/graphNode/useAIModels';
+
+function handleStayLocal() {
+	setProcessingMode('local');
+	closePremiumModal();
+}
 </script>
 
 <template>
-	<button v-if="!isPremium" @click="openPremiumModal"
+	<!-- <button v-if="!isPremium" @click="openPremiumModal"
 		class="fixed top-20 right-6 z-[1000] px-4 py-2 rounded-full text-white text-sm font-semibold shadow-lg transition-all flex items-center gap-1.5"
 		style="background-color: #4A90E2; box-shadow: 0 10px 25px -5px rgba(74, 144, 226, 0.4);">
-		<span>✨</span>
-		<span>Go Premium</span>
-	</button>
+		<span></span>
+	</button> -->
 
 	<div v-if="showPremiumModal" @click="closePremiumModal"
 		class="fixed inset-0 bg-black/50 backdrop-blur-sm z-[2200] flex items-center justify-center p-4 animate-fadeIn">
@@ -18,7 +23,7 @@ import { isPremium, showPremiumModal, openPremiumModal, closePremiumModal, signI
 			borderColor: currentTheme.colors.border
 		}">
 			<div class="flex justify-between items-start mb-4">
-				<h3 class="text-2xl font-bold" :style="{ color: currentTheme.colors.text }">Go Premium</h3>
+				<h3 class="text-2xl font-bold" :style="{ color: currentTheme.colors.text }">Rocus Premium</h3>
 				<button @click="closePremiumModal" class="p-2 rounded-xl transition-all">
 					<svg class="w-5 h-5" :style="{ color: currentTheme.colors.textSecondary }" fill="none"
 						stroke="currentColor" viewBox="0 0 24 24">
@@ -37,6 +42,13 @@ import { isPremium, showPremiumModal, openPremiumModal, closePremiumModal, signI
 				style="background-color: #4A90E2;">
 				Continue with Google
 			</a>
+
+			<button
+				@click="handleStayLocal"
+				class="w-full mt-3 flex items-center justify-center gap-2 px-5 py-3 rounded-lg font-semibold transition-all border"
+				:style="{ color: currentTheme.colors.text, borderColor: currentTheme.colors.border }">
+				Keep using free local mode
+			</button>
 
 			<p class="text-xs mt-4 text-center" :style="{ color: currentTheme.colors.textSecondary }">
 				Rocus itself stays free and open - Premium just unlocks Cloud AI Processing.

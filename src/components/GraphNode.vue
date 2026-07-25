@@ -203,7 +203,7 @@
 
 					<button @click="toggleModelStatus" class="relative p-2.5 rounded-xl transition-all"
 						:style="{ backgroundColor: currentTheme.colors.surface }">
-						<svg v-if="modelLoading" class="w-5 h-5 text-[#4A90E2] animate-spin" fill="none"
+						<svg v-if="showModelLoadingIndicator" class="w-5 h-5 text-[#4A90E2] animate-spin" fill="none"
 							stroke="currentColor" viewBox="0 0 24 24">
 							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
 								d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -217,7 +217,7 @@
 							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
 								d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
 						</svg>
-						<div v-if="!modelLoading && !error"
+						<div v-if="!showModelLoadingIndicator && !error"
 							class="absolute top-1 right-1 w-2 h-2 bg-green-500 rounded-full border-2"
 							:style="{ borderColor: currentTheme.colors.surface }">
 						</div>
@@ -369,7 +369,7 @@
 							</span>
 						</div>
 						<p class="text-sm" :style="{ color: currentTheme.colors.textSecondary }">
-							{{ processingMode === 'commercial' ? 'Claude Haiku (Anthropic)' : 'Selfhosted' }}
+							{{ processingMode === 'commercial' ? 'Cloud Processing' : 'Self-Hosted' }}
 						</p>
 					</div>
 
@@ -517,13 +517,9 @@
 							<div class="font-medium flex items-center gap-2"
 								:style="{ color: currentTheme.colors.text }">
 								Cloud AI Processing
-								<span v-if="!isPremium" class="text-[10px] font-bold px-1.5 py-0.5 rounded-md"
-									style="background-color: #4A90E220; color: #4A90E2;">
-									PREMIUM
-								</span>
 							</div>
 							<div class="text-sm" :style="{ color: currentTheme.colors.textSecondary }">
-								Use Claude instead of local processing.
+								Use Cloud AI instead of local processing.
 							</div>
 						</div>
 						<button @click="handleToggleProcessingMode"
@@ -834,6 +830,41 @@
 					<button @click="confirmRename"
 						class="flex-1 px-6 py-3 bg-[#4A90E2] text-white rounded-xl font-medium hover:bg-[#357ABD] transition-all">
 						Rename
+					</button>
+				</div>
+			</div>
+		</div>
+
+		<!-- Delete Cluster Modal -->
+		<div v-if="showDeleteClusterModal" @click="closeDeleteClusterModal"
+			class="fixed inset-0 bg-black/50 backdrop-blur-sm z-[2000] flex items-center justify-center p-4 animate-fadeIn">
+			<div @click.stop class="rounded-3xl p-8 w-full max-w-md shadow-2xl animate-scaleIn border" :style="{
+				backgroundColor: currentTheme.colors.surface,
+				borderColor: currentTheme.colors.border
+			}">
+				<h3 class="text-2xl font-bold mb-3" :style="{ color: currentTheme.colors.text }">
+					Delete Cluster
+				</h3>
+				<p class="text-sm mb-6" :style="{ color: currentTheme.colors.textSecondary }">
+					Delete "{{ contextCluster?.topic }}"? Choose what happens to its websites.
+				</p>
+				<div class="flex flex-col gap-3">
+					<button @click="confirmDeleteCluster(false)"
+						class="w-full px-6 py-3 rounded-xl font-medium transition-all" :style="{
+							backgroundColor: currentTheme.colors.background,
+							color: currentTheme.colors.text
+						}">
+						Delete cluster only <span class="font-normal opacity-70">(keep the websites)</span>
+					</button>
+					<button @click="confirmDeleteCluster(true)"
+						class="w-full px-6 py-3 bg-red-600 text-white rounded-xl font-medium hover:bg-red-700 transition-all">
+						Delete cluster and all its websites
+					</button>
+					<button @click="closeDeleteClusterModal"
+						class="w-full px-6 py-3 rounded-xl font-medium transition-all" :style="{
+							color: currentTheme.colors.textSecondary
+						}">
+						Cancel
 					</button>
 				</div>
 			</div>
@@ -1317,7 +1348,7 @@
 				color: currentTheme.colors.textSecondary,
 				border: `1px solid ${currentTheme.colors.border}`
 			}">
-			v1.0.1
+			v1.1.0
 		</button>
 
 		<!-- <button @click="startTutorial"
@@ -1720,7 +1751,7 @@
 							Version History
 						</h3>
 						<p class="text-sm mt-1" :style="{ color: currentTheme.colors.textSecondary }">
-							Current version: v1.0.1 (Beta)
+							Current version: v1.1.0 (Beta)
 						</p>
 					</div>
 					<button @click="showVersionHistory = false" class="p-2 rounded-xl transition-all">
@@ -1863,6 +1894,7 @@
 <script setup>
 import {
 	ref,
+	computed,
 	onMounted,
 	onBeforeUnmount,
 	watch,
@@ -1870,7 +1902,6 @@ import {
 } from "vue";
 import { useAnalytics } from '../composables/useAnalytics';
 import PremiumUpsell from './PremiumUpsell.vue';
-import { isPremium, openPremiumModal } from '../composables/graphNode/usePremium';
 
 import { formatDate } from '../composables/graphNode/utils';
 
@@ -1886,6 +1917,7 @@ import {
 	showCompatibilityCheck,
 	compatibilityResults,
 	checkSystemCompatibility,
+	runCompatibilityCheckIfNeeded,
 } from '../composables/graphNode/useCompatibilityCheck';
 
 import { platform, detectPlatform, initDB, checkAndRepairDatabase } from '../composables/graphNode/useDatabase';
@@ -2008,6 +2040,9 @@ import {
 	toggleRemoveSelection,
 	confirmRemoveWebsites,
 	deleteCluster,
+	showDeleteClusterModal,
+	closeDeleteClusterModal,
+	confirmDeleteCluster,
 	showAddToAlbumModal,
 	selectedAlbumForCluster,
 	showAddToAlbumModalFunction,
@@ -2086,15 +2121,19 @@ function dismissCompatibilityCheck() {
 	localStorage.setItem('rocus-compatibility-checked', 'true');
 }
 
-function handleToggleProcessingMode() {
-	console.log(processingMode.value !== 'commercial');
-	console.log(isPremium.value);
-	if (processingMode.value !== 'commercial' && !isPremium.value) {
-		console.log(processingMode.value, "Clicked");
+// The embedding model (needed for both modes) loads briefly on every mount,
+// but the header icon should only visibly spin for local mode, where the
+// much heavier local WebLLM download is what's actually worth surfacing.
+// Commercial-mode users see "ready" immediately rather than a loading flash
+// for work they're not waiting on.
+const showModelLoadingIndicator = computed(
+	() => modelLoading.value && processingMode.value === 'local'
+);
 
-		openPremiumModal();
-		return;
-	}
+function handleToggleProcessingMode() {
+	// Quota enforcement now happens server-side on the actual request, not on
+	// this toggle - a non-premium user is allowed into commercial mode (rationed
+	// by their daily quota), so this no longer needs to gate on isPremium.
 	setProcessingMode(processingMode.value === 'commercial' ? 'local' : 'commercial');
 }
 
@@ -2140,32 +2179,16 @@ onMounted(async () => {
 
 		const tutorialCompleted = localStorage.getItem('rocus-tutorial-completed');
 
-		// Check system compatibility first
-		const compatibilityCheckDone = localStorage.getItem('rocus-compatibility-checked');
-		if (!compatibilityCheckDone) {
-			showCompatibilityCheck.value = true;
-			await checkSystemCompatibility();
+		// Only run the WebGPU/memory/IndexedDB readiness check for users
+		// actually in local mode - irrelevant for commercial (cloud) mode,
+		// which is the default and never touches the local model.
+		if (processingMode.value === 'local') {
+			await runCompatibilityCheckIfNeeded();
+		}
 
-			// Auto-close if all passed after 3 seconds
-			if (compatibilityResults.value.overall === 'success') {
-				setTimeout(() => {
-					showCompatibilityCheck.value = false;
-					localStorage.setItem('rocus-compatibility-checked', 'true');
-
-					// Start tutorial if not completed
-					if (!tutorialCompleted) {
-						setTimeout(() => {
-							if (graphData?.nodes?.length > 0) {
-								startTutorial();
-							} else {
-								startTutorialEmpty();
-							}
-						}, 500);
-					}
-				}, 3000);
-			}
-		} else if (!tutorialCompleted) {
-			// Skip straight to tutorial if compatibility already checked
+		// Tutorial start no longer depends on the compatibility check - it's
+		// gated purely on whether the user has seen it before.
+		if (!tutorialCompleted) {
 			setTimeout(() => {
 				if (graphData?.nodes?.length > 0) {
 					startTutorial();

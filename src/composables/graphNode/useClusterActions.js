@@ -194,18 +194,42 @@ export async function confirmRemoveWebsites(deleteEntirely = false) {
 }
 
 // ---- Delete cluster ---------------------------------------------------
-export async function deleteCluster() {
-	if (!contextCluster.value) return;
+export const showDeleteClusterModal = ref(false);
 
-	const confirmed = confirm(`Delete cluster "${contextCluster.value.topic}"? This will not delete the websites.`);
-	if (!confirmed) return;
+export function deleteCluster() {
+	if (!contextCluster.value) return;
+	showDeleteClusterModal.value = true;
+	showContextMenu.value = false;
+}
+
+export function closeDeleteClusterModal() {
+	showDeleteClusterModal.value = false;
+}
+
+// deleteWebsitesToo=false: ungroup the websites (drop cluster_id) and keep
+// them, matching the old always-on behavior. deleteWebsitesToo=true: delete
+// the websites entirely too, mirroring confirmRemoveWebsites' deleteEntirely path.
+export async function confirmDeleteCluster(deleteWebsitesToo = false) {
+	if (!contextCluster.value) return;
 
 	try {
 		const clusterId = contextCluster.value.id;
+		const websiteIds = [...clusters.value[clusterId].websites];
 
-		// Remove cluster reference from websites
-		for (const websiteId of clusters.value[clusterId].websites) {
-			if (websites.value[websiteId]) {
+		for (const websiteId of websiteIds) {
+			if (deleteWebsitesToo) {
+				delete websites.value[websiteId];
+				delete embeddings.value[websiteId];
+
+				// Remove from other clusters too, in case a website is
+				// referenced from more than one cluster's website list.
+				for (const cluster of Object.values(clusters.value)) {
+					const idx = cluster.websites.indexOf(websiteId);
+					if (idx > -1) {
+						cluster.websites.splice(idx, 1);
+					}
+				}
+			} else if (websites.value[websiteId]) {
 				delete websites.value[websiteId].cluster_id;
 			}
 		}
@@ -215,7 +239,7 @@ export async function deleteCluster() {
 		await saveToIndexedDB();
 		await refreshData();
 
-		showContextMenu.value = false;
+		showDeleteClusterModal.value = false;
 		contextCluster.value = null;
 	} catch (error) {
 		console.error('Error deleting cluster:', error);

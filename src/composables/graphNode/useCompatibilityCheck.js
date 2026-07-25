@@ -143,3 +143,22 @@ export async function checkSystemCompatibility() {
 
 	return allPassed;
 }
+
+// Only meaningful for local (on-device WebGPU) mode - checking WebGPU/memory
+// readiness makes no sense for a commercial-mode user who never touches the
+// local model. Callers gate on processingMode; this only re-gates on "have we
+// already checked, ever" so it's safe to call every time someone enters local
+// mode without re-showing the modal after the first successful check.
+export async function runCompatibilityCheckIfNeeded() {
+	if (localStorage.getItem('rocus-compatibility-checked')) return;
+
+	showCompatibilityCheck.value = true;
+	await checkSystemCompatibility();
+
+	if (compatibilityResults.value.overall === 'success') {
+		setTimeout(() => {
+			showCompatibilityCheck.value = false;
+			localStorage.setItem('rocus-compatibility-checked', 'true');
+		}, 3000);
+	}
+}
