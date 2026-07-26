@@ -40,14 +40,14 @@ function handleStayLocal() {
 			<a :href="signInUrl()"
 				class="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-lg text-white font-semibold transition-all"
 				style="background-color: #4A90E2;">
-				Continue with Google
+				Continue with Cloud
 			</a>
 
 			<button
 				@click="handleStayLocal"
 				class="w-full mt-3 flex items-center justify-center gap-2 px-5 py-3 rounded-lg font-semibold transition-all border"
 				:style="{ color: currentTheme.colors.text, borderColor: currentTheme.colors.border }">
-				Keep using free local mode
+				Use the free and local mode
 			</button>
 
 			<p class="text-xs mt-4 text-center" :style="{ color: currentTheme.colors.textSecondary }">
