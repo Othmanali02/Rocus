@@ -93,6 +93,8 @@ onUnmounted(() => {
                     <div class="hidden md:flex items-center space-x-6">
                         <a href="#features"
                             class="text-[#1A1A1A] hover:text-[#4A90E2] transition-colors font-medium">Features</a>
+                        <a href="/pricing"
+                            class="text-[#1A1A1A] hover:text-[#4A90E2] transition-colors font-medium">Pricing</a>
                         <a href="#about"
                             class="text-[#1A1A1A] hover:text-[#4A90E2] transition-colors font-medium">About</a>
                         <a href="https://github.com/Othmanali02/Rocus" target="_blank" rel="noopener noreferrer"
@@ -150,6 +152,7 @@ onUnmounted(() => {
             <div v-if="mobileMenuOpen" class="md:hidden bg-white border-t">
                 <div class="px-4 py-3 space-y-3">
                     <a href="#features" class="block py-2 text-[#1A1A1A] hover:text-[#4A90E2] font-medium">Features</a>
+                    <a href="/pricing" class="block py-2 text-[#1A1A1A] hover:text-[#4A90E2] font-medium">Pricing</a>
                     <a href="#about" class="block py-2 text-[#1A1A1A] hover:text-[#4A90E2] font-medium">About</a>
                     <a href="https://github.com/Othmanali02/Rocus" target="_blank"
                         class="block py-2 text-[#1A1A1A] hover:text-[#4A90E2] font-medium">GitHub</a>
@@ -434,6 +437,10 @@ onUnmounted(() => {
                         <ul class="space-y-2 text-[#9A9A9A]">
                             <li>
                                 <a href="#features" class="hover:text-white transition-colors">Features</a>
+                            </li>
+
+                            <li>
+                                <a href="/pricing" class="hover:text-white transition-colors">Pricing</a>
                             </li>
 
                             <li>
