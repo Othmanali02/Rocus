@@ -1,11 +1,19 @@
 <script setup>
+import { useRouter } from 'vue-router';
 import { currentTheme } from '../composables/graphNode/useThemes';
-import { isPremium, showPremiumModal, openPremiumModal, closePremiumModal, signInUrl } from '../composables/graphNode/usePremium';
+import { isPremium, showPremiumModal, openPremiumModal, closePremiumModal } from '../composables/graphNode/usePremium';
 import { setProcessingMode } from '../composables/graphNode/useAIModels';
+
+const router = useRouter();
 
 function handleStayLocal() {
 	setProcessingMode('local');
 	closePremiumModal();
+}
+
+function goToPricing() {
+	closePremiumModal();
+	router.push('/pricing');
 }
 </script>
 
@@ -37,11 +45,11 @@ function handleStayLocal() {
 				local model, for faster and richer results.
 			</p>
 
-			<a :href="signInUrl()"
+			<button @click="goToPricing"
 				class="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-lg text-white font-semibold transition-all"
 				style="background-color: #4A90E2;">
-				Continue with Cloud
-			</a>
+				See Premium Pricing
+			</button>
 
 			<button
 				@click="handleStayLocal"

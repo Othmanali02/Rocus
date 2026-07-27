@@ -21,14 +21,19 @@
 								color: currentTheme.colors.textSecondary
 							}" :class="'hover:border-[' + currentTheme.colors.primary + ']'">
 							<div class="flex items-center gap-3">
-								<img v-if="currentAlbum?.icon" :src="getIconUrl(currentAlbum.icon)" alt="Album icon"
+								<span v-if="dropdownMode === 'history'" class="w-8 h-8 flex items-center justify-center text-2xl leading-none">
+									{{ currentHistoryDay ? '📅' : '🌐' }}
+								</span>
+								<img v-else-if="currentAlbum?.icon" :src="getIconUrl(currentAlbum.icon)" alt="Album icon"
 									class="w-8 h-8 object-contain" />
 								<img v-else src="./images/RocusFileIconColored.png" alt="Album icon"
 									class="w-8 h-8 object-contain" />
 
 								<div class="text-left">
 									<div class="text-sm font-medium" :style="{ color: currentTheme.colors.text }">
-										{{ currentAlbum ? currentAlbum.name : 'All Clusters' }}
+										{{ dropdownMode === 'history'
+											? (currentHistoryDay ? formatDayLabel(currentHistoryDay) : 'All Clusters')
+											: (currentAlbum ? currentAlbum.name : 'All Clusters') }}
 									</div>
 								</div>
 							</div>
@@ -47,10 +52,29 @@
 								backgroundColor: currentTheme.colors.surface,
 								borderColor: currentTheme.colors.border
 							}">
-							<button @click="selectAlbum(null)"
+							<!-- Minimal Albums / History switch -->
+							<div class="px-3 pt-3 pb-1">
+								<div class="relative flex rounded-full p-0.5"
+									:style="{ backgroundColor: currentTheme.colors.background, border: `1px solid ${currentTheme.colors.border}` }">
+									<div class="absolute top-0.5 bottom-0.5 left-0.5 w-[calc(50%-2px)] rounded-full bg-[#4A90E2] transition-transform duration-200 ease-out"
+										:style="{ transform: dropdownMode === 'history' ? 'translateX(100%)' : 'translateX(0)' }"></div>
+									<button @click.stop="setDropdownMode('albums')"
+										class="relative z-10 flex-1 py-1.5 text-xs font-semibold rounded-full transition-colors duration-200"
+										:style="{ color: dropdownMode === 'albums' ? '#fff' : currentTheme.colors.textSecondary }">
+										Albums
+									</button>
+									<button @click.stop="setDropdownMode('history')"
+										class="relative z-10 flex-1 py-1.5 text-xs font-semibold rounded-full transition-colors duration-200"
+										:style="{ color: dropdownMode === 'history' ? '#fff' : currentTheme.colors.textSecondary }">
+										History
+									</button>
+								</div>
+							</div>
+
+							<button @click="selectAllClusters"
 								class="w-full flex items-center gap-3 px-4 py-3 transition-colors"
 								:style="{ color: currentTheme.colors.text }" :class="{
-									'bg-[#4A90E2]/10': !currentAlbum,
+									'bg-[#4A90E2]/10': !currentAlbum && !currentHistoryDay,
 								}">
 								<span class="text-2xl">🌐</span>
 								<div class="flex-1 text-left">
@@ -60,7 +84,7 @@
 									<div class="text-xs" :style="{ color: currentTheme.colors.textSecondary }">View
 										everything</div>
 								</div>
-								<svg v-if="!currentAlbum" class="w-5 h-5 text-[#4A90E2]" fill="currentColor"
+								<svg v-if="!currentAlbum && !currentHistoryDay" class="w-5 h-5 text-[#4A90E2]" fill="currentColor"
 									viewBox="0 0 20 20">
 									<path fill-rule="evenodd"
 										d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
@@ -70,55 +94,87 @@
 
 							<div class="h-px mx-4" :style="{ backgroundColor: currentTheme.colors.border }"></div>
 
-							<div class="max-h-64 overflow-y-auto">
-								<button v-for="album in albums" :key="album.id" @click="selectAlbum(album)"
-									class="w-full flex items-center gap-3 px-4 py-3 transition-colors group" :class="{
-										'bg-[#4A90E2]/10': currentAlbum?.id === album.id,
-									}">
-									<img :src="getIconUrl(album.icon)" alt="Album icon"
-										class="w-8 h-8 object-contain" />
-									<div class="flex-1 text-left">
-										<div class="text-sm font-medium" :style="{ color: currentTheme.colors.text }">
-											{{ album.name }}
+							<template v-if="dropdownMode === 'albums'">
+								<div class="max-h-64 overflow-y-auto">
+									<button v-for="album in albums" :key="album.id" @click="selectAlbum(album)"
+										class="w-full flex items-center gap-3 px-4 py-3 transition-colors group" :class="{
+											'bg-[#4A90E2]/10': currentAlbum?.id === album.id,
+										}">
+										<img :src="getIconUrl(album.icon)" alt="Album icon"
+											class="w-8 h-8 object-contain" />
+										<div class="flex-1 text-left">
+											<div class="text-sm font-medium" :style="{ color: currentTheme.colors.text }">
+												{{ album.name }}
+											</div>
 										</div>
-									</div>
-									<div class="flex items-center gap-2">
-										<svg v-if="currentAlbum?.id === album.id" class="w-5 h-5 text-[#4A90E2]"
+										<div class="flex items-center gap-2">
+											<svg v-if="currentAlbum?.id === album.id" class="w-5 h-5 text-[#4A90E2]"
+												fill="currentColor" viewBox="0 0 20 20">
+												<path fill-rule="evenodd"
+													d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+													clip-rule="evenodd" />
+											</svg>
+											<button @click.stop="editAlbum(album)"
+												class="p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"
+												:style="{ color: currentTheme.colors.textSecondary }">
+												<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+														d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+												</svg>
+											</button>
+											<button @click.stop="deleteAlbum(album)"
+												class="p-1.5 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 opacity-0 group-hover:opacity-100 transition-opacity">
+												<svg class="w-4 h-4 text-red-600 dark:text-red-400" fill="none"
+													stroke="currentColor" viewBox="0 0 24 24">
+													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+														d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+												</svg>
+											</button>
+										</div>
+									</button>
+								</div>
+
+								<div class="h-px mx-4" :style="{ backgroundColor: currentTheme.colors.border }"></div>
+
+								<button @click="createNewAlbum"
+									class="w-full flex items-center gap-3 px-4 py-3 transition-colors text-[#4A90E2] font-medium">
+									<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+											d="M12 4v16m8-8H4" />
+									</svg>
+									<span class="text-sm">Create New Album</span>
+								</button>
+							</template>
+
+							<template v-else>
+								<div class="max-h-64 overflow-y-auto">
+									<button v-if="historyDays.length === 0"
+										class="w-full px-4 py-3 text-sm text-center cursor-default"
+										:style="{ color: currentTheme.colors.textSecondary }">
+										No processed clusters yet
+									</button>
+									<button v-for="day in historyDays" :key="day.key" @click="selectHistoryDay(day.key)"
+										class="w-full flex items-center gap-3 px-4 py-3 transition-colors" :class="{
+											'bg-[#4A90E2]/10': currentHistoryDay === day.key,
+										}">
+										<span class="text-2xl">📅</span>
+										<div class="flex-1 text-left">
+											<div class="text-sm font-medium" :style="{ color: currentTheme.colors.text }">
+												{{ day.label }}
+											</div>
+											<div class="text-xs" :style="{ color: currentTheme.colors.textSecondary }">
+												{{ day.count }} {{ day.count === 1 ? 'cluster' : 'clusters' }}
+											</div>
+										</div>
+										<svg v-if="currentHistoryDay === day.key" class="w-5 h-5 text-[#4A90E2]"
 											fill="currentColor" viewBox="0 0 20 20">
 											<path fill-rule="evenodd"
 												d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
 												clip-rule="evenodd" />
 										</svg>
-										<button @click.stop="editAlbum(album)"
-											class="p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"
-											:style="{ color: currentTheme.colors.textSecondary }">
-											<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-													d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-											</svg>
-										</button>
-										<button @click.stop="deleteAlbum(album)"
-											class="p-1.5 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 opacity-0 group-hover:opacity-100 transition-opacity">
-											<svg class="w-4 h-4 text-red-600 dark:text-red-400" fill="none"
-												stroke="currentColor" viewBox="0 0 24 24">
-												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-													d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-											</svg>
-										</button>
-									</div>
-								</button>
-							</div>
-
-							<div class="h-px mx-4" :style="{ backgroundColor: currentTheme.colors.border }"></div>
-
-							<button @click="createNewAlbum"
-								class="w-full flex items-center gap-3 px-4 py-3 transition-colors text-[#4A90E2] font-medium">
-								<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-										d="M12 4v16m8-8H4" />
-								</svg>
-								<span class="text-sm">Create New Album</span>
-							</button>
+									</button>
+								</div>
+							</template>
 						</div>
 					</div>
 
@@ -2085,6 +2141,9 @@ import {
 	settings,
 	graphData,
 	currentAlbum,
+	dropdownMode,
+	setDropdownMode,
+	currentHistoryDay,
 	loadFromIndexedDB,
 	collapseNode,
 	initializeGraph,
@@ -2100,6 +2159,8 @@ import {
 } from '../composables/graphNode/useGraphEngine';
 
 import { showVersionHistory, versionHistory } from '../composables/graphNode/useVersionHistory';
+
+import { historyDays, selectHistoryDay, formatDayLabel } from '../composables/graphNode/useHistory';
 
 const { analyticsConsent, trackEvent } = useAnalytics();
 
@@ -2129,6 +2190,16 @@ function dismissCompatibilityCheck() {
 const showModelLoadingIndicator = computed(
 	() => modelLoading.value && processingMode.value === 'local'
 );
+
+// "All Clusters" is shared between the Albums and History views of the
+// switcher dropdown, so it needs to clear whichever filter is active.
+function selectAllClusters() {
+	if (dropdownMode.value === 'history') {
+		selectHistoryDay(null);
+	} else {
+		selectAlbum(null);
+	}
+}
 
 function handleToggleProcessingMode() {
 	// Quota enforcement now happens server-side on the actual request, not on

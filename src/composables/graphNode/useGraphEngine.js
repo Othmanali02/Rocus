@@ -39,6 +39,57 @@ export const settings = reactive({
 });
 export const currentAlbum = ref(null);
 
+// History is the second, day-based view of the same switcher dropdown
+// Albums lives in (see useAlbums.js / useHistory.js). A cluster's "day" is
+// derived from its earliest website's processed_at - not stored on the
+// cluster itself - so it's computed on the fly via getClusterDayKey below.
+// Switching between the two modes always resets both filters back to "All
+// Clusters" (see setDropdownMode) so they never combine into a confusing
+// intersection.
+const DROPDOWN_MODE_KEY = "rocus-dropdown-mode";
+const storedDropdownMode = localStorage.getItem(DROPDOWN_MODE_KEY);
+export const dropdownMode = ref(storedDropdownMode === "history" ? "history" : "albums");
+export const currentHistoryDay = ref(null);
+
+export function setDropdownMode(mode) {
+	if (mode !== "albums" && mode !== "history") return;
+	if (dropdownMode.value === mode) return;
+
+	dropdownMode.value = mode;
+	localStorage.setItem(DROPDOWN_MODE_KEY, mode);
+	currentAlbum.value = null;
+	currentHistoryDay.value = null;
+
+	loadData().then(() => {
+		if (simulation) {
+			simulation.nodes(graphData.nodes);
+			simulation.force("link").links(graphData.links);
+			simulation.alpha(1).restart();
+			renderGraph();
+		}
+	});
+}
+
+// Local calendar day (not UTC) - "the day the user created this" should
+// match what their own clock said at the time, not a server-side cutoff.
+export function dayKeyFromISO(isoString) {
+	const d = new Date(isoString);
+	return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+// A cluster belongs to exactly one day: whenever its first (earliest-
+// processed) website was added, mirroring how a cluster belongs to exactly
+// one album. Returns null if none of its websites have a processed_at yet.
+export function getClusterDayKey(cluster) {
+	let earliest = null;
+	for (const websiteId of cluster.websites || []) {
+		const site = websites.value[websiteId];
+		if (!site?.processed_at) continue;
+		if (!earliest || site.processed_at < earliest) earliest = site.processed_at;
+	}
+	return earliest ? dayKeyFromISO(earliest) : null;
+}
+
 // ---- Graph/DOM refs & UI state -----------------------------------------
 export const graphContainer = ref(null);
 export const tooltip = ref(null);
@@ -83,7 +134,8 @@ export async function fetchClusters() {
 		const request = store.getAll();
 
 		const selectedAlbumId = currentAlbum.value ? currentAlbum.value.id : null;
-		console.log("Fetching clusters for album ID:", selectedAlbumId);
+		const selectedDayKey = currentHistoryDay.value;
+		console.log("Fetching clusters for album ID:", selectedAlbumId, "day:", selectedDayKey);
 
 
 		return new Promise((resolve, reject) => {
@@ -92,18 +144,13 @@ export async function fetchClusters() {
 				const clustersArray = request.result
 
 					.filter(cluster => {
-
-						console.log(
-							"Comparing...",
-							"cluster.album_id =", cluster.album_id,
-							"selectedAlbumId =", selectedAlbumId,
-							"EQUAL?", cluster.album_id === selectedAlbumId
-						);
-
-						if (selectedAlbumId !== null) {
-							return cluster.album_id === selectedAlbumId;
+						if (selectedAlbumId !== null && cluster.album_id !== selectedAlbumId) {
+							return false;
 						}
-						return true; //returns all the clusters if no album is specified
+						if (selectedDayKey !== null && getClusterDayKey(cluster) !== selectedDayKey) {
+							return false;
+						}
+						return true; //returns all the clusters if no album/day filter matches
 					})
 					.map(cluster => {
 						const websitesList = cluster.websites
@@ -145,20 +192,17 @@ export async function fetchSimilarities() {
 
 		const similarities = {};
 
-		// Get the active album filter
+		// Get the active album/day filter
 		const activeAlbumId = currentAlbum.value ? currentAlbum.value.id : null;
+		const activeDayKey = currentHistoryDay.value;
 
-		// Only calculate similarities for clusters in the current album view
-		let clusterIds;
-		if (activeAlbumId === null) {
-			// "All Clusters" view - show ALL connections
-			clusterIds = Object.keys(clusters.value);
-		} else {
-			// Specific album - only show connections within that album
-			clusterIds = Object.keys(clusters.value).filter(id => {
-				const cluster = clusters.value[id];
-				return cluster.album_id === activeAlbumId;
-			});
+		// Only calculate similarities for clusters in the current album/day view
+		let clusterIds = Object.keys(clusters.value);
+		if (activeAlbumId !== null) {
+			clusterIds = clusterIds.filter(id => clusters.value[id].album_id === activeAlbumId);
+		}
+		if (activeDayKey !== null) {
+			clusterIds = clusterIds.filter(id => getClusterDayKey(clusters.value[id]) === activeDayKey);
 		}
 
 		// FIRST: Preserve manual connections
