@@ -2,7 +2,7 @@ import { ref, computed } from 'vue';
 import { store } from '../../router/store';
 import { API_BASE } from '../../components/constants/config';
 import { signInUrl, openPremiumModal } from './usePremium';
-import { currentAlbum, websites, clusters } from './useGraphEngine';
+import { currentAlbum, websites, clusters, addProcessingPlaceholder, removeProcessingPlaceholder } from './useGraphEngine';
 import { processWebsite } from './useAIModels';
 
 // Drag-and-drop file upload onto the graph canvas. Signed-in only, full
@@ -57,17 +57,27 @@ async function uploadFile(file) {
 		return;
 	}
 
+	// Shown immediately, for the whole upload+Claude-analysis network round-
+	// trip - not just the brief local-embedding step processWebsite() shows
+	// its own placeholder for afterward. A quick back-to-back placeholder
+	// handoff is expected and harmless.
+	const placeholderNode = addProcessingPlaceholder({ metadata: { title: file.name } });
+
 	try {
 		const formData = new FormData();
 		formData.append('file', file);
 
-		const response = await fetch(`${API_BASE}/api/upload`, {
-			method: 'POST',
-			credentials: 'include',
-			body: formData,
-		});
-
-		const body = await response.json().catch(() => ({}));
+		let response, body;
+		try {
+			response = await fetch(`${API_BASE}/api/upload`, {
+				method: 'POST',
+				credentials: 'include',
+				body: formData,
+			});
+			body = await response.json().catch(() => ({}));
+		} finally {
+			removeProcessingPlaceholder(placeholderNode.id);
+		}
 
 		if (response.status === 401) {
 			window.location.href = signInUrl();
@@ -120,6 +130,30 @@ export const uploadedFilesWithTopics = computed(() =>
 		return { ...file, topic: cluster?.topic || null };
 	})
 );
+
+const NO_TOPIC_LABEL = 'Uploaded elsewhere';
+
+// Groups the flat file list into per-topic sections for the "My Files"
+// panel header - named topics first (in whatever order they're first seen),
+// with anything unresolvable on this device bucketed under one fallback
+// heading at the end rather than mixed in.
+export const filesByTopic = computed(() => {
+	const groups = new Map();
+	for (const file of uploadedFilesWithTopics.value) {
+		const key = file.topic || NO_TOPIC_LABEL;
+		if (!groups.has(key)) groups.set(key, []);
+		groups.get(key).push(file);
+	}
+
+	const entries = [...groups.entries()];
+	entries.sort((a, b) => {
+		if (a[0] === NO_TOPIC_LABEL) return 1;
+		if (b[0] === NO_TOPIC_LABEL) return -1;
+		return 0;
+	});
+
+	return entries.map(([topic, files]) => ({ topic, files }));
+});
 
 export async function fetchUploadedFiles() {
 	try {

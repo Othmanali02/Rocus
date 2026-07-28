@@ -291,25 +291,31 @@
 									:style="{ color: currentTheme.colors.textSecondary }">
 									No files uploaded yet
 								</div>
-								<div v-for="file in uploadedFilesWithTopics" :key="file.id"
-									class="flex items-center gap-3 px-4 py-3 group">
-									<span class="text-xl">📄</span>
-									<div class="flex-1 min-w-0">
-										<div class="text-sm font-medium truncate" :style="{ color: currentTheme.colors.text }">
-											{{ file.original_name }}
-										</div>
-										<div class="text-xs truncate" :style="{ color: currentTheme.colors.textSecondary }">
-											{{ file.topic ? `${file.topic} · ${formatDate(file.created_at)}` : formatDate(file.created_at) }}
-										</div>
-									</div>
-									<button @click="downloadFile(file.id)" title="Download"
-										class="p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"
+								<div v-for="group in filesByTopic" :key="group.topic">
+									<div class="px-4 pt-3 pb-1 text-xs font-semibold uppercase tracking-wide"
 										:style="{ color: currentTheme.colors.textSecondary }">
-										<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-												d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-										</svg>
-									</button>
+										{{ group.topic }}
+									</div>
+									<div v-for="file in group.files" :key="file.id"
+										class="flex items-center gap-3 px-4 py-3 group">
+										<span class="text-xl">📄</span>
+										<div class="flex-1 min-w-0">
+											<div class="text-sm font-medium truncate" :style="{ color: currentTheme.colors.text }">
+												{{ file.original_name }}
+											</div>
+											<div class="text-xs truncate" :style="{ color: currentTheme.colors.textSecondary }">
+												{{ formatDate(file.created_at) }}
+											</div>
+										</div>
+										<button @click="downloadFile(file.id)" title="Download"
+											class="p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"
+											:style="{ color: currentTheme.colors.textSecondary }">
+											<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+													d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+											</svg>
+										</button>
+									</div>
 								</div>
 							</div>
 						</div>
@@ -825,8 +831,56 @@
 				</svg>
 			</button>
 		</div>
-		<div id="graph-container" ref="graphContainer" @click="handleBackgroundClick"
+		<div id="graph-container" ref="graphContainer" @click="handleBackgroundClick(); handleGraphLeftClick($event)"
+			@contextmenu.prevent="handleGraphRightClick"
 			class="w-full h-full pt-20 cursor-grab active:cursor-grabbing"></div>
+
+		<!-- "+" prompt after a left click on empty canvas -->
+		<div v-if="showAddNotePrompt" class="fixed z-[1400] animate-fadeIn"
+			:style="{ ...addNotePromptStyle, transform: 'translate(-50%, -50%)' }">
+			<button @click.stop="confirmAddNoteFromPrompt" title="Add a note here"
+				class="w-9 h-9 rounded-full flex items-center justify-center shadow-lg transition-transform hover:scale-110"
+				:style="{ backgroundColor: currentTheme.colors.primary }">
+				<svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+				</svg>
+			</button>
+		</div>
+
+		<!-- Create/edit note modal -->
+		<div v-if="showNoteModal" @click="closeNoteModal"
+			class="fixed inset-0 bg-black/50 backdrop-blur-sm z-[2000] flex items-center justify-center p-4 animate-fadeIn">
+			<div @click.stop class="border rounded-3xl p-8 w-full max-w-md shadow-2xl animate-scaleIn" :style="{
+				backgroundColor: currentTheme.colors.surface,
+				borderColor: currentTheme.colors.border
+			}">
+				<h3 class="text-2xl font-bold mb-6" :style="{ color: currentTheme.colors.text }">
+					{{ editingNoteId ? 'Edit Note' : 'New Note' }}
+				</h3>
+
+				<textarea v-model="noteForm.text" rows="5" placeholder="Write your note here"
+					class="w-full px-4 py-3 border rounded-xl focus:ring-2 focus:ring-[#4A90E2] focus:border-transparent outline-none transition-all resize-none"
+					:style="{
+						backgroundColor: currentTheme.colors.background,
+						borderColor: currentTheme.colors.border,
+						color: currentTheme.colors.text
+					}"></textarea>
+
+				<div class="flex gap-3 mt-6">
+					<button @click="closeNoteModal" class="flex-1 px-6 py-3 rounded-xl font-medium transition-all"
+						:style="{
+							backgroundColor: currentTheme.colors.background,
+							color: currentTheme.colors.textSecondary
+						}">
+						Cancel
+					</button>
+					<button @click="saveNote"
+						class="flex-1 px-6 py-3 bg-[#4A90E2] text-white rounded-xl font-medium hover:bg-[#357ABD] transition-all shadow-lg shadow-[#4A90E2]/30">
+						{{ editingNoteId ? 'Save' : 'Create' }}
+					</button>
+				</div>
+			</div>
+		</div>
 
 		<div ref="tooltip"
 			class="fixed pointer-events-none opacity-0 transition-opacity duration-200 z-[2000] px-4 py-3 text-sm rounded-xl shadow-xl max-w-xs backdrop-blur-sm"
@@ -1291,13 +1345,22 @@
 					{{ selectedWebsite.title }}
 				</h4>
 
-				<button @click="closeStickyNote"
-					class="p-1.5 rounded-lg hover:bg-yellow-200 transition-all flex-shrink-0">
-					<svg class="w-5 h-5 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-							d="M6 18L18 6M6 6l12 12" />
-					</svg>
-				</button>
+				<div class="flex items-center gap-1 flex-shrink-0">
+					<button @click="deleteSelectedWebsite" title="Delete"
+						class="p-1.5 rounded-lg hover:bg-yellow-200 transition-all">
+						<svg class="w-5 h-5 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+								d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+						</svg>
+					</button>
+					<button @click="closeStickyNote"
+						class="p-1.5 rounded-lg hover:bg-yellow-200 transition-all">
+						<svg class="w-5 h-5 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+								d="M6 18L18 6M6 6l12 12" />
+						</svg>
+					</button>
+				</div>
 			</div>
 
 			<div class="p-4 space-y-3 text-sm text-gray-800">
@@ -1306,17 +1369,20 @@
 					{{ selectedWebsite.parentCluster }}
 				</div> -->
 
-				<div>
+				<div v-if="!selectedWebsite.is_note">
 					<span class="font-semibold">Domain:</span>
 					{{ selectedWebsite.domain }}
 				</div>
 
-				<div v-if="websiteDetails">
+				<div v-if="websiteDetails && !selectedWebsite.is_note">
 					<span class="font-semibold">Description:</span>
 					{{ websiteDetails.ai_summary || "None" }}
 				</div>
 
-				<div v-if="selectedWebsite.is_file" @click="downloadFile(selectedWebsite.file_id)"
+				<div v-if="selectedWebsite.is_note" class="whitespace-pre-wrap text-sm text-gray-800 py-2">
+					{{ selectedWebsite.note_text }}
+				</div>
+				<div v-else-if="selectedWebsite.is_file" @click="downloadFile(selectedWebsite.file_id)"
 					class="cursor-pointer transition-all hover:shadow-md"
 					>
 					<!-- Title -->
@@ -1355,7 +1421,12 @@
 				</a>
 
 
-				<button v-if="selectedWebsite.is_file" @click="downloadFile(selectedWebsite.file_id)"
+				<button v-if="selectedWebsite.is_note"
+					@click="openNoteEditor({ id: selectedWebsite.websiteId, text: selectedWebsite.note_text })"
+					class="inline-flex items-center gap-2 px-4 py-2 rounded-xl font-medium transition-all bg-[#212121] hover:bg-black text-white">
+					✏️ Edit Note
+				</button>
+				<button v-else-if="selectedWebsite.is_file" @click="downloadFile(selectedWebsite.file_id)"
 					class="inline-flex items-center gap-2 px-4 py-2 rounded-xl font-medium transition-all bg-[#212121] hover:bg-black text-white">
 					📄 View File
 				</button>
@@ -2238,6 +2309,7 @@ import {
 	handleBackgroundClick,
 	closeStickyNote,
 	startDraggingSticky,
+	deleteWebsite,
 	refreshData,
 	updateNodeSizes,
 	updateConnections,
@@ -2249,6 +2321,20 @@ import { showVersionHistory, versionHistory } from '../composables/graphNode/use
 import { historyDays, selectHistoryDay, formatDayLabel } from '../composables/graphNode/useHistory';
 
 import {
+	showNoteModal,
+	editingNoteId,
+	noteForm,
+	showAddNotePrompt,
+	addNotePromptStyle,
+	handleGraphLeftClick,
+	handleGraphRightClick,
+	confirmAddNoteFromPrompt,
+	closeNoteModal,
+	saveNote,
+	openNoteEditor,
+} from '../composables/graphNode/useNotes';
+
+import {
 	showDropOverlay,
 	handleDragEnter,
 	handleDragOver,
@@ -2257,6 +2343,7 @@ import {
 	showUploadsPanel,
 	toggleUploadsPanel,
 	uploadedFilesWithTopics,
+	filesByTopic,
 	downloadFile,
 } from '../composables/graphNode/useFileUpload';
 
@@ -2324,6 +2411,19 @@ function computeDayBadge(raw) {
 }
 
 const historyBadge = computed(() => computeDayBadge(currentHistoryDay.value));
+
+// Works for any selected website-shaped record - a regular website, an
+// uploaded file, or a note - deleteWebsite() already handles cluster
+// cleanup uniformly regardless of what's stored on the record.
+async function deleteSelectedWebsite() {
+	if (!selectedWebsite.value) return;
+	const label = selectedWebsite.value.is_note ? 'this note' : `"${selectedWebsite.value.title}"`;
+	if (!confirm(`Delete ${label}? This can't be undone.`)) return;
+
+	await deleteWebsite(selectedWebsite.value.websiteId);
+	closeStickyNote();
+	await refreshData();
+}
 
 // "All Clusters" is shared between the Albums and History views of the
 // switcher dropdown, so it needs to clear whichever filter is active.
@@ -2471,6 +2571,7 @@ watch(tutorialActive, (isActive) => {
 	font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI",
 		sans-serif;
 }
+
 
 /* Custom Slider Styles */
 .slider::-webkit-slider-thumb {

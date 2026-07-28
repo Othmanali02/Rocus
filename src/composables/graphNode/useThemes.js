@@ -98,6 +98,14 @@ export function applyThemeColors(theme) {
 			.attr("stroke", theme.colors.nodeStroke);
 
 		container
+			.select(".nodes")
+			.selectAll(".node-note-icon")
+			.transition()
+			.duration(300)
+			.attr("fill", theme.colors.background)
+			.attr("stroke", theme.colors.nodeStroke);
+
+		container
 			.select(".labels")
 			.selectAll(".node-label")
 			.transition()

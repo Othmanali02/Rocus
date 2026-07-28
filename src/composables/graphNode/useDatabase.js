@@ -19,7 +19,7 @@ export function detectPlatform() {
 
 export function initDB() {
 	return new Promise((resolve, reject) => {
-		const request = indexedDB.open("FunkyAIDB", 2);
+		const request = indexedDB.open("FunkyAIDB", 3);
 
 		request.onerror = () => reject(request.error);
 		request.onsuccess = () => {
