@@ -11,7 +11,6 @@ import {
 	generateId,
 	cosineSimilarity,
 	averageEmbeddings,
-	normalizeTopicTerm,
 	topicsMatch,
 	normalizeEmbeddingRecord,
 } from "./utils";
@@ -28,6 +27,16 @@ const { trackEvent } = useAnalytics();
 
 const SIMILARITY_THRESHOLD = 0.65;
 const LOOSE_SIMILARITY_THRESHOLD = 0.45;
+
+// Notes embed their own short, raw, informal text - websites/files embed a
+// rich Claude-generated summary paragraph. That register/length mismatch
+// means cosine similarity between the two runs lower than you'd intuitively
+// expect even for genuinely related content, so notes get their own, more
+// lenient threshold rather than reusing the website-to-website one above.
+// There's no paired "loose" threshold here - see rankCandidateClusters:
+// the lexical (topicsMatch) tier is a fully independent signal now, not
+// gated by any minimum embedding similarity.
+const NOTE_SIMILARITY_THRESHOLD = 0.5;
 
 // A minimal folded-document glyph for uploaded-file website nodes, drawn in
 // a small local coordinate space centered on the node's own (0,0) origin -
@@ -529,8 +538,6 @@ export function findSimilarWebsites(targetEmbedding, excludeId = null, albumId =
 }
 
 export function assignToCluster(websiteId, topic, embedding, searchQuery, albumId = null) {
-	const normalizedTopic = normalizeTopicTerm(topic);
-
 	const similarWebsites = findSimilarWebsites(embedding, websiteId, albumId);
 
 	for (const { websiteId: similarId, similarity } of similarWebsites) {
@@ -626,24 +633,84 @@ function linkClusterToNotesHub(topicClusterId, albumId) {
 // joins a real topic cluster it strictly matches (only SIMILARITY_THRESHOLD,
 // no loose+topic-match tier, since notes have no Claude-derived topic to
 // loosely match on), or falls into the shared Notes hub.
-export function assignNoteToCluster(noteWebsiteId, embedding, albumId = null) {
-	const similarWebsites = findSimilarWebsites(embedding, noteWebsiteId, albumId);
+// Read-only: ranks every real topic cluster (never the Notes hub itself) in
+// the given album against a note's embedding + raw text, for both the
+// actual assignment below AND the live suggestion dropdown in the note
+// modal - the preview and the real save must use the exact same logic, or
+// the preview would lie about what's actually going to happen.
+//
+// Tier 1: cluster-centroid cosine similarity clears the (lenient, note-
+// specific) strict bar on its own. Tier 2: topicsMatch(noteText, cluster.topic)
+// - lexical/keyword overlap - qualifies independently, with NO minimum
+// embedding similarity required. A short note compared against a cluster
+// centroid built from full paragraph summaries can embed low even when the
+// topic word match is exact and unambiguous (e.g. "warehousing" vs a
+// "Warehouse" topic) - gating a real keyword match behind a semantic-
+// similarity floor was punishing exactly the case this whole feature exists
+// for. Tier 1 still outranks tier 2 when both exist.
+export function rankCandidateClusters(embedding, noteText, albumId = null) {
+	const candidates = [];
 
-	for (const { websiteId: similarId, similarity } of similarWebsites) {
-		if (similarity < SIMILARITY_THRESHOLD) break; // sorted descending - nothing further can qualify
+	for (const cluster of Object.values(clusters.value)) {
+		if (cluster.album_id !== albumId) continue;
+		if (cluster.is_notes_cluster) continue;
 
-		for (const [clusterId, cluster] of Object.entries(clusters.value)) {
-			if (cluster.album_id !== albumId) continue;
-			if (cluster.is_notes_cluster) continue; // the hub is never a match candidate
-			if (!cluster.websites.includes(similarId)) continue;
+		const memberEmbeddings = cluster.websites
+			.map((id) => embeddings.value[id]?.v)
+			.filter(Boolean);
+		if (memberEmbeddings.length === 0) continue;
 
-			if (!cluster.websites.includes(noteWebsiteId)) {
-				cluster.websites.push(noteWebsiteId);
-			}
-			linkClusterToNotesHub(clusterId, albumId);
-			console.log(`🔗 Note added to cluster ${clusterId}, linked to Notes hub`);
-			return clusterId;
+		const centroid = averageEmbeddings(memberEmbeddings);
+		const similarity = cosineSimilarity(embedding, centroid);
+
+		if (similarity >= NOTE_SIMILARITY_THRESHOLD) {
+			candidates.push({ clusterId: cluster.id, topic: cluster.topic, score: similarity, tier: 1 });
+		} else if (topicsMatch(noteText, cluster.topic)) {
+			candidates.push({ clusterId: cluster.id, topic: cluster.topic, score: similarity, tier: 2 });
 		}
+	}
+
+	return candidates.sort((a, b) => a.tier - b.tier || b.score - a.score).slice(0, 3);
+}
+
+// Sentinel for "the user explicitly picked the Notes hub" in the modal -
+// distinct from a real cluster id, since the hub may not exist yet (it's
+// created lazily) at the moment the chip is clicked.
+export const NOTES_HUB_SENTINEL = '__notes_hub__';
+
+export function assignNoteToCluster(noteWebsiteId, embedding, albumId = null, noteText = '', forcedClusterId = null) {
+	if (forcedClusterId === NOTES_HUB_SENTINEL) {
+		const notesClusterId = findOrCreateNotesCluster(albumId);
+		if (!clusters.value[notesClusterId].websites.includes(noteWebsiteId)) {
+			clusters.value[notesClusterId].websites.push(noteWebsiteId);
+		}
+		console.log(`🗒️ Note pinned to the Notes hub by user choice`);
+		return notesClusterId;
+	}
+
+	// User picked a suggestion in the modal - honor it directly rather than
+	// re-running the ranking.
+	if (forcedClusterId && clusters.value[forcedClusterId]) {
+		const cluster = clusters.value[forcedClusterId];
+		if (!cluster.websites.includes(noteWebsiteId)) {
+			cluster.websites.push(noteWebsiteId);
+		}
+		if (!cluster.is_notes_cluster) {
+			linkClusterToNotesHub(forcedClusterId, albumId);
+		}
+		console.log(`🔗 Note pinned to cluster ${forcedClusterId} by user choice`);
+		return forcedClusterId;
+	}
+
+	const [topCandidate] = rankCandidateClusters(embedding, noteText, albumId);
+	if (topCandidate) {
+		const cluster = clusters.value[topCandidate.clusterId];
+		if (!cluster.websites.includes(noteWebsiteId)) {
+			cluster.websites.push(noteWebsiteId);
+		}
+		linkClusterToNotesHub(topCandidate.clusterId, albumId);
+		console.log(`🔗 Note added to cluster ${topCandidate.clusterId}, linked to Notes hub`);
+		return topCandidate.clusterId;
 	}
 
 	const notesClusterId = findOrCreateNotesCluster(albumId);

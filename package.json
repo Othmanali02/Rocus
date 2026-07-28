@@ -25,6 +25,7 @@
 		"d3": "^7.9.0",
 		"graphology": "^0.26.0",
 		"sigma": "^3.0.2",
+		"stemmer": "^2.0.1",
 		"tailwindcss": "^3.4.9",
 		"vue": "^3.5.18",
 		"vue-router": "^4.5.0"

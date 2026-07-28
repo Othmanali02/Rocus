@@ -1,6 +1,8 @@
-import { ref, reactive } from 'vue';
-import { websites, saveToIndexedDB, refreshData } from './useGraphEngine';
-import { processNote } from './useAIModels';
+import { ref, reactive, watch } from 'vue';
+import { websites, currentAlbum, rankCandidateClusters, saveToIndexedDB, refreshData, NOTES_HUB_SENTINEL } from './useGraphEngine';
+import { processNote, generateEmbedding } from './useAIModels';
+
+export { NOTES_HUB_SENTINEL };
 
 // UI entry points for creating/editing a note - triple-right-click or the
 // left-click "+" prompt on empty canvas. Where the note ends up RENDERED is
@@ -15,6 +17,47 @@ export const noteForm = reactive({ text: '' });
 
 export const showAddNotePrompt = ref(false);
 export const addNotePromptStyle = ref({});
+
+// Live "suggested clusters" - read-only preview of where Create would send
+// this note, computed from the exact same rankCandidateClusters() the real
+// save uses, so the preview can never promise something the save doesn't
+// honor. Debounced so it only runs once you pause typing, never mid-keystroke.
+export const noteSuggestions = ref([]);
+export const selectedSuggestionClusterId = ref(null);
+
+let suggestionDebounce = null;
+const SUGGESTION_DEBOUNCE_MS = 600;
+
+watch(
+	() => noteForm.text,
+	(text) => {
+		clearTimeout(suggestionDebounce);
+		const trimmed = text.trim();
+		if (trimmed.length < 3) {
+			noteSuggestions.value = [];
+			return;
+		}
+		suggestionDebounce = setTimeout(async () => {
+			const embedding = await generateEmbedding(trimmed);
+			if (!embedding) {
+				noteSuggestions.value = [];
+				return;
+			}
+			// The text may have changed again during the async embedding call -
+			// drop a stale result rather than showing suggestions for old text.
+			if (noteForm.text.trim() !== trimmed) return;
+			const albumId = currentAlbum.value?.id || null;
+			noteSuggestions.value = rankCandidateClusters(embedding, trimmed, albumId);
+		}, SUGGESTION_DEBOUNCE_MS);
+	}
+);
+
+// Clicking an already-selected chip clears it back to "auto" (let the
+// algorithm decide at save time, same as not touching suggestions at all).
+export function toggleSuggestion(clusterId) {
+	selectedSuggestionClusterId.value =
+		selectedSuggestionClusterId.value === clusterId ? null : clusterId;
+}
 
 // Left click on empty canvas - shows a small "+" prompt at the click point;
 // clicking it opens the create-note modal. Bound alongside (not instead of)
@@ -48,22 +91,31 @@ export function handleGraphRightClick() {
 }
 
 export function openNoteCreator() {
+	clearTimeout(suggestionDebounce);
 	editingNoteId.value = null;
 	noteForm.text = '';
+	noteSuggestions.value = [];
+	selectedSuggestionClusterId.value = null;
 	showNoteModal.value = true;
 	showAddNotePrompt.value = false;
 }
 
 export function openNoteEditor(note) {
+	clearTimeout(suggestionDebounce);
 	editingNoteId.value = note.id;
 	noteForm.text = note.text;
+	noteSuggestions.value = [];
+	selectedSuggestionClusterId.value = null;
 	showNoteModal.value = true;
 }
 
 export function closeNoteModal() {
+	clearTimeout(suggestionDebounce);
 	showNoteModal.value = false;
 	editingNoteId.value = null;
 	noteForm.text = '';
+	noteSuggestions.value = [];
+	selectedSuggestionClusterId.value = null;
 }
 
 export async function saveNote() {
@@ -85,7 +137,8 @@ export async function saveNote() {
 		}
 		closeNoteModal();
 	} else {
+		const forcedClusterId = selectedSuggestionClusterId.value;
 		closeNoteModal();
-		await processNote(text);
+		await processNote(text, forcedClusterId);
 	}
 }

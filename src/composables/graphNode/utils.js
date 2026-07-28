@@ -1,5 +1,7 @@
 // Pure, stateless helper functions shared across the graph page composables.
 
+import { stemmer } from "stemmer";
+
 export function generateId() {
 	return Date.now().toString(36) + Math.random().toString(36).substr(2);
 }
@@ -128,44 +130,62 @@ export function isDirtyAiLabel(value) {
 	return /^["'“]/.test(value.trim());
 }
 
-export function normalizeTopicTerm(term) {
-	if (!term) return "";
+// A handful of very common words, excluded from the word-overlap check in
+// topicsMatch below - now that a lexical match can qualify a cluster on its
+// own (no embedding-similarity backstop required, see rankCandidateClusters
+// in useGraphEngine.js), a topic that happened to be a common word shouldn't
+// trivially match everything that contains it.
+const STOPWORDS = new Set([
+	"a", "an", "the", "and", "or", "of", "in", "on", "at", "to", "for", "with",
+	"is", "are", "was", "were", "this", "that", "these", "those", "it", "its",
+	"be", "by", "as", "from", "about", "into", "your", "my", "i", "you",
+]);
 
-	let normalized = term.toLowerCase().trim();
+function longestCommonPrefixLength(a, b) {
+	let i = 0;
+	while (i < a.length && i < b.length && a[i] === b[i]) i++;
+	return i;
+}
 
-	if (normalized.endsWith("ies")) {
-		normalized = normalized.slice(0, -3) + "y";
-	} else if (normalized.endsWith("es")) {
-		normalized = normalized.slice(0, -2);
-	} else if (normalized.endsWith("s")) {
-		normalized = normalized.slice(0, -1);
-	}
-
-	normalized = normalized.replace(/(ing|ed|er)$/, "");
-
-	return normalized;
+// Two independent, complementary checks - neither is reliable enough alone.
+// Exact stemmed equality (via the standard Porter2/Snowball algorithm)
+// correctly handles the vast majority of English inflections: run/running,
+// kayak/kayaking, market/marketing. But stemmers are heuristic and DO get
+// real words wrong - this exact library over-trims "warehousing" to "wareh"
+// while "warehouse" stems to "warehous", so a word that's obviously the same
+// root as far as any human is concerned fails a pure stem-equality check.
+// The long-shared-prefix check is a robust backstop for exactly that case
+// (both share the 8-letter prefix "warehous"), without depending on getting
+// English morphology algorithmically "right". The threshold (a fixed
+// minimum of 6 characters, or 75% of the shorter word, whichever is larger)
+// was tuned to catch that case while explicitly rejecting misleading short
+// prefixes (e.g. "china"/"chinatown", "car"/"cartoon", "art"/"article" all
+// correctly stay unmatched).
+function wordsMatch(w1, w2) {
+	if (w1 === w2) return true;
+	if (stemmer(w1) === stemmer(w2)) return true;
+	const shared = longestCommonPrefixLength(w1, w2);
+	return shared >= Math.max(6, 0.75 * Math.min(w1.length, w2.length));
 }
 
 export function topicsMatch(topic1, topic2) {
 	if (!topic1 || !topic2) return false;
 
-	const normalize = (s) => {
-		s = s.toLowerCase().trim();
-		s = s.replace(/[^a-z0-9 ]/g, "");
-		if (s.endsWith("s")) s = s.slice(0, -1);
-		return s;
-	};
+	const normalize = (s) => s.toLowerCase().trim().replace(/[^a-z0-9 ]/g, "");
 
 	const n1 = normalize(topic1);
 	const n2 = normalize(topic2);
 
 	if (n1 === n2) return true;
 
-	const set1 = new Set(n1.split(" "));
-	const set2 = new Set(n2.split(" "));
-	const intersection = [...set1].filter((x) => set2.has(x));
+	const words1 = n1.split(" ").filter((w) => w && !STOPWORDS.has(w));
+	const words2 = n2.split(" ").filter((w) => w && !STOPWORDS.has(w));
 
-	if (intersection.length > 0) return true;
+	for (const w1 of words1) {
+		for (const w2 of words2) {
+			if (wordsMatch(w1, w2)) return true;
+		}
+	}
 
 	const synonyms = {
 		gpu: ["graphics card", "video card"],
