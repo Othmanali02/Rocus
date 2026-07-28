@@ -866,6 +866,35 @@
 						color: currentTheme.colors.text
 					}"></textarea>
 
+				<div v-if="!editingNoteId" class="mt-3">
+					<div class="text-xs font-medium mb-1.5" :style="{ color: currentTheme.colors.textSecondary }">
+						Add to
+					</div>
+					<div class="flex flex-wrap gap-2">
+						<button v-for="suggestion in noteSuggestions" :key="suggestion.clusterId"
+							@click="toggleSuggestion(suggestion.clusterId)"
+							class="px-3 py-1.5 rounded-full text-xs font-medium border transition-all" :style="{
+								backgroundColor: selectedSuggestionClusterId === suggestion.clusterId ? currentTheme.colors.primary : currentTheme.colors.background,
+								borderColor: selectedSuggestionClusterId === suggestion.clusterId ? currentTheme.colors.primary : currentTheme.colors.border,
+								color: selectedSuggestionClusterId === suggestion.clusterId ? '#ffffff' : currentTheme.colors.text
+							}">
+							{{ suggestion.topic }}
+						</button>
+
+
+						<button @click="toggleSuggestion(NOTES_HUB_SENTINEL)"
+							class="px-3 py-1.5 rounded-full text-xs font-medium border transition-all" :style="{
+								backgroundColor: selectedSuggestionClusterId === NOTES_HUB_SENTINEL ? currentTheme.colors.primary : currentTheme.colors.background,
+								borderColor: selectedSuggestionClusterId === NOTES_HUB_SENTINEL ? currentTheme.colors.primary : currentTheme.colors.border,
+								color: selectedSuggestionClusterId === NOTES_HUB_SENTINEL ? '#ffffff' : currentTheme.colors.text
+							}">
+							Notes
+						</button>
+
+						
+					</div>
+				</div>
+
 				<div class="flex gap-3 mt-6">
 					<button @click="closeNoteModal" class="flex-1 px-6 py-3 rounded-xl font-medium transition-all"
 						:style="{
@@ -2332,6 +2361,10 @@ import {
 	closeNoteModal,
 	saveNote,
 	openNoteEditor,
+	noteSuggestions,
+	selectedSuggestionClusterId,
+	toggleSuggestion,
+	NOTES_HUB_SENTINEL,
 } from '../composables/graphNode/useNotes';
 
 import {

@@ -509,7 +509,7 @@ export async function processWebsite(data) {
 // assignNoteToCluster instead of assignToCluster (joins a real topic on a
 // strict match, otherwise falls into the shared "Notes" hub rather than
 // spawning its own singleton cluster).
-export async function processNote(text) {
+export async function processNote(text, forcedClusterId = null) {
 	const trimmed = (text || "").trim();
 	if (!trimmed) return;
 
@@ -555,7 +555,7 @@ export async function processNote(text) {
 
 		embeddings.value[websiteId] = wrapEmbedding(embedding);
 
-		const clusterId = assignNoteToCluster(websiteId, embedding, albumId);
+		const clusterId = assignNoteToCluster(websiteId, embedding, albumId, trimmed, forcedClusterId);
 		websites.value[websiteId].cluster_id = clusterId;
 
 		await saveToIndexedDB();
