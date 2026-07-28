@@ -5,6 +5,7 @@ import { currentTheme } from "./useThemes";
 import { searchTerm } from "./useSearch";
 import { handleDiscoverClick } from "./useDiscover";
 import { fetchAlbums, showAlbumsDropdown } from "./useAlbums";
+import { showAddNotePrompt } from "./useNotes";
 import { useAnalytics } from "../useAnalytics";
 import {
 	generateId,
@@ -35,6 +36,15 @@ const LOOSE_SIMILARITY_THRESHOLD = 0.45;
 // not the raster RocusFileIcon*.png assets used elsewhere (those are fixed-
 // color PNGs meant for flat <img> tags, not per-theme recoloring inside the
 // D3 canvas).
+// Same construction as FILE_ICON_PATH, deliberately flipped (fold at the
+// bottom-right instead of top-right) so notes read as a distinct silhouette
+// from files at a glance, not just a different color.
+const NOTE_ICON_PATH =
+	"M -4 -4 L 4 -4 L 4 2.5 L 1.5 5 L -4 5 Z " + // sticky-note body (bottom-right corner cut for the fold)
+	"M 1.5 2.5 L 1.5 5 L 4 2.5 Z " + // folded corner
+	"M -2 -1.5 H 2 " + // text line 1
+	"M -2 1 H 1";
+
 const FILE_ICON_PATH =
 	"M -4 -5 L 1.5 -5 L 4 -2.5 L 4 5 L -4 5 Z " + // document body (top-right corner cut for the fold)
 	"M 1.5 -5 L 1.5 -2.5 L 4 -2.5 Z " + // folded corner
@@ -176,7 +186,9 @@ export async function fetchClusters() {
 								domain: website.domain,
 								processed_at: website.processed_at,
 								is_file: !!website.is_file,
-								file_id: website.file_id || null
+								file_id: website.file_id || null,
+								is_note: !!website.is_note,
+								note_text: website.note_text || null
 							}));
 
 						return {
@@ -184,7 +196,9 @@ export async function fetchClusters() {
 							topic: cluster.topic,
 							website_count: websitesList.length,
 							websites: websitesList,
-							similar_links: cluster.similar_links || {}
+							similar_links: cluster.similar_links || {},
+							is_notes_cluster: !!cluster.is_notes_cluster,
+							notes_hub_links: cluster.notes_hub_links || []
 						};
 					});
 
@@ -241,6 +255,12 @@ export async function fetchSimilarities() {
 		for (const sourceClusterId of clusterIds) {
 			const sourceCluster = clusters.value[sourceClusterId];
 			if (!sourceCluster || !sourceCluster.websites.length) continue;
+			// The Notes hub's member embeddings are semantically unrelated to
+			// each other (a grab-bag of orphan notes) - its average embedding
+			// would produce meaningless accidental links to unrelated topics.
+			// Its only connections are the deliberate dashed hub-links added
+			// in processApiData().
+			if (sourceCluster.is_notes_cluster) continue;
 
 			const sourceWebsiteIds = sourceCluster.websites;
 			const sourceEmbeddings = sourceWebsiteIds
@@ -259,6 +279,7 @@ export async function fetchSimilarities() {
 
 				const targetCluster = clusters.value[targetClusterId];
 				if (!targetCluster || !targetCluster.websites.length) continue;
+				if (targetCluster.is_notes_cluster) continue;
 
 				const targetWebsiteIds = targetCluster.websites;
 				const targetEmbeddings = targetWebsiteIds
@@ -556,6 +577,83 @@ export function assignToCluster(websiteId, topic, embedding, searchQuery, albumI
 	return newClusterId;
 }
 
+// Finds (or lazily creates) the one shared per-album "Notes" cluster - a
+// permanent catch-all bucket for notes that don't semantically match any
+// real topic, and the hub every topic-with-a-linked-note gets a dashed
+// connector to. Never matched into via similarity (see assignNoteToCluster),
+// only ever reached directly here.
+function findOrCreateNotesCluster(albumId) {
+	const existing = Object.values(clusters.value).find(
+		(c) => c.album_id === albumId && c.is_notes_cluster
+	);
+	if (existing) return existing.id;
+
+	const id = generateId();
+	clusters.value[id] = {
+		id,
+		topic: "Notes",
+		websites: [],
+		similar_links: {},
+		manual_connections: [],
+		album_id: albumId,
+		is_notes_cluster: true,
+		notes_hub_links: [],
+	};
+	console.log(`🆕 Created Notes hub cluster: ${id} in album ${albumId || 'All Clusters'}`);
+	return id;
+}
+
+// Records the dashed connector between a topic cluster and the Notes hub -
+// bidirectional and deduped, mirroring the existing manual_connections
+// convention. A no-op on repeat calls once the pair is already linked, so
+// multiple notes landing in the same topic cluster just re-confirm one link.
+function linkClusterToNotesHub(topicClusterId, albumId) {
+	const notesClusterId = findOrCreateNotesCluster(albumId);
+	const notesCluster = clusters.value[notesClusterId];
+	const topicCluster = clusters.value[topicClusterId];
+
+	if (!notesCluster.notes_hub_links.includes(topicClusterId)) {
+		notesCluster.notes_hub_links.push(topicClusterId);
+	}
+	if (!topicCluster.notes_hub_links) topicCluster.notes_hub_links = [];
+	if (!topicCluster.notes_hub_links.includes(notesClusterId)) {
+		topicCluster.notes_hub_links.push(notesClusterId);
+	}
+}
+
+// Notes go through the same embedding pipeline as websites, but never spawn
+// their own singleton cluster the way assignToCluster does - a note either
+// joins a real topic cluster it strictly matches (only SIMILARITY_THRESHOLD,
+// no loose+topic-match tier, since notes have no Claude-derived topic to
+// loosely match on), or falls into the shared Notes hub.
+export function assignNoteToCluster(noteWebsiteId, embedding, albumId = null) {
+	const similarWebsites = findSimilarWebsites(embedding, noteWebsiteId, albumId);
+
+	for (const { websiteId: similarId, similarity } of similarWebsites) {
+		if (similarity < SIMILARITY_THRESHOLD) break; // sorted descending - nothing further can qualify
+
+		for (const [clusterId, cluster] of Object.entries(clusters.value)) {
+			if (cluster.album_id !== albumId) continue;
+			if (cluster.is_notes_cluster) continue; // the hub is never a match candidate
+			if (!cluster.websites.includes(similarId)) continue;
+
+			if (!cluster.websites.includes(noteWebsiteId)) {
+				cluster.websites.push(noteWebsiteId);
+			}
+			linkClusterToNotesHub(clusterId, albumId);
+			console.log(`🔗 Note added to cluster ${clusterId}, linked to Notes hub`);
+			return clusterId;
+		}
+	}
+
+	const notesClusterId = findOrCreateNotesCluster(albumId);
+	if (!clusters.value[notesClusterId].websites.includes(noteWebsiteId)) {
+		clusters.value[notesClusterId].websites.push(noteWebsiteId);
+	}
+	console.log(`🗒️ Note fell into the Notes hub ${notesClusterId} (no strict match)`);
+	return notesClusterId;
+}
+
 // ==============================================
 // GRAPH DATA LOADING
 // ==============================================
@@ -577,6 +675,10 @@ export function processApiData(clustersData, similarities) {
 			websites: cluster.websites || [],
 
 			similar_links: cluster.similar_links || [],
+
+			is_notes_cluster: !!cluster.is_notes_cluster,
+
+			notes_hub_links: cluster.notes_hub_links || [],
 
 			size: baseSize,
 
@@ -620,6 +722,26 @@ export function processApiData(clustersData, similarities) {
 					type: "cluster-link",
 				});
 			}
+		});
+	});
+
+	// Dashed hub connectors from the "Notes" cluster to every topic cluster
+	// that picked up a linked note - not similarity-derived (the Notes hub is
+	// deliberately excluded from fetchSimilarities' embedding pass, since its
+	// member notes are semantically unrelated to each other), so these are
+	// generated here from notes_hub_links instead.
+	const nodeIds = new Set(nodes.map((n) => n.id));
+	clustersData.forEach((cluster) => {
+		if (!cluster.is_notes_cluster) return;
+		(cluster.notes_hub_links || []).forEach((topicClusterId) => {
+			if (!nodeIds.has(topicClusterId)) return; // topic cluster not in this album/day view
+			const already = links.some(
+				(l) =>
+					(l.source === cluster.cluster_id && l.target === topicClusterId) ||
+					(l.source === topicClusterId && l.target === cluster.cluster_id)
+			);
+			if (already) return;
+			links.push({ source: cluster.cluster_id, target: topicClusterId, type: "notes-hub-link" });
 		});
 	});
 
@@ -834,6 +956,8 @@ export function performExplosion(clusterNode) {
 			processed_at: website.processed_at,
 			is_file: !!website.is_file,
 			file_id: website.file_id || null,
+			is_note: !!website.is_note,
+			note_text: website.note_text || null,
 			size: 10,
 			baseSize: 10,
 			type: "website",
@@ -1056,17 +1180,21 @@ export function renderGraph() {
 		.attr("class", (d) => `link ${d.type}`)
 		.style("opacity", (d) => {
 			if (d.type === "website-link" || d.type === "discover-link") return 0.6;
+			if (d.type === "notes-hub-link") return showConnections.value ? 0.5 : 0;
 			return showConnections.value ? 0.4 : 0;
 		})
 		.style("stroke-width", (d) => {
 			if (d.type === "website-link" || d.type === "discover-link") return 1.5;
+			if (d.type === "notes-hub-link") return 1.5;
 			return Math.max(1, (d.similarity || 0.5) * 4);
 		})
 		.style("stroke", (d) => {
 			if (d.type === "discover-link") return "#95a5a6";
 			if (d.type === "website-link") return "#adb5bd";
+			if (d.type === "notes-hub-link") return currentTheme.value.colors.secondary;
 			return "#adb5bd";
-		});
+		})
+		.style("stroke-dasharray", (d) => (d.type === "notes-hub-link" ? "5 4" : null));
 
 	// Each node is a <g> (not a bare <circle>) so a subset - uploaded-file
 	// website nodes - can carry a second child element (the file glyph) on
@@ -1084,6 +1212,11 @@ export function renderGraph() {
 					.append("path")
 					.attr("class", "node-file-icon")
 					.attr("d", FILE_ICON_PATH)
+					.attr("pointer-events", "none");
+				g.filter((d) => d.type === "website" && d.is_note)
+					.append("path")
+					.attr("class", "node-note-icon")
+					.attr("d", NOTE_ICON_PATH)
 					.attr("pointer-events", "none");
 				return g;
 			},
@@ -1108,10 +1241,19 @@ export function renderGraph() {
 			if (d.type === "website") return currentTheme.value.colors.nodeStroke;
 			return currentTheme.value.colors.nodeStroke;
 		})
-		.attr("stroke-width", 2);
+		.attr("stroke-width", 2)
+		.attr("stroke-dasharray", (d) => (d.type === "cluster" && d.is_notes_cluster ? "4 3" : null));
 
 	nodes
 		.select(".node-file-icon")
+		.attr("transform", () => `scale(${settings.nodeSize})`)
+		.attr("fill", currentTheme.value.colors.background)
+		.attr("stroke", currentTheme.value.colors.nodeStroke)
+		.attr("stroke-width", 0.8)
+		.attr("stroke-linejoin", "round");
+
+	nodes
+		.select(".node-note-icon")
 		.attr("transform", () => `scale(${settings.nodeSize})`)
 		.attr("fill", currentTheme.value.colors.background)
 		.attr("stroke", currentTheme.value.colors.nodeStroke)
@@ -1233,6 +1375,7 @@ export function handleNodeMouseOut() {
 
 export async function handleNodeClick(event, d) {
 	event.stopPropagation();
+	showAddNotePrompt.value = false;
 
 	if (d.type === 'processing') return;
 
@@ -1433,6 +1576,13 @@ export function updateNodeSizes() {
 	container
 		.select(".nodes")
 		.selectAll(".node-file-icon")
+		.transition()
+		.duration(300 / settings.animationSpeed)
+		.attr("transform", () => `scale(${settings.nodeSize})`);
+
+	container
+		.select(".nodes")
+		.selectAll(".node-note-icon")
 		.transition()
 		.duration(300 / settings.animationSpeed)
 		.attr("transform", () => `scale(${settings.nodeSize})`);

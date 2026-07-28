@@ -76,11 +76,11 @@ const signInUrl = `${API_BASE}/api/auth/login`;
             <div class="max-w-5xl mx-auto relative">
                 <div class="text-center max-w-2xl mx-auto mb-12">
                     <h1 class="text-4xl sm:text-5xl font-bold mb-4 text-[#1A1A1A]">
-                        Simple, honest <span class="text-[#4A90E2]">pricing</span>
+                        <span class="text-[#4A90E2]">Rocus </span>Premium
                     </h1>
                     <p class="text-lg sm:text-xl text-[#9A9A9A]">
-                        Rocus is free and decentralized by default. Upgrade only if you want
-                        Claude-powered Cloud AI Processing with no daily limits.
+                        Rocus is free and decentralized by default. Upgrade if you want
+                        the faster and more accurate Cloud AI Processing with no daily limits.
                     </p>
                 </div>
 

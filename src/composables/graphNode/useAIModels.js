@@ -10,6 +10,8 @@ import {
 	addProcessingPlaceholder,
 	removeProcessingPlaceholder,
 	assignToCluster,
+	assignNoteToCluster,
+	currentAlbum,
 	saveToIndexedDB,
 	refreshData,
 } from "./useGraphEngine";
@@ -498,6 +500,79 @@ export async function processWebsite(data) {
 		if (err instanceof QuotaExceededError) {
 			openPremiumModal();
 		}
+	}
+}
+
+// A trimmed processWebsite for notes: no Claude call at all (there's nothing
+// to summarize - the note text itself is both the content and the thing
+// that gets embedded), and cluster assignment goes through
+// assignNoteToCluster instead of assignToCluster (joins a real topic on a
+// strict match, otherwise falls into the shared "Notes" hub rather than
+// spawning its own singleton cluster).
+export async function processNote(text) {
+	const trimmed = (text || "").trim();
+	if (!trimmed) return;
+
+	if (!embeddingModel) {
+		const ready = await waitFor(() => embeddingReadyPromise, () => !!embeddingModel);
+		if (!ready) {
+			console.error("Embedding model not loaded");
+			return;
+		}
+	}
+
+	const placeholderNode = addProcessingPlaceholder({ metadata: { title: trimmed.slice(0, 40) } });
+
+	try {
+		const websiteId = generateId();
+		const embedding = await generateEmbedding(trimmed);
+
+		if (!embedding) {
+			console.error("Failed to generate embedding for note");
+			removeProcessingPlaceholder(placeholderNode.id);
+			return;
+		}
+
+		const albumId = currentAlbum.value?.id || null;
+		const title = trimmed.slice(0, 60) || "Note";
+
+		websites.value[websiteId] = {
+			id: websiteId,
+			url: null,
+			title,
+			domain: null,
+			topic: null,
+			ai_summary: trimmed,
+			search_query: null,
+			metadata: {},
+			album_id: albumId,
+			processed_at: new Date().toISOString(),
+			is_file: false,
+			file_id: null,
+			is_note: true,
+			note_text: trimmed,
+		};
+
+		embeddings.value[websiteId] = wrapEmbedding(embedding);
+
+		const clusterId = assignNoteToCluster(websiteId, embedding, albumId);
+		websites.value[websiteId].cluster_id = clusterId;
+
+		await saveToIndexedDB();
+		removeProcessingPlaceholder(placeholderNode.id);
+
+		showNewDataNotification.value = true;
+		setTimeout(() => {
+			showNewDataNotification.value = false;
+		}, 4000);
+
+		trackEvent('note_saved', { has_album: !!albumId });
+
+		await refreshData();
+		console.log(`✅ Note processed: ${websiteId}`);
+	} catch (err) {
+		console.error("Error processing note:", err);
+		removeProcessingPlaceholder(placeholderNode.id);
 	}
 }
 

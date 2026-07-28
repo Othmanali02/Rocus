@@ -9,8 +9,8 @@ export const tutorialSteps = [
 		action: null
 	},
 	{
-		title: 'AI Models Loading',
-		description: 'Rocus uses local AI models that run in your browser. They download once and work offline. The indicator shows green when models are ready to process websites.',
+		title: 'AI Model Readiness',
+		description: 'This icon shows whether Rocus is ready to process websites. On Cloud mode, the default, it\'s ready right away. Switch to Local mode and Rocus downloads a small AI model that runs right in your browser. It\'s a one time download, about 30 to 60 seconds, then Rocus works fully offline. Green means you\'re good to go.',
 		highlight: 'model-status',
 		action: null
 	},
@@ -67,14 +67,14 @@ export const tutorialStepsEmpty = [
 		action: null
 	},
 	{
-		title: 'AI Models Loading',
-		description: 'Rocus uses local AI models that run in your browser. They download once and work offline. AI runs entirely in your browser. First load may take ~30–60 seconds. The indicator shows green when models are ready to process websites.',
+		title: 'AI Model Readiness',
+		description: 'This icon shows whether Rocus is ready to process websites. On Cloud mode, the default, it\'s ready right away. Switch to Local mode and Rocus downloads a small AI model that runs right in your browser. It\'s a one time download, about 30 to 60 seconds, then Rocus works fully offline. Green means you\'re good to go.',
 		highlight: 'model-status',
 		action: null
 	},
 	{
 		title: 'Browser Extension',
-		description: 'Install the Rocus extension to save websites. Click the extension icon, select an album (or quick save), and Rocus will automatically cluster similar content.',
+		description: 'Install the Rocus extension to start saving websites. Click the extension icon, select an album (or quick save), and Rocus will automatically cluster similar content.',
 		highlight: null,
 		action: null
 	},
