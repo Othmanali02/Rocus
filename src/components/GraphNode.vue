@@ -34,9 +34,13 @@
 								color: currentTheme.colors.textSecondary
 							}" :class="'hover:border-[' + currentTheme.colors.primary + ']'">
 							<div class="flex items-center gap-3">
-								<span v-if="dropdownMode === 'history'" class="w-8 h-8 flex items-center justify-center text-2xl leading-none">
-									{{ currentHistoryDay ? '📅' : '🌐' }}
-								</span>
+								<div v-if="dropdownMode === 'history'" class="w-8 h-8 shrink-0" :style="badgeVars">
+									<div v-if="currentHistoryDay" class="cal-chip">
+										<span class="cal-chip__m">{{ historyBadge.month }}</span>
+										<span class="cal-chip__d">{{ historyBadge.day }}</span>
+									</div>
+									<div v-else class="globe-chip"><i></i></div>
+								</div>
 								<img v-else-if="currentAlbum?.icon" :src="getIconUrl(currentAlbum.icon)" alt="Album icon"
 									class="w-8 h-8 object-contain" />
 								<img v-else src="./images/RocusFileIconColored.png" alt="Album icon"
@@ -85,11 +89,13 @@
 							</div>
 
 							<button @click="selectAllClusters"
-								class="w-full flex items-center gap-3 px-4 py-3 transition-colors"
+								class="w-full flex items-center gap-3 px-4 py-3 transition-colors group"
 								:style="{ color: currentTheme.colors.text }" :class="{
 									'bg-[#4A90E2]/10': !currentAlbum && !currentHistoryDay,
 								}">
-								<span class="text-2xl">🌐</span>
+								<div class="w-8 h-8 shrink-0" :style="badgeVars">
+									<div class="globe-chip"><i></i></div>
+								</div>
 								<div class="flex-1 text-left">
 									<div class="text-sm font-medium" :style="{ color: currentTheme.colors.text }">
 										All Clusters
@@ -167,10 +173,15 @@
 										No processed clusters yet
 									</button>
 									<button v-for="day in historyDays" :key="day.key" @click="selectHistoryDay(day.key)"
-										class="w-full flex items-center gap-3 px-4 py-3 transition-colors" :class="{
+										class="w-full flex items-center gap-3 px-4 py-3 transition-colors group" :class="{
 											'bg-[#4A90E2]/10': currentHistoryDay === day.key,
 										}">
-										<span class="text-2xl">📅</span>
+										<div class="w-8 h-8 shrink-0" :style="badgeVars">
+											<div class="cal-chip">
+												<span class="cal-chip__m">{{ computeDayBadge(day.key).month }}</span>
+												<span class="cal-chip__d">{{ computeDayBadge(day.key).day }}</span>
+											</div>
+										</div>
 										<div class="flex-1 text-left">
 											<div class="text-sm font-medium" :style="{ color: currentTheme.colors.text }">
 												{{ day.label }}
@@ -2034,7 +2045,7 @@ import {
 import { useAnalytics } from '../composables/useAnalytics';
 import PremiumUpsell from './PremiumUpsell.vue';
 
-import { formatDate } from '../composables/graphNode/utils';
+import { formatDate, withAlpha } from '../composables/graphNode/utils';
 
 import {
 	showBanner,
@@ -2278,6 +2289,42 @@ const showModelLoadingIndicator = computed(
 	() => modelLoading.value && processingMode.value === 'local'
 );
 
+// CSS custom properties for the History/Albums dropdown's badge chips (see
+// .cal-chip/.globe-chip below) - every color is pulled from currentTheme so
+// the badges re-skin with the theme automatically instead of being
+// hardcoded. Calendar chip accents off primary, globe chip off secondary,
+// so the two badges read as distinct without introducing a third color.
+const badgeVars = computed(() => {
+	const c = currentTheme.value.colors;
+	return {
+		'--chip-surface': c.surface,
+		'--chip-border': c.border,
+		'--chip-text': c.text,
+		'--chip-primary': c.primary,
+		'--chip-secondary': c.secondary,
+		'--chip-primary-tint': withAlpha(c.primary, 0.16),
+		'--chip-primary-tint-strong': withAlpha(c.primary, 0.4),
+		'--chip-secondary-tint-strong': withAlpha(c.secondary, 0.45),
+	};
+});
+
+// currentHistoryDay (and each history list row's day.key) is a 'YYYY-MM-DD'
+// key (see useGraphEngine.js's dayKeyFromISO) - parsing that directly as a
+// bare date string gets read as UTC midnight by Date(), which can display a
+// day early/late depending on the viewer's timezone offset, so it's pinned
+// to local noon first.
+function computeDayBadge(raw) {
+	if (!raw) return { month: '', day: '' };
+	const d = new Date(/^\d{4}-\d{2}-\d{2}$/.test(raw) ? `${raw}T12:00:00` : raw);
+	if (isNaN(d)) return { month: '', day: '' };
+	return {
+		month: d.toLocaleString('en-US', { month: 'short' }).toUpperCase(),
+		day: String(d.getDate()),
+	};
+}
+
+const historyBadge = computed(() => computeDayBadge(currentHistoryDay.value));
+
 // "All Clusters" is shared between the Albums and History views of the
 // switcher dropdown, so it needs to clear whichever filter is active.
 function selectAllClusters() {
@@ -2507,6 +2554,98 @@ watch(tutorialActive, (isActive) => {
 
 .animate-slideInUp {
 	animation: slideInUp 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* History/Albums dropdown badges - all colors come in via CSS custom
+   properties set from currentTheme (see badgeVars in the script), so these
+   re-skin automatically with every theme instead of being hardcoded. */
+.cal-chip {
+	width: 32px;
+	height: 32px;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	position: relative;
+	overflow: hidden;
+	border-radius: 9px;
+	background: var(--chip-surface);
+	border: 1px solid var(--chip-border);
+	font-feature-settings: "tnum" 1;
+	transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.cal-chip::before {
+	content: "";
+	position: absolute;
+	inset: 0 0 auto 0;
+	height: 11px;
+	background: var(--chip-primary-tint);
+	border-bottom: 1px solid var(--chip-primary-tint-strong);
+}
+
+.cal-chip__m {
+	position: relative;
+	z-index: 1;
+	height: 11px;
+	line-height: 11px;
+	font-size: 6.5px;
+	font-weight: 700;
+	letter-spacing: 0.12em;
+	text-indent: 0.12em;
+	color: var(--chip-primary);
+}
+
+.cal-chip__d {
+	flex: 1;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font-size: 13px;
+	font-weight: 650;
+	line-height: 1;
+	letter-spacing: -0.02em;
+	padding-bottom: 1px;
+	color: var(--chip-text);
+}
+
+.globe-chip {
+	width: 32px;
+	height: 32px;
+	border-radius: 50%;
+	border: 1.25px solid var(--chip-border);
+	position: relative;
+	display: grid;
+	place-items: center;
+	transition: border-color 0.2s ease, transform 0.2s ease;
+}
+
+.globe-chip::before {
+	content: "";
+	position: absolute;
+	left: 1px;
+	right: 1px;
+	top: 50%;
+	height: 1.25px;
+	transform: translateY(-50%);
+	background: var(--chip-secondary-tint-strong);
+}
+
+.globe-chip i {
+	width: 52%;
+	height: 100%;
+	border-radius: 50%;
+	border: 1.25px solid var(--chip-secondary-tint-strong);
+}
+
+.group:hover .cal-chip {
+	border-color: var(--chip-primary);
+	transform: translateY(-1px);
+	box-shadow: 0 2px 8px var(--chip-primary-tint);
+}
+
+.group:hover .globe-chip {
+	border-color: var(--chip-secondary);
+	transform: scale(1.04);
 }
 
 /* D3 Graph Styles */
