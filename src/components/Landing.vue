@@ -32,7 +32,14 @@ const handleScroll = () => {
 
 const installExtension = () => {
     trackEvent('install-extension-clicked', { source: 'landing-page' });
-    window.open("https://chrome.google.com/webstore/detail/gpohhaehjannmncapdjlajknkhdcigck", "_blank");
+
+    const isFirefox = navigator.userAgent.toLowerCase().includes('firefox');
+
+    const url = isFirefox
+        ? "https://addons.mozilla.org/en-US/firefox/addon/rocus/"
+        : "https://chromewebstore.google.com/detail/rocus/ekhebfoaaokmbhieckfkpapfkiicpbma";
+
+    window.open(url, "_blank");
 };
 
 // Track landing page view and time on page
