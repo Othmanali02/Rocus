@@ -75,7 +75,7 @@ export function applyThemeColors(theme) {
 	if (container) {
 		container
 			.select(".nodes")
-			.selectAll(".node")
+			.selectAll(".node-circle")
 			.transition()
 			.duration(300)
 			.attr("fill", (d) => {
@@ -88,6 +88,14 @@ export function applyThemeColors(theme) {
 				if (d.type === "website") return theme.colors.nodeStroke;
 				return theme.colors.nodeStroke;
 			});
+
+		container
+			.select(".nodes")
+			.selectAll(".node-file-icon")
+			.transition()
+			.duration(300)
+			.attr("fill", theme.colors.background)
+			.attr("stroke", theme.colors.nodeStroke);
 
 		container
 			.select(".labels")

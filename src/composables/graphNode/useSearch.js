@@ -117,7 +117,13 @@ export function highlightSearchResults(matchingNodes) {
 
 	container.select('.nodes')
 		.selectAll('.node')
-		.style('opacity', d => matchingIds.has(d.id) ? 1 : 0.3)
+		.style('opacity', d => matchingIds.has(d.id) ? 1 : 0.3);
+
+	// stroke-width targets the circle specifically - it carries its own
+	// explicit stroke-width attr, which would otherwise shadow anything set
+	// on the parent <g>.
+	container.select('.nodes')
+		.selectAll('.node-circle')
 		.attr('stroke-width', d => matchingIds.has(d.id) ? 4 : 2);
 
 	container.select('.labels')
@@ -131,7 +137,10 @@ export function clearSearchHighlights() {
 
 	container.select('.nodes')
 		.selectAll('.node')
-		.style('opacity', 1)
+		.style('opacity', 1);
+
+	container.select('.nodes')
+		.selectAll('.node-circle')
 		.attr('stroke-width', 2);
 
 	container.select('.labels')

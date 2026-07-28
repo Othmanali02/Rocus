@@ -17,6 +17,7 @@ import { addSimilarLinksToCluster } from "./useDiscover";
 import { generateId, wrapEmbedding, EMBEDDING_MODEL_ID, cleanAiLabel, toTitleCase } from "./utils";
 import { openPremiumModal } from "./usePremium";
 import { runCompatibilityCheckIfNeeded } from "./useCompatibilityCheck";
+import { API_BASE } from "../../components/constants/config";
 
 // configuring transformers.js (embeddings)
 env.allowLocalModels = false;
@@ -410,9 +411,13 @@ export async function processWebsite(data) {
 
 		console.log(`📝 Processing: ${metadata.title || data.url}`);
 
-		// Generate summary and topic (Web-LLM locally, or Claude Haiku in commercial mode)
-		const { summary, topic, query } =
-			processingMode.value === 'commercial'
+		// Generate summary and topic (Web-LLM locally, Claude Haiku in commercial
+		// mode, or already computed server-side for a file upload - the upload
+		// endpoint runs the identical Claude analysis itself, so there's nothing
+		// left to summarize here).
+		const { summary, topic, query } = data.precomputedAnalysis
+			? data.precomputedAnalysis
+			: processingMode.value === 'commercial'
 				? await generateSummaryTopicQueryViaHaiku(metadata, content)
 				: await generateSummaryAndTopic(metadata, content);
 
@@ -438,6 +443,8 @@ export async function processWebsite(data) {
 			metadata: metadata,
 			album_id: data.album || null,
 			processed_at: new Date().toISOString(),
+			is_file: !!data.is_file,
+			file_id: data.file_id || null,
 		};
 
 		// Store embedding separately (wrapped with provenance: model, dim, normalized, created_at)
@@ -450,6 +457,19 @@ export async function processWebsite(data) {
 		addSimilarLinksToCluster(clusterId).catch(err =>
 			console.error("Error adding similar links:", err)
 		);
+
+		// Let the backend know which local website this uploaded file became,
+		// so the "My Files" list can resolve a topic for it later. Fire-and-
+		// forget - topic/cluster labels live only in this browser's IndexedDB,
+		// this just links the two IDs together server-side.
+		if (data.file_id) {
+			fetch(`${API_BASE}/api/uploads/${data.file_id}/link`, {
+				method: 'PATCH',
+				credentials: 'include',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ websiteId }),
+			}).catch(err => console.error('Failed to link uploaded file:', err));
+		}
 
 		// Save to IndexedDB
 		await saveToIndexedDB();

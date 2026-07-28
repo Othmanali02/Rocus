@@ -28,6 +28,19 @@ const { trackEvent } = useAnalytics();
 const SIMILARITY_THRESHOLD = 0.65;
 const LOOSE_SIMILARITY_THRESHOLD = 0.45;
 
+// A minimal folded-document glyph for uploaded-file website nodes, drawn in
+// a small local coordinate space centered on the node's own (0,0) origin -
+// scaled by settings.nodeSize alongside the circle behind it, never by raw
+// pixel size, so it stays proportional if the user adjusts node size. Vector,
+// not the raster RocusFileIcon*.png assets used elsewhere (those are fixed-
+// color PNGs meant for flat <img> tags, not per-theme recoloring inside the
+// D3 canvas).
+const FILE_ICON_PATH =
+	"M -4 -5 L 1.5 -5 L 4 -2.5 L 4 5 L -4 5 Z " + // document body (top-right corner cut for the fold)
+	"M 1.5 -5 L 1.5 -2.5 L 4 -2.5 Z " + // folded corner
+	"M -2 0.5 H 2 " + // text line 1
+	"M -2 3 H 2"; // text line 2
+
 // ---- Core reactive data -----------------------------------------------
 export const clusters = ref({});
 export const websites = ref({});
@@ -161,7 +174,9 @@ export async function fetchClusters() {
 								title: website.title,
 								url: website.url,
 								domain: website.domain,
-								processed_at: website.processed_at
+								processed_at: website.processed_at,
+								is_file: !!website.is_file,
+								file_id: website.file_id || null
 							}));
 
 						return {
@@ -817,6 +832,8 @@ export function performExplosion(clusterNode) {
 			url: website.url,
 			domain: website.domain,
 			processed_at: website.processed_at,
+			is_file: !!website.is_file,
+			file_id: website.file_id || null,
 			size: 10,
 			baseSize: 10,
 			type: "website",
@@ -1051,12 +1068,33 @@ export function renderGraph() {
 			return "#adb5bd";
 		});
 
+	// Each node is a <g> (not a bare <circle>) so a subset - uploaded-file
+	// website nodes - can carry a second child element (the file glyph) on
+	// top of the exact same circle every other node gets. The circle's own
+	// r/fill/stroke logic is unchanged; only the wrapper changed, so "same
+	// size and same color" for file nodes falls out for free.
 	const nodes = nodeGroup
 		.selectAll(".node")
 		.data(graphData.nodes, (d) => d.id)
-		.join("circle")
-		.attr("class", (d) => `node ${d.type}`)
+		.join(
+			(enter) => {
+				const g = enter.append("g").attr("class", (d) => `node ${d.type}`);
+				g.append("circle").attr("class", "node-circle");
+				g.filter((d) => d.type === "website" && d.is_file)
+					.append("path")
+					.attr("class", "node-file-icon")
+					.attr("d", FILE_ICON_PATH)
+					.attr("pointer-events", "none");
+				return g;
+			},
+			(update) => update,
+			(exit) => exit.remove()
+		)
 		.attr("data-id", (d) => d.id)
+		.call(drag(simulation));
+
+	nodes
+		.select(".node-circle")
 		.attr("r", (d) => d.size * settings.nodeSize)
 		.attr("fill", (d) => {
 			if (d.type === "discover") return currentTheme.value.colors.primary;
@@ -1070,8 +1108,15 @@ export function renderGraph() {
 			if (d.type === "website") return currentTheme.value.colors.nodeStroke;
 			return currentTheme.value.colors.nodeStroke;
 		})
-		.attr("stroke-width", 2)
-		.call(drag(simulation));
+		.attr("stroke-width", 2);
+
+	nodes
+		.select(".node-file-icon")
+		.attr("transform", () => `scale(${settings.nodeSize})`)
+		.attr("fill", currentTheme.value.colors.background)
+		.attr("stroke", currentTheme.value.colors.nodeStroke)
+		.attr("stroke-width", 0.8)
+		.attr("stroke-linejoin", "round");
 
 	const labels = labelGroup
 		.selectAll(".node-label")
@@ -1111,7 +1156,7 @@ export function renderGraph() {
 			.attr("x2", (d) => d.target.x)
 			.attr("y2", (d) => d.target.y);
 
-		nodes.attr("cx", (d) => d.x).attr("cy", (d) => d.y);
+		nodes.attr("transform", (d) => `translate(${d.x},${d.y})`);
 
 		labels
 			.attr('x', d => d.x)
@@ -1290,12 +1335,18 @@ export function highlightConnections(node) {
 		}
 	});
 
-	// Highlight connected nodes
+	// Highlight connected nodes. Opacity dims the whole node (circle + file
+	// icon together); stroke/stroke-width target the circle specifically -
+	// it carries its own explicit stroke attrs, which would otherwise shadow
+	// anything set on the parent <g>.
 	container.select('.nodes')
 		.selectAll('.node')
 		.style('opacity', d =>
 			d.id === node.id || connectedNodeIds.has(d.id) ? 1 : 0.4
-		)
+		);
+
+	container.select('.nodes')
+		.selectAll('.node-circle')
 		.attr("stroke", d =>
 			d.id === node.id || connectedNodeIds.has(d.id) ? currentTheme.value.colors.primary : null
 		)
@@ -1318,7 +1369,10 @@ export function clearHighlights() {
 	if (!searchTerm()) {
 		container.select('.nodes')
 			.selectAll('.node')
-			.style('opacity', 1)
+			.style('opacity', 1);
+
+		container.select('.nodes')
+			.selectAll('.node-circle')
 			.attr('stroke-width', 2);
 
 		container.select('.labels')
@@ -1340,7 +1394,7 @@ export function clearHighlights() {
 
 	// Always clear connection highlights
 	container.select('.nodes')
-		.selectAll('.node')
+		.selectAll('.node-circle')
 		.attr("stroke", d => {
 			if (d.type === 'discover') return currentTheme.value.colors.secondary;
 			if (d.type === 'website') return currentTheme.value.colors.nodeStroke;
@@ -1371,10 +1425,17 @@ export function clearHighlights() {
 export function updateNodeSizes() {
 	container
 		.select(".nodes")
-		.selectAll(".node")
+		.selectAll(".node-circle")
 		.transition()
 		.duration(300 / settings.animationSpeed)
 		.attr("r", (d) => d.baseSize * settings.nodeSize);
+
+	container
+		.select(".nodes")
+		.selectAll(".node-file-icon")
+		.transition()
+		.duration(300 / settings.animationSpeed)
+		.attr("transform", () => `scale(${settings.nodeSize})`);
 
 	container
 		.select(".labels")

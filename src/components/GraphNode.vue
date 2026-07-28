@@ -1,6 +1,19 @@
 <template>
 	<div class="w-screen h-screen relative overflow-hidden font-sans transition-all duration-300"
-		:style="{ backgroundColor: currentTheme.colors.background }">
+		:style="{ backgroundColor: currentTheme.colors.background }"
+		@dragenter="handleDragEnter" @dragover="handleDragOver" @dragleave="handleDragLeave" @drop.prevent="handleDrop">
+		<div v-if="showDropOverlay" class="fixed inset-0 z-[1500] flex items-center justify-center pointer-events-none animate-fadeIn"
+			:style="{ backgroundColor: 'rgba(0,0,0,0.35)' }">
+			<div class="flex flex-col items-center gap-4">
+				<div class="w-20 h-20 rounded-full flex items-center justify-center border-2 border-dashed"
+					:style="{ borderColor: '#ffffff', backgroundColor: 'rgba(255,255,255,0.1)' }">
+					<svg class="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+					</svg>
+				</div>
+				<p class="text-white text-lg font-semibold">Drop files for Rocus</p>
+			</div>
+		</div>
 		<div class="fixed top-0 left-0 right-0 z-[1000] px-5 py-4"
 			:style="{ backgroundColor: currentTheme.colors.background }">
 			<div class="flex items-center justify-between max-w-screen-2xl mx-auto">
@@ -245,6 +258,51 @@
 								d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
 						</svg>
 					</button>
+
+					<div class="relative uploads-panel-container">
+						<button @click.stop="toggleUploadsPanel" class="p-2.5 rounded-xl transition-all"
+							:style="{ backgroundColor: currentTheme.colors.surface }">
+							<svg class="w-5 h-5" :style="{ color: currentTheme.colors.textSecondary }" fill="none"
+								stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+									d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+							</svg>
+						</button>
+
+						<div v-if="showUploadsPanel"
+							class="absolute top-full right-0 mt-2 w-80 rounded-2xl shadow-2xl border overflow-hidden z-50 animate-fadeIn"
+							:style="{ backgroundColor: currentTheme.colors.surface, borderColor: currentTheme.colors.border }">
+							<div class="px-4 py-3 border-b" :style="{ borderColor: currentTheme.colors.border }">
+								<div class="text-sm font-semibold" :style="{ color: currentTheme.colors.text }">My Files</div>
+							</div>
+							<div class="max-h-72 overflow-y-auto">
+								<div v-if="uploadedFilesWithTopics.length === 0" class="px-4 py-6 text-sm text-center"
+									:style="{ color: currentTheme.colors.textSecondary }">
+									No files uploaded yet
+								</div>
+								<div v-for="file in uploadedFilesWithTopics" :key="file.id"
+									class="flex items-center gap-3 px-4 py-3 group">
+									<span class="text-xl">📄</span>
+									<div class="flex-1 min-w-0">
+										<div class="text-sm font-medium truncate" :style="{ color: currentTheme.colors.text }">
+											{{ file.original_name }}
+										</div>
+										<div class="text-xs truncate" :style="{ color: currentTheme.colors.textSecondary }">
+											{{ file.topic ? `${file.topic} · ${formatDate(file.created_at)}` : formatDate(file.created_at) }}
+										</div>
+									</div>
+									<button @click="downloadFile(file.id)" title="Download"
+										class="p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"
+										:style="{ color: currentTheme.colors.textSecondary }">
+										<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+												d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+										</svg>
+									</button>
+								</div>
+							</div>
+						</div>
+					</div>
 
 					<button @click="toggleSettings" class="p-2.5 rounded-xl transition-all"
 						:style="{ backgroundColor: currentTheme.colors.surface }">
@@ -1247,8 +1305,21 @@
 					{{ websiteDetails.ai_summary || "None" }}
 				</div>
 
-				<a :href="selectedWebsite.url" target="_blank" class="cursor-pointer transition-all hover:shadow-md"
-					:class="isDarkMode ? 'border-gray-700 bg-[#212121]' : 'border-gray-300 bg-white'">
+				<div v-if="selectedWebsite.is_file" @click="downloadFile(selectedWebsite.file_id)"
+					class="cursor-pointer transition-all hover:shadow-md"
+					>
+					<!-- Title -->
+					<div class="font-semibold text-sm" :class="isDarkMode ? 'text-gray-800' : 'text-gray-700'">
+						{{ websiteDetails?.metadata?.title || selectedWebsite.domain }}
+					</div>
+
+					<!-- Description -->
+					<div class="text-xs mt-1 line-clamp-2" :style="{ color: currentTheme.colors.textSecondary }">
+						{{ websiteDetails?.metadata?.description || "No description available" }}
+					</div>
+				</div>
+				<a v-else :href="selectedWebsite.url" target="_blank" class="cursor-pointer transition-all hover:shadow-md"
+					>
 					<!-- Image -->
 					<div v-if="websiteDetails?.metadata?.image"
 						class="w-full my-4 h-36 mb-2 overflow-hidden rounded-lg">
@@ -1256,12 +1327,12 @@
 					</div>
 
 					<!-- Title -->
-					<div class="font-semibold text-sm" :class="isDarkMode ? 'text-gray-800' : 'text-gray-700'">
+					<div class="font-semibold text-sm" :style="{ color: currentTheme.colors.textSecondary }">
 						{{ websiteDetails?.metadata?.title || selectedWebsite.domain }}
 					</div>
 
 					<!-- Description -->
-					<div class="text-xs mt-1 line-clamp-2" :class="isDarkMode ? 'text-gray-700' : 'text-gray-700'">
+					<div class="text-xs mt-1 line-clamp-2" :style="{ color: currentTheme.colors.textSecondary }">
 						{{ websiteDetails?.metadata?.description || "No description available" }}
 					</div>
 
@@ -1273,7 +1344,11 @@
 				</a>
 
 
-				<a :href="selectedWebsite.url" target="_blank"
+				<button v-if="selectedWebsite.is_file" @click="downloadFile(selectedWebsite.file_id)"
+					class="inline-flex items-center gap-2 px-4 py-2 rounded-xl font-medium transition-all bg-[#212121] hover:bg-black text-white">
+					📄 View File
+				</button>
+				<a v-else :href="selectedWebsite.url" target="_blank"
 					class="inline-flex items-center gap-2 px-4 py-2 rounded-xl font-medium transition-all bg-[#212121] hover:bg-black text-white">
 					🔗 Visit Website
 				</a>
@@ -2162,6 +2237,18 @@ import { showVersionHistory, versionHistory } from '../composables/graphNode/use
 
 import { historyDays, selectHistoryDay, formatDayLabel } from '../composables/graphNode/useHistory';
 
+import {
+	showDropOverlay,
+	handleDragEnter,
+	handleDragOver,
+	handleDragLeave,
+	handleDrop,
+	showUploadsPanel,
+	toggleUploadsPanel,
+	uploadedFilesWithTopics,
+	downloadFile,
+} from '../composables/graphNode/useFileUpload';
+
 const { analyticsConsent, trackEvent } = useAnalytics();
 
 // ==============================================
@@ -2295,6 +2382,9 @@ onUnmounted(() => {
 document.addEventListener("click", (e) => {
 	if (!e.target.closest(".albums-dropdown-container")) {
 		showAlbumsDropdown.value = false;
+	}
+	if (!e.target.closest(".uploads-panel-container")) {
+		showUploadsPanel.value = false;
 	}
 });
 
