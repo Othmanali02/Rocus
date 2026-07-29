@@ -59,10 +59,11 @@ export function toggleSuggestion(clusterId) {
 		selectedSuggestionClusterId.value === clusterId ? null : clusterId;
 }
 
-// Left click on empty canvas - shows a small "+" prompt at the click point;
-// clicking it opens the create-note modal. Bound alongside (not instead of)
-// the existing handleBackgroundClick.
-export function handleGraphLeftClick(event) {
+// Right click on empty canvas - shows a small "+" prompt at the click
+// point; clicking it opens the create-note modal. Single-shot, no counting -
+// bound via @contextmenu.prevent so the native context menu never appears
+// over the graph background.
+export function handleGraphRightClick(event) {
 	addNotePromptStyle.value = { left: event.pageX + 'px', top: event.pageY + 'px' };
 	showAddNotePrompt.value = true;
 }
@@ -75,17 +76,23 @@ export function confirmAddNoteFromPrompt() {
 	openNoteCreator();
 }
 
-// Triple-right-click on empty canvas opens the note creator directly,
-// skipping the "+" prompt - three background right-clicks within 600ms of
-// each other. Node-level right-clicks already stopPropagation, so this only
-// ever sees genuine empty-canvas right-clicks.
-let rightClickTimes = [];
-export function handleGraphRightClick() {
+// Triple-left-click on empty canvas opens the note creator directly,
+// skipping the "+" prompt - three background left-clicks within 600ms of
+// each other. Node-level clicks already stopPropagation, so this only ever
+// sees genuine empty-canvas clicks. The event.button guard matters here:
+// browsers are inconsistent about whether a right mouse button press also
+// fires a plain "click" event (spec says click is for the primary button,
+// but this isn't universally honored across browsers/OSes/pointer devices) -
+// without this check, a stray right-click could count toward the triple-
+// click alongside intentional left-clicks.
+let leftClickTimes = [];
+export function handleGraphLeftClick(event) {
+	if (event.button !== 0) return;
 	const now = Date.now();
-	rightClickTimes = rightClickTimes.filter((t) => now - t < 600);
-	rightClickTimes.push(now);
-	if (rightClickTimes.length >= 3) {
-		rightClickTimes = [];
+	leftClickTimes = leftClickTimes.filter((t) => now - t < 600);
+	leftClickTimes.push(now);
+	if (leftClickTimes.length >= 3) {
+		leftClickTimes = [];
 		openNoteCreator();
 	}
 }
