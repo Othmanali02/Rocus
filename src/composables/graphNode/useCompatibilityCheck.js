@@ -149,16 +149,37 @@ export async function checkSystemCompatibility() {
 // local model. Callers gate on processingMode; this only re-gates on "have we
 // already checked, ever" so it's safe to call every time someone enters local
 // mode without re-showing the modal after the first successful check.
+//
+// Returns a promise that resolves only once the modal is actually dismissed -
+// via the auto-dismiss timer (success case) or the user's own Continue/
+// Continue Anyway click (notifyCompatibilityCheckDismissed, called from
+// GraphNode.vue) - not just once the check finishes running. This lets
+// callers (the guided "switch to local mode" flow in useAIModels.js) wait
+// for the user to actually acknowledge the result before starting the
+// ~350MB model download, instead of firing both at once.
+let dismissResolvers = [];
+
 export async function runCompatibilityCheckIfNeeded() {
-	if (localStorage.getItem('rocus-compatibility-checked')) return;
+	if (localStorage.getItem('rocus-compatibility-checked')) return true;
 
 	showCompatibilityCheck.value = true;
 	await checkSystemCompatibility();
 
 	if (compatibilityResults.value.overall === 'success') {
-		setTimeout(() => {
-			showCompatibilityCheck.value = false;
-			localStorage.setItem('rocus-compatibility-checked', 'true');
-		}, 3000);
+		setTimeout(notifyCompatibilityCheckDismissed, 3000);
 	}
+	// error/warning: waits for the user's explicit Continue Anyway click instead.
+
+	return new Promise((resolve) => {
+		dismissResolvers.push(resolve);
+	});
+}
+
+export function notifyCompatibilityCheckDismissed() {
+	if (!showCompatibilityCheck.value) return;
+	showCompatibilityCheck.value = false;
+	localStorage.setItem('rocus-compatibility-checked', 'true');
+	const resolvers = dismissResolvers;
+	dismissResolvers = [];
+	resolvers.forEach((resolve) => resolve(compatibilityResults.value.overall === 'success'));
 }

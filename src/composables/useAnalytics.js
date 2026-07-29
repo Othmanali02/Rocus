@@ -1,15 +1,23 @@
 import { ref } from "vue";
 
-const analyticsConsent = ref(null);
+// Read synchronously at module init (mirrors the same pattern useAIModels.js
+// uses for processingMode) so the toggle and trackEvent() both reflect a
+// prior "accept" immediately on every page load/refresh - previously this
+// stayed null until something called setConsent() again in that session,
+// which made an already-accepted user look declined until they re-toggled,
+// and silently dropped every event in the meantime since trackEvent() gates
+// on this same value.
+const storedConsent = localStorage.getItem("rocus-analytics-consent");
+const analyticsConsent = ref(storedConsent === "true");
 const analyticsLoaded = ref(false);
 
-export function useAnalytics() {
-	const checkConsent = () => {
-		const consent = localStorage.getItem("rocus-analytics-consent");
-		analyticsConsent.value = consent === "true";
-		return analyticsConsent.value;
-	};
+// useAnalytics() is called from many composables' own module scope (each
+// runs once per page load, the first time that module is imported) - this
+// guard makes sure the "already consented, so load Umami" bootstrap below
+// only actually runs once regardless of how many callers there are.
+let hasBootstrapped = false;
 
+export function useAnalytics() {
 	const setConsent = (value) => {
 		analyticsConsent.value = value;
 		localStorage.setItem("rocus-analytics-consent", value.toString());
@@ -93,10 +101,21 @@ export function useAnalytics() {
 		}
 	};
 
+	// Bootstrap: a returning user who already consented in a past session
+	// should have analytics actually running from the start, not just show
+	// the toggle as "on" - previously this only ever happened as a side
+	// effect of calling setConsent(true), which never fired again on its own
+	// after a refresh.
+	if (!hasBootstrapped) {
+		hasBootstrapped = true;
+		if (analyticsConsent.value) {
+			loadUmami();
+		}
+	}
+
 	return {
 		analyticsConsent,
 		analyticsLoaded,
-		checkConsent,
 		setConsent,
 		trackEvent,
 	};

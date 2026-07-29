@@ -72,23 +72,33 @@ export function setProcessingMode(mode) {
 	processingMode.value = mode;
 	localStorage.setItem(PROCESSING_MODE_KEY, mode);
 
-	if (switchingToLocal) {
-		// WebGPU/memory/IndexedDB readiness only matters once someone actually
-		// enters local mode - runCompatibilityCheckIfNeeded no-ops if already
-		// checked, so this is safe to call on every switch.
-		runCompatibilityCheckIfNeeded().catch(err =>
-			console.error("Compatibility check failed:", err)
-		);
-		if (!summarizationModel) {
-			summarizationReadyPromise = loadSummarizationEngine();
-			summarizationReadyPromise.catch(err =>
-				console.error("On-demand local model load failed:", err)
-			);
-		}
+	if (switchingToLocal && !summarizationModel) {
+		enterLocalModeGuided();
 	}
 }
-export const modelLoadingProgress = ref(0);
 
+// Walks the user through switching to local mode step by step instead of
+// firing the compatibility check and the ~350MB model download at once with
+// no relationship between them: check compatibility first and wait for the
+// user to actually acknowledge the result (not just for the check to finish
+// running - runCompatibilityCheckIfNeeded's promise now resolves on
+// dismissal), then automatically open the Model Status panel so download
+// progress is visible without the user needing to notice and click the
+// header icon themselves, then start the download.
+async function enterLocalModeGuided() {
+	try {
+		await runCompatibilityCheckIfNeeded();
+	} catch (err) {
+		console.error("Compatibility check failed:", err);
+	}
+
+	showModelStatus.value = true;
+	try {
+		await ensureSummarizationModel();
+	} catch (err) {
+		console.error("On-demand local model load failed:", err);
+	}
+}
 export const modelLoading = ref(false);
 export const loadingMessage = ref("");
 export const downloadProgress = ref(0);
@@ -723,7 +733,10 @@ async function loadSummarizationEngine() {
 		{
 			initProgressCallback: (progress) => {
 				if (progress && typeof progress.progress === 'number') {
-					modelLoadingProgress.value = Math.round(progress.progress * 100);
+					// This is the ref the visible progress bar in the Model
+					// Status panel actually binds to - the earlier code wrote
+					// to a different, unread ref here, so the bar never moved.
+					downloadProgress.value = Math.round(progress.progress * 100);
 				}
 				if (progress && progress.text) {
 					loadingMessage.value = progress.text;
@@ -753,6 +766,99 @@ async function loadSummarizationEngine() {
 	}
 }
 
+// Builds the friendly, actionable troubleshooting text shown in the Model
+// Status panel's error card - shared by every caller that can fail loading
+// the local model (loadModels() at mount, ensureSummarizationModel() when
+// triggered from the Settings toggle) so they all surface identical guidance.
+function buildModelErrorMessage(err) {
+	let errorMessage = 'AI Models Failed to Load\n\n';
+
+	if (err.message.includes('QuotaExceededError') || err.message.includes('quota') || err.message.includes('storage')) {
+		errorMessage +=
+			'❌ Problem: Browser storage is full\n\n' +
+			'✅ Quick Fix:\n' +
+			'1. Go to Settings (⚙️ icon)\n' +
+			'2. Click "Clear AI Model Cache"\n' +
+			'3. Models will re-download fresh\n\n' +
+			'Or manually: Chrome Settings → Privacy → Clear browsing data';
+	} else if (err.message.includes('WebGPU not supported')) {
+		errorMessage +=
+			'❌ Problem: Your browser doesn\'t support WebGPU\n\n' +
+			'✅ Solutions:\n' +
+			'1. Update Chrome to version 113+ (Help → About Chrome)\n' +
+			'2. Enable chrome://flags/#enable-unsafe-webgpu\n' +
+			'3. Restart browser after enabling\n\n' +
+			'Older computers (pre-2016) may not support WebGPU.';
+	} else if (err.message.includes('No GPU adapter')) {
+		errorMessage +=
+			'❌ Problem: Hardware doesn\'t support WebGPU\n\n' +
+			'✅ What to try:\n' +
+			'1. Update GPU drivers from manufacturer site\n' +
+			'2. Check chrome://gpu shows "WebGPU: Hardware accelerated"\n' +
+			'3. Try different browser (Edge, Firefox Nightly)\n\n' +
+			'Very old hardware (2015 or older) is a hit or miss.';
+	} else if (err.message.includes('Failed to fetch') || err.message.includes('Network')) {
+		errorMessage +=
+			'❌ Problem: Network or cache error\n\n' +
+			'✅ Solutions:\n' +
+			'1. Try Incognito mode (Ctrl+Shift+N)\n' +
+			'2. Clear cache in Settings\n' +
+			'3. Check internet connection\n' +
+			'4. Disable VPN/ad blockers temporarily';
+	} else {
+		errorMessage +=
+			`❌ Error: ${err.message}\n\n` +
+			'✅ Try this:\n' +
+			'1. Clear AI cache in Settings (⚙️)\n' +
+			'2. Try Incognito mode\n' +
+			'3. Restart browser\n' +
+			'4. Check chrome://gpu for issues';
+	}
+
+	return errorMessage;
+}
+
+// Deduped local-model loader - the one place that actually calls
+// loadSummarizationEngine() and owns all the modelLoading/loadingMessage/
+// downloadProgress/error bookkeeping around it. Both loadModels() (mount-
+// time, if the stored preference is already 'local') and the Settings-toggle
+// flow (enterLocalModeGuided(), below) call this instead of loading directly,
+// so whichever one arrives second while a load is already in flight just
+// joins the same promise instead of starting a second, competing
+// CreateMLCEngine() call - that race was exactly what made the loading UI
+// look stuck: two callbacks writing the same refs out of order.
+let summarizationLoadInFlight = null;
+
+export function ensureSummarizationModel() {
+	if (summarizationModel) return Promise.resolve(summarizationModel);
+	if (summarizationLoadInFlight) return summarizationLoadInFlight;
+
+	modelLoading.value = true;
+	loadingMessage.value = "Loading AI model from Rocus CDN...";
+	downloadProgress.value = 0;
+	error.value = "";
+
+	summarizationLoadInFlight = loadSummarizationEngine()
+		.then(() => {
+			modelLoading.value = false;
+			loadingMessage.value = "";
+			downloadProgress.value = 0;
+			return summarizationModel;
+		})
+		.catch((err) => {
+			modelLoading.value = false;
+			error.value = buildModelErrorMessage(err);
+			showModelStatus.value = true;
+			throw err;
+		})
+		.finally(() => {
+			summarizationLoadInFlight = null;
+		});
+
+	summarizationReadyPromise = summarizationLoadInFlight;
+	return summarizationLoadInFlight;
+}
+
 export async function loadModels() {
 	modelLoading.value = true;
 	loadingMessage.value = "Loading AI models...";
@@ -779,8 +885,7 @@ export async function loadModels() {
 
 
 		if (processingMode.value === 'local') {
-			summarizationReadyPromise = loadSummarizationEngine();
-			await summarizationReadyPromise;
+			await ensureSummarizationModel();
 			console.log("✅ Models loaded successfully (embeddings + Web-LLM)");
 		} else {
 			console.log("✅ Commercial mode - skipping local WebLLM download");
@@ -791,58 +896,8 @@ export async function loadModels() {
 		downloadProgress.value = 0;
 	} catch (err) {
 		modelLoading.value = false;
-		error.value = err.message || "Failed to load AI models";
-
-		let errorMessage = 'AI Models Failed to Load\n\n';
-
-		if (err.message.includes('QuotaExceededError') || err.message.includes('quota') || err.message.includes('storage')) {
-			errorMessage +=
-				'❌ Problem: Browser storage is full\n\n' +
-				'✅ Quick Fix:\n' +
-				'1. Go to Settings (⚙️ icon)\n' +
-				'2. Click "Clear AI Model Cache"\n' +
-				'3. Models will re-download fresh\n\n' +
-				'Or manually: Chrome Settings → Privacy → Clear browsing data';
-		} else if (err.message.includes('WebGPU not supported')) {
-			errorMessage +=
-				'❌ Problem: Your browser doesn\'t support WebGPU\n\n' +
-				'✅ Solutions:\n' +
-				'1. Update Chrome to version 113+ (Help → About Chrome)\n' +
-				'2. Enable chrome://flags/#enable-unsafe-webgpu\n' +
-				'3. Restart browser after enabling\n\n' +
-				'Older computers (pre-2016) may not support WebGPU.';
-		} else if (err.message.includes('No GPU adapter')) {
-			errorMessage +=
-				'❌ Problem: Hardware doesn\'t support WebGPU\n\n' +
-				'✅ What to try:\n' +
-				'1. Update GPU drivers from manufacturer site\n' +
-				'2. Check chrome://gpu shows "WebGPU: Hardware accelerated"\n' +
-				'3. Try different browser (Edge, Firefox Nightly)\n\n' +
-				'Very old hardware (2015 or older) is a hit or miss.';
-		} else if (err.message.includes('Failed to fetch') || err.message.includes('Network')) {
-			errorMessage +=
-				'❌ Problem: Network or cache error\n\n' +
-				'✅ Solutions:\n' +
-				'1. Try Incognito mode (Ctrl+Shift+N)\n' +
-				'2. Clear cache in Settings\n' +
-				'3. Check internet connection\n' +
-				'4. Disable VPN/ad blockers temporarily';
-		} else {
-			errorMessage +=
-				`❌ Error: ${err.message}\n\n` +
-				'✅ Try this:\n' +
-				'1. Clear AI cache in Settings (⚙️)\n' +
-				'2. Try Incognito mode\n' +
-				'3. Restart browser\n' +
-				'4. Check chrome://gpu for issues';
-		}
-
-
-		error.value = errorMessage;      // set the error text
-		showModelStatus.value = true;    // open the modal
-		modelLoading.value = false;      // stop loading state
-
+		error.value = buildModelErrorMessage(err);
+		showModelStatus.value = true;
 		return;
-
 	}
 }
