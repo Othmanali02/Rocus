@@ -835,7 +835,7 @@
 			@contextmenu.prevent="handleGraphRightClick"
 			class="w-full h-full pt-20 cursor-grab active:cursor-grabbing"></div>
 
-		<!-- "+" prompt after a left click on empty canvas -->
+		<!-- "+" prompt after a right click on empty canvas (triple left-click opens the note creator directly) -->
 		<div v-if="showAddNotePrompt" class="fixed z-[1400] animate-fadeIn"
 			:style="{ ...addNotePromptStyle, transform: 'translate(-50%, -50%)' }">
 			<button @click.stop="confirmAddNoteFromPrompt" title="Add a note here"
