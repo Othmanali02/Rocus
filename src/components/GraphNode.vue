@@ -441,7 +441,7 @@
 		</div>
 
 		<div v-if="showModelStatus" @click="closeModelStatus"
-			class="fixed inset-0 bg-black/50 backdrop-blur-sm z-[2000] flex items-center justify-center p-4 animate-fadeIn">
+			class="fixed inset-0 bg-black/50 backdrop-blur-sm z-[2100] flex items-center justify-center p-4 animate-fadeIn">
 			<div @click.stop class="border rounded-3xl p-8 w-full max-w-md shadow-2xl animate-scaleIn" :style="{
 				backgroundColor: currentTheme.colors.surface,
 				borderColor: currentTheme.colors.border
@@ -647,18 +647,29 @@
 						<div>
 							<div class="font-medium flex items-center gap-2"
 								:style="{ color: currentTheme.colors.text }">
-								Cloud AI Processing
+								AI Processing
 							</div>
 							<div class="text-sm" :style="{ color: currentTheme.colors.textSecondary }">
-								Use Cloud AI instead of local processing.
+								Cloud AI Processing, or your own on-device model.
 							</div>
 						</div>
-						<button @click="handleToggleProcessingMode"
-							class="relative w-14 h-8 rounded-full transition-all"
-							:class="processingMode === 'commercial' ? 'bg-[#4A90E2]' : 'bg-gray-300'">
-							<div class="absolute top-1 left-1 w-6 h-6 bg-white rounded-full transition-transform duration-200"
-								:class="{ 'translate-x-6': processingMode === 'commercial' }"></div>
-						</button>
+						<div class="relative flex rounded-full p-0.5 w-36 shrink-0" :style="{
+							backgroundColor: currentTheme.colors.background,
+							border: `1px solid ${currentTheme.colors.border}`
+						}">
+							<div class="absolute top-0.5 bottom-0.5 left-0.5 w-[calc(50%-2px)] rounded-full bg-[#4A90E2] transition-transform duration-200 ease-out"
+								:style="{ transform: processingMode === 'local' ? 'translateX(100%)' : 'translateX(0)' }"></div>
+							<button @click="setProcessingMode('commercial')"
+								class="relative z-10 flex-1 py-1.5 text-xs font-semibold rounded-full transition-colors duration-200"
+								:style="{ color: processingMode === 'commercial' ? '#fff' : currentTheme.colors.textSecondary }">
+								Cloud
+							</button>
+							<button @click="setProcessingMode('local')"
+								class="relative z-10 flex-1 py-1.5 text-xs font-semibold rounded-full transition-colors duration-200"
+								:style="{ color: processingMode === 'local' ? '#fff' : currentTheme.colors.textSecondary }">
+								Local
+							</button>
+						</div>
 					</div>
 
 					<!-- In Settings Modal, add after Show Connections -->
@@ -2160,6 +2171,7 @@ import {
 	compatibilityResults,
 	checkSystemCompatibility,
 	runCompatibilityCheckIfNeeded,
+	notifyCompatibilityCheckDismissed,
 } from '../composables/graphNode/useCompatibilityCheck';
 
 import { platform, detectPlatform, initDB, checkAndRepairDatabase } from '../composables/graphNode/useDatabase';
@@ -2212,7 +2224,6 @@ import {
 import {
 	availableModels,
 	selectedModel,
-	modelLoadingProgress,
 	modelLoading,
 	loadingMessage,
 	downloadProgress,
@@ -2396,8 +2407,7 @@ function closeSettings() {
 }
 
 function dismissCompatibilityCheck() {
-	showCompatibilityCheck.value = false;
-	localStorage.setItem('rocus-compatibility-checked', 'true');
+	notifyCompatibilityCheckDismissed();
 }
 
 // The embedding model (needed for both modes) loads briefly on every mount,
@@ -2466,13 +2476,6 @@ function selectAllClusters() {
 	} else {
 		selectAlbum(null);
 	}
-}
-
-function handleToggleProcessingMode() {
-	// Quota enforcement now happens server-side on the actual request, not on
-	// this toggle - a non-premium user is allowed into commercial mode (rationed
-	// by their daily quota), so this no longer needs to gate on isPremium.
-	setProcessingMode(processingMode.value === 'commercial' ? 'local' : 'commercial');
 }
 
 function resetSettings() {
