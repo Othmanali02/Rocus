@@ -11,14 +11,17 @@ import {
 	removeProcessingPlaceholder,
 	assignToCluster,
 	assignNoteToCluster,
-	currentAlbum,
 	saveToIndexedDB,
 	refreshData,
+	clusters,
+	effectiveAlbumId,
+	remoteGraphId,
 } from "./useGraphEngine";
 import { addSimilarLinksToCluster } from "./useDiscover";
-import { generateId, wrapEmbedding, EMBEDDING_MODEL_ID, cleanAiLabel, toTitleCase } from "./utils";
+import { generateId, wrapEmbedding, EMBEDDING_MODEL_ID, cleanAiLabel, toTitleCase, currentIdentityKey } from "./utils";
 import { openPremiumModal } from "./usePremium";
 import { runCompatibilityCheckIfNeeded } from "./useCompatibilityCheck";
+import { pushNodeUpdateForAlbum, quickAddRoutesHere, showQuickAddRoutingPrompt, maybeShowQuickAddRoutingPrompt } from "./useSharing";
 import { API_BASE } from "../../components/constants/config";
 
 // configuring transformers.js (embeddings)
@@ -423,6 +426,19 @@ export async function processWebsite(data) {
 
 		console.log(`📝 Processing: ${metadata.title || data.url}`);
 
+		// A collaborator viewing /shared/:graphId has no meaningful local
+		// album for the extension's own picker to offer (loadSharedGraphData()
+		// never populates albums.value in that mode), so data.album normally
+		// reflects nothing real there - not wrong exactly, just meaningless.
+		// That's the root cause of "quick-add went to my own local history
+		// instead of the shared graph." Only override it when the
+		// collaborator has explicitly opted in via the quick-add routing
+		// prompt (quickAddRoutesHere) - never silently redirect a bookmark
+		// into someone else's shared graph without asking first.
+		const targetAlbumId = (remoteGraphId.value && quickAddRoutesHere.value)
+			? effectiveAlbumId()
+			: (data.album || null);
+
 		// Generate summary and topic (Web-LLM locally, Claude Haiku in commercial
 		// mode, or already computed server-side for a file upload - the upload
 		// endpoint runs the identical Claude analysis itself, so there's nothing
@@ -453,18 +469,31 @@ export async function processWebsite(data) {
 			ai_summary: summary,
 			search_query: query,
 			metadata: metadata,
-			album_id: data.album || null,
+			album_id: targetAlbumId,
 			processed_at: new Date().toISOString(),
 			is_file: !!data.is_file,
 			file_id: data.file_id || null,
+			added_by: currentIdentityKey(),
+			added_at: new Date().toISOString(),
 		};
 
 		// Store embedding separately (wrapped with provenance: model, dim, normalized, created_at)
 		embeddings.value[websiteId] = wrapEmbedding(embedding);
 
 		// Assign to cluster
-		const clusterId = assignToCluster(websiteId, topic, embedding, query, data.album);
+		const clusterId = assignToCluster(websiteId, topic, embedding, query, targetAlbumId);
 		websites.value[websiteId].cluster_id = clusterId;
+
+		// Live-push to a shared graph if relevant - either this device is
+		// viewing /shared/:graphId with edit rights, or (just as often) this is
+		// the owner's own dashboard and targetAlbumId happens to be actively
+		// shared. No-op internally otherwise (checked inside
+		// pushNodeUpdateForAlbum) for ordinary local/single-player use, which
+		// is the vast majority of traffic.
+		pushNodeUpdateForAlbum(targetAlbumId, [
+			{ id: websiteId, type: "website", data: { ...websites.value[websiteId], embedding: embeddings.value[websiteId] } },
+			{ id: clusterId, type: "cluster", data: clusters.value[clusterId] },
+		]);
 
 		addSimilarLinksToCluster(clusterId).catch(err =>
 			console.error("Error adding similar links:", err)
@@ -543,7 +572,7 @@ export async function processNote(text, forcedClusterId = null) {
 			return;
 		}
 
-		const albumId = currentAlbum.value?.id || null;
+		const albumId = effectiveAlbumId();
 		const title = trimmed.slice(0, 60) || "Note";
 
 		websites.value[websiteId] = {
@@ -561,12 +590,21 @@ export async function processNote(text, forcedClusterId = null) {
 			file_id: null,
 			is_note: true,
 			note_text: trimmed,
+			added_by: currentIdentityKey(),
+			added_at: new Date().toISOString(),
 		};
 
 		embeddings.value[websiteId] = wrapEmbedding(embedding);
 
 		const clusterId = assignNoteToCluster(websiteId, embedding, albumId, trimmed, forcedClusterId);
 		websites.value[websiteId].cluster_id = clusterId;
+
+		// Live-push to a shared graph if relevant - see the identical comment
+		// in processWebsite() above.
+		pushNodeUpdateForAlbum(albumId, [
+			{ id: websiteId, type: "website", data: { ...websites.value[websiteId], embedding: embeddings.value[websiteId] } },
+			{ id: clusterId, type: "cluster", data: clusters.value[clusterId] },
+		]);
 
 		await saveToIndexedDB();
 		removeProcessingPlaceholder(placeholderNode.id);
@@ -637,6 +675,13 @@ export function setupMessageListener() {
 
 		// --- EXISTING HANDLER ---
 		if (msg.type === "PAGE_METADATA" && msg.data) {
+			// Ask (once per shared graph, never silently) whether FUTURE
+			// quick-adds should route into the currently-open shared graph -
+			// this item itself still processes under whatever the existing
+			// choice is (or the pre-existing default if never asked), since the
+			// answer arrives asynchronously after this synchronous handler
+			// returns. See maybeShowQuickAddRoutingPrompt() in useSharing.js.
+			maybeShowQuickAddRoutingPrompt();
 			processingQueue.value.push(msg.data);
 			processQueue();
 		}

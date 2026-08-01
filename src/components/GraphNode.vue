@@ -17,16 +17,90 @@
 		<div class="fixed top-0 left-0 right-0 z-[1000] px-5 py-4"
 			:style="{ backgroundColor: currentTheme.colors.background }">
 			<div class="flex items-center justify-between max-w-screen-2xl mx-auto">
-				<div class="flex items-center gap-4">
+				<div class="flex items-center gap-3">
 					<a href="/" class="flex items-center">
 						<img v-if="currentTheme.isDark" src="./images/RocusBlue.png" alt="Rocus" class="h-10 w-auto" />
 						<img v-else src="./images/RocusBlue.png" alt="Rocus" class="h-10 w-auto" />
 					</a>
+					<!-- Guest: unchanged generic pill, no identities at all. -->
+					<div v-if="isCurrentGraphShared && remoteGraphRole === 'guest'"
+						class="px-2.5 py-1 rounded-full text-xs font-medium"
+						:style="{ backgroundColor: withAlpha(currentTheme.colors.primary, 0.12), color: currentTheme.colors.primary }">
+						Shared graph
+					</div>
+					<!-- Owner/collaborator: avatar stack + small share icon, click opens
+						 the share panel - the OWNER's own existing full management panel
+						 (top-right icon row, unchanged) for role==='owner' since it's the
+						 same isSharePanelOpen state either way; a NEW reduced, read-only
+						 panel (member list + quick-add toggle, no management controls)
+						 rendered right here for a collaborator, who has no owner panel to
+						 reuse. -->
+					<div v-else-if="isCurrentGraphShared" class="relative">
+						<button @click.stop="isSharePanelOpen = !isSharePanelOpen"
+							:title="sharedAvatars.map((a) => a.label).join(', ')"
+							class="flex items-center gap-1.5">
+							<div class="flex items-center" style="padding-left: 6px;">
+								<div v-for="(avatar, i) in sharedAvatars.slice(0, 3)" :key="avatar.label"
+									class="w-7 h-7 rounded-full border-2 flex items-center justify-center text-xs font-semibold overflow-hidden"
+									:style="{ borderColor: currentTheme.colors.background, backgroundColor: currentTheme.colors.primary, color: '#fff', marginLeft: '-6px', zIndex: 3 - i }">
+									<img v-if="avatar.pictureUrl" :src="avatar.pictureUrl" :alt="avatar.label" class="w-full h-full object-cover" />
+									<span v-else>{{ avatar.label.charAt(0).toUpperCase() }}</span>
+								</div>
+								<div v-if="sharedAvatars.length > 3"
+									class="w-7 h-7 rounded-full border-2 flex items-center justify-center text-[10px] font-semibold"
+									:style="{ borderColor: currentTheme.colors.background, backgroundColor: currentTheme.colors.surface, color: currentTheme.colors.textSecondary, marginLeft: '-6px' }">
+									+{{ sharedAvatars.length - 3 }}
+								</div>
+							</div>
+							<svg class="w-4 h-4" :style="{ color: currentTheme.colors.textSecondary }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+									d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+							</svg>
+						</button>
+
+						<div v-if="isSharePanelOpen && remoteGraphRole !== 'owner'" @click.stop
+							class="absolute top-full left-0 mt-2 w-80 rounded-2xl shadow-2xl border overflow-hidden z-50 animate-fadeIn"
+							:style="{ backgroundColor: currentTheme.colors.surface, borderColor: currentTheme.colors.border }">
+							<div class="px-4 py-3 border-b flex items-center justify-between" :style="{ borderColor: currentTheme.colors.border }">
+								<div class="text-sm font-semibold" :style="{ color: currentTheme.colors.text }">Shared graph</div>
+								<button @click="closeSharePanel" :style="{ color: currentTheme.colors.textSecondary }">✕</button>
+							</div>
+							<div class="p-4 space-y-3 max-h-96 overflow-y-auto text-xs">
+								<div v-for="avatar in sharedAvatars" :key="avatar.label" class="flex items-center gap-2">
+									<div class="w-6 h-6 rounded-full flex items-center justify-center font-semibold overflow-hidden"
+										:style="{ backgroundColor: currentTheme.colors.primary, color: '#fff' }">
+										<img v-if="avatar.pictureUrl" :src="avatar.pictureUrl" :alt="avatar.label" class="w-full h-full object-cover" />
+										<span v-else>{{ avatar.label.charAt(0).toUpperCase() }}</span>
+									</div>
+									<span :style="{ color: currentTheme.colors.text }">{{ avatar.label }}</span>
+								</div>
+
+								<!-- Only meaningful for an edit collaborator - a view-only
+									 collaborator can't push content into this graph at all, so
+									 the routing choice has nothing to act on. -->
+								<label v-if="remoteGraphRole === 'edit'"
+									class="flex items-center gap-2 pt-3 mt-1 border-t" :style="{ borderColor: currentTheme.colors.border, color: currentTheme.colors.textSecondary }">
+									<input type="checkbox" :checked="quickAddRoutesHere" @change="setQuickAddRouting($event.target.checked)" />
+									Route new quick-adds into this shared graph
+								</label>
+							</div>
+						</div>
+					</div>
 				</div>
 
 				<div class="flex-1 max-w-2xl mx-8">
 					<div class="relative">
-						<button @click.stop="toggleAlbumsDropdown"
+						<!-- Bare-bones read-only shell (guest/view-only shared graph): no
+							 album switching, just a static label - see isReadOnlySharedView -->
+						<div v-if="isReadOnlySharedView"
+							class="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl border"
+							:style="{ backgroundColor: currentTheme.colors.surface, borderColor: currentTheme.colors.border }">
+							<img src="./images/RocusFileIconColored.png" alt="" class="w-8 h-8 object-contain" />
+							<div class="text-sm font-medium" :style="{ color: currentTheme.colors.text }">
+								{{ currentAlbum ? currentAlbum.name : 'Shared Graph' }}
+							</div>
+						</div>
+						<button v-else @click.stop="toggleAlbumsDropdown"
 							class="w-full flex items-center justify-between px-4 py-2.5 rounded-xl border transition-all duration-200 group"
 							:style="{
 								backgroundColor: currentTheme.colors.surface,
@@ -63,7 +137,7 @@
 							</svg>
 						</button>
 
-						<div v-if="showAlbumsDropdown"
+						<div v-if="showAlbumsDropdown && !isReadOnlySharedView"
 							class="absolute top-full left-0 right-0 mt-2 rounded-2xl shadow-2xl border overflow-hidden z-50 animate-fadeIn"
 							:style="{
 								backgroundColor: currentTheme.colors.surface,
@@ -261,7 +335,7 @@
 				</div>
 
 				<div class="flex items-center gap-3">
-					<button @click="toggleThemes" class="p-2.5 rounded-xl transition-all"
+					<button v-if="!isReadOnlySharedView" @click="toggleThemes" class="p-2.5 rounded-xl transition-all"
 						:style="{ backgroundColor: currentTheme.colors.surface }">
 						<svg class="w-5 h-5" :style="{ color: currentTheme.colors.textSecondary }" fill="none"
 							stroke="currentColor" viewBox="0 0 24 24">
@@ -270,7 +344,7 @@
 						</svg>
 					</button>
 
-					<div class="relative uploads-panel-container">
+					<div v-if="!isReadOnlySharedView" class="relative uploads-panel-container">
 						<button @click.stop="toggleUploadsPanel" class="p-2.5 rounded-xl transition-all"
 							:style="{ backgroundColor: currentTheme.colors.surface }">
 							<svg class="w-5 h-5" :style="{ color: currentTheme.colors.textSecondary }" fill="none"
@@ -321,7 +395,96 @@
 						</div>
 					</div>
 
-					<button @click="toggleSettings" class="p-2.5 rounded-xl transition-all"
+					<!-- Share icon: top right, every graph, per plan doc "UI surfaces" -->
+					<div v-if="!remoteGraphId || remoteGraphRole === 'owner'" class="relative share-panel-container">
+						<button @click.stop="handleShareClick" class="p-2.5 rounded-xl transition-all"
+							:style="{ backgroundColor: currentTheme.colors.surface }" title="Share this graph">
+							<svg class="w-5 h-5" :style="{ color: currentTheme.colors.textSecondary }" fill="none"
+								stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+									d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+							</svg>
+						</button>
+
+						<div v-if="isSharePanelOpen" @click.stop
+							class="absolute top-full right-0 mt-2 w-96 rounded-2xl shadow-2xl border overflow-hidden z-50 animate-fadeIn"
+							:style="{ backgroundColor: currentTheme.colors.surface, borderColor: currentTheme.colors.border }">
+							<div class="px-4 py-3 border-b flex items-center justify-between" :style="{ borderColor: currentTheme.colors.border }">
+								<div class="text-sm font-semibold" :style="{ color: currentTheme.colors.text }">Share this graph</div>
+								<button @click="closeSharePanel" :style="{ color: currentTheme.colors.textSecondary }">✕</button>
+							</div>
+							<div class="p-4 space-y-4 max-h-96 overflow-y-auto">
+								<div v-if="shareBusy" class="text-sm" :style="{ color: currentTheme.colors.textSecondary }">Sharing…</div>
+								<div v-if="shareError" class="text-sm text-red-500">{{ shareError }}</div>
+
+								<div v-if="activeShareUrl">
+									<div class="flex items-center gap-2">
+										<input readonly :value="activeShareUrl" class="flex-1 text-xs px-2 py-1.5 rounded-lg border"
+											:style="{ backgroundColor: currentTheme.colors.background, borderColor: currentTheme.colors.border, color: currentTheme.colors.text }" />
+										<button @click="copyShareLink" class="text-xs px-2 py-1.5 rounded-lg"
+											:style="{ backgroundColor: currentTheme.colors.primary, color: '#fff' }">Copy</button>
+									</div>
+
+									<label class="flex items-center gap-2 mt-3 text-xs" :style="{ color: currentTheme.colors.textSecondary }">
+										<input type="checkbox" :checked="sharePublicLinkEnabled" @change="togglePublicLink($event.target.checked)" />
+										Anyone with the link can view (no account needed)
+									</label>
+
+									<!-- Only asked when (a) the public link is on, and (b) there's
+										 at least one file in the graph to actually gate - "if there
+										 are any," per the request. -->
+									<label v-if="sharePublicLinkEnabled && shareTargetHasFiles()"
+										class="flex items-center gap-2 mt-2 text-xs" :style="{ color: currentTheme.colors.textSecondary }">
+										<input type="checkbox" :checked="sharePublicLinkAllowsDownloads" @change="toggleGuestDownloads($event.target.checked)" />
+										Allow people with the link to download files in this graph
+									</label>
+
+									<div class="mt-4 pt-3 border-t" :style="{ borderColor: currentTheme.colors.border }">
+										<div class="text-xs font-semibold uppercase tracking-wide mb-2" :style="{ color: currentTheme.colors.textSecondary }">Invite by email</div>
+										<div class="flex items-center gap-2">
+											<input v-model="inviteEmailInput" type="email" placeholder="name@example.com"
+												class="flex-1 text-xs px-2 py-1.5 rounded-lg border"
+												:style="{ backgroundColor: currentTheme.colors.background, borderColor: currentTheme.colors.border, color: currentTheme.colors.text }" />
+											<select v-model="invitePermissionInput" class="text-xs px-2 py-1.5 rounded-lg border"
+												:style="{ backgroundColor: currentTheme.colors.background, borderColor: currentTheme.colors.border, color: currentTheme.colors.text }">
+												<option value="view">View only</option>
+												<option value="edit">Can edit</option>
+											</select>
+											<button @click="handleInviteSubmit" class="text-xs px-3 py-1.5 rounded-lg"
+												:style="{ backgroundColor: currentTheme.colors.primary, color: '#fff' }">Invite</button>
+										</div>
+									</div>
+
+									<div v-if="shareMembers.length" class="mt-4 pt-3 border-t space-y-2" :style="{ borderColor: currentTheme.colors.border }">
+										<div class="text-xs font-semibold uppercase tracking-wide mb-1" :style="{ color: currentTheme.colors.textSecondary }">Collaborators</div>
+										<div v-for="member in shareMembers" :key="member.invited_email" class="flex items-center justify-between gap-2 text-xs">
+											<span :style="{ color: currentTheme.colors.text }">{{ member.invited_email }}</span>
+											<div class="flex items-center gap-1">
+												<select :value="member.permission_level"
+													@change="updateCollaboratorPermission(member.invited_email, { permissionLevel: $event.target.value })"
+													class="text-xs px-1.5 py-1 rounded-lg border"
+													:style="{ backgroundColor: currentTheme.colors.background, borderColor: currentTheme.colors.border, color: currentTheme.colors.text }">
+													<option value="view">View</option>
+													<option value="edit">Edit</option>
+												</select>
+												<button @click="revokeCollaborator(member.invited_email)" class="px-1.5 py-1 rounded-lg"
+													:style="{ color: currentTheme.colors.textSecondary }" title="Revoke access">✕</button>
+											</div>
+										</div>
+									</div>
+								</div>
+							</div>
+						</div>
+					</div>
+
+					<!-- Shared-graph indicator for a non-owner viewer, per plan doc -->
+					<div v-if="remoteGraphId && remoteGraphRole !== 'owner'"
+						class="px-3 py-1.5 rounded-xl text-xs font-medium"
+						:style="{ backgroundColor: currentTheme.colors.surface, color: currentTheme.colors.textSecondary }">
+						{{ remoteGraphFrozen ? 'Frozen copy' : remoteGraphRole === 'guest' ? 'Shared (view only)' : `Shared (${remoteGraphRole})` }}
+					</div>
+
+					<button v-if="!isReadOnlySharedView" @click="toggleSettings" class="p-2.5 rounded-xl transition-all"
 						:style="{ backgroundColor: currentTheme.colors.surface }">
 						<svg class="w-5 h-5" :style="{ color: currentTheme.colors.textSecondary }" fill="none"
 							stroke="currentColor" viewBox="0 0 24 24">
@@ -572,7 +735,7 @@
 				</div>
 			</div>
 		</div>
-		<div v-if="showSettings" @click="closeSettings"
+		<div v-if="showSettings && !isReadOnlySharedView" @click="closeSettings"
 			class="fixed inset-0 bg-black/50 backdrop-blur-sm z-[2000] flex items-center justify-center p-4 animate-fadeIn">
 			<div @click.stop
 				class="border rounded-3xl p-8 w-full max-w-md shadow-2xl animate-scaleIn max-h-[80vh] overflow-y-auto"
@@ -1386,7 +1549,13 @@
 				</h4>
 
 				<div class="flex items-center gap-1 flex-shrink-0">
-					<button @click="deleteSelectedWebsite" title="Delete"
+					<!-- Hidden entirely (not just guarded internally) for a read-only
+						 shared view - deleteSelectedWebsite() calls refreshData() even
+						 when the delete itself no-ops, which reloads from THIS
+						 browser's own local IndexedDB and would silently replace the
+						 shared view with the guest/collaborator's own (usually empty)
+						 local dashboard. -->
+					<button v-if="!isReadOnlySharedView" @click="deleteSelectedWebsite" title="Delete"
 						class="p-1.5 rounded-lg hover:bg-yellow-200 transition-all">
 						<svg class="w-5 h-5 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -1422,7 +1591,12 @@
 				<div v-if="selectedWebsite.is_note" class="whitespace-pre-wrap text-sm text-gray-800 py-2">
 					{{ selectedWebsite.note_text }}
 				</div>
-				<div v-else-if="selectedWebsite.is_file" @click="downloadFile(selectedWebsite.file_id)"
+				<!-- Guests (not invited collaborators, who are always allowed - see
+					 the matching backend rule) only get the download click when the
+					 owner has explicitly enabled it for this shared graph's public
+					 link. -->
+				<div v-else-if="selectedWebsite.is_file && (remoteGraphRole !== 'guest' || sharePublicLinkAllowsDownloads)"
+					@click="downloadFile(selectedWebsite.file_id)"
 					class="cursor-pointer transition-all hover:shadow-md"
 					>
 					<!-- Title -->
@@ -1434,6 +1608,9 @@
 					<div class="text-xs mt-1 line-clamp-2" :style="{ color: currentTheme.colors.textSecondary }">
 						{{ websiteDetails?.metadata?.description || "No description available" }}
 					</div>
+				</div>
+				<div v-else-if="selectedWebsite.is_file" class="text-xs italic" :style="{ color: currentTheme.colors.textSecondary }">
+					Downloads disabled by the owner
 				</div>
 				<a v-else :href="selectedWebsite.url" target="_blank" class="cursor-pointer transition-all hover:shadow-md"
 					>
@@ -1461,15 +1638,25 @@
 				</a>
 
 
-				<button v-if="selectedWebsite.is_note"
+				<button v-if="selectedWebsite.is_note && !isReadOnlySharedView"
 					@click="openNoteEditor({ id: selectedWebsite.websiteId, text: selectedWebsite.note_text })"
 					class="inline-flex items-center gap-2 px-4 py-2 rounded-xl font-medium transition-all bg-[#212121] hover:bg-black text-white">
 					✏️ Edit Note
 				</button>
-				<button v-else-if="selectedWebsite.is_file" @click="downloadFile(selectedWebsite.file_id)"
+				<!-- is_note but read-only - no fallback action, NOT the "Visit
+					 Website" link below (a note's url is always null too, same
+					 broken-link risk as the is_file case just below). -->
+				<div v-else-if="selectedWebsite.is_note"></div>
+				<button v-else-if="selectedWebsite.is_file && (remoteGraphRole !== 'guest' || sharePublicLinkAllowsDownloads)"
+					@click="downloadFile(selectedWebsite.file_id)"
 					class="inline-flex items-center gap-2 px-4 py-2 rounded-xl font-medium transition-all bg-[#212121] hover:bg-black text-white">
 					📄 View File
 				</button>
+				<!-- is_file but downloads are disabled for this guest - no fallback
+					 action at all, NOT the "Visit Website" link below (selectedWebsite.
+					 url is null for a file node, so that link would silently go
+					 nowhere if it were allowed to fall through here). -->
+				<div v-else-if="selectedWebsite.is_file"></div>
 				<a v-else :href="selectedWebsite.url" target="_blank"
 					class="inline-flex items-center gap-2 px-4 py-2 rounded-xl font-medium transition-all bg-[#212121] hover:bg-black text-white">
 					🔗 Visit Website
@@ -2141,6 +2328,64 @@
 	</div>
 	<PremiumUpsell />
 
+	<!-- Shown when a /shared/:graphId load fails, instead of silently leaving
+		 the page looking like an empty, freshly-installed Rocus with no nodes
+		 and no explanation. -->
+	<div v-if="sharedGraphLoadError"
+		class="fixed inset-0 z-[1700] flex items-center justify-center"
+		:style="{ backgroundColor: currentTheme.colors.background }">
+		<div class="max-w-md text-center px-6">
+			<div class="text-lg font-semibold mb-2" :style="{ color: currentTheme.colors.text }">Can't open this graph</div>
+			<p class="text-sm" :style="{ color: currentTheme.colors.textSecondary }">{{ sharedGraphLoadError }}</p>
+			<a href="/dashboard" class="inline-block mt-4 text-sm font-medium px-4 py-2 rounded-xl"
+				:style="{ backgroundColor: currentTheme.colors.primary, color: '#fff' }">Go to your own Rocus</a>
+		</div>
+	</div>
+
+	<!-- Themed share toast (unlike the older showNewDataNotification toast above,
+		 this one uses currentTheme.colors rather than a hardcoded blue gradient,
+		 per the "fits the exact theme" request) -->
+	<Transition enter-active-class="animate-slideInUp" leave-active-class="transition-opacity duration-300" leave-to-class="opacity-0">
+		<div v-if="showShareToast"
+			class="fixed bottom-28 left-1/2 -translate-x-1/2 z-[1650] px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 font-semibold"
+			:style="{ backgroundColor: shareToastType === 'error' ? '#dc2626' : currentTheme.colors.primary, color: '#fff' }">
+			<div class="w-6 h-6 rounded-full flex items-center justify-center" :style="{ backgroundColor: withAlpha('#ffffff', 0.2) }">
+				<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+						d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+				</svg>
+			</div>
+			<span>{{ shareToastMessage }}</span>
+		</div>
+	</Transition>
+
+	<!-- Quick-add routing prompt: shown at most once per shared graph, the
+		 first time a browser-extension quick-add happens while it's open -
+		 see maybeShowQuickAddRoutingPrompt() in useSharing.js. -->
+	<div v-if="showQuickAddRoutingPrompt"
+		class="fixed bottom-6 left-1/2 -translate-x-1/2 z-[1650] flex items-center gap-3 px-5 py-3 rounded-2xl shadow-2xl animate-fadeIn max-w-md"
+		:style="{ backgroundColor: currentTheme.colors.surface, border: `1px solid ${currentTheme.colors.border}` }">
+		<span class="text-sm" :style="{ color: currentTheme.colors.text }">Route new quick-adds into this shared graph?</span>
+		<div class="flex items-center gap-2 shrink-0">
+			<button @click="declineQuickAddRouting" class="text-sm font-medium px-3 py-1.5 rounded-xl"
+				:style="{ color: currentTheme.colors.textSecondary }">No</button>
+			<button @click="acceptQuickAddRouting" class="text-sm font-medium px-3 py-1.5 rounded-xl"
+				:style="{ backgroundColor: currentTheme.colors.primary, color: '#fff' }">Yes</button>
+		</div>
+	</div>
+
+	<!-- Primary viral surface: a guest gets the full graph for free, no signup -
+		 the CTA is the only thing gated, per plan doc "Viral surface" -->
+	<div v-if="remoteGraphRole === 'guest' && !remoteGraphFrozen"
+		class="fixed bottom-6 left-1/2 -translate-x-1/2 z-[1600] flex items-center gap-3 px-5 py-3 rounded-2xl shadow-2xl animate-fadeIn"
+		:style="{ backgroundColor: currentTheme.colors.surface, border: `1px solid ${currentTheme.colors.border}` }">
+		<span class="text-sm" :style="{ color: currentTheme.colors.textSecondary }">Like this graph?</span>
+		<button @click="forkSharedGraph" class="text-sm font-medium px-4 py-2 rounded-xl"
+			:style="{ backgroundColor: currentTheme.colors.primary, color: '#fff' }">
+			Fork into your own Rocus
+		</button>
+	</div>
+
 
 </template>
 
@@ -2344,6 +2589,7 @@ import {
 	loadFromIndexedDB,
 	collapseNode,
 	initializeGraph,
+	isReadOnlySharedView,
 	resetView,
 	toggleConnections,
 	handleBackgroundClick,
@@ -2391,7 +2637,135 @@ import {
 	downloadFile,
 } from '../composables/graphNode/useFileUpload';
 
+import { useRoute } from 'vue-router';
+import { store } from '../router/store';
+import { remoteGraphId, remoteGraphRole, remoteGraphFrozen } from '../composables/graphNode/useGraphEngine';
+import {
+	isSharePanelOpen,
+	activeShareUrl,
+	activeShareGraphId,
+	shareMembers,
+	shareOwnerName,
+	shareOwnerPictureUrl,
+	sharePublicLinkEnabled,
+	sharePublicLinkAllowsDownloads,
+	shareBusy,
+	shareError,
+	shareCurrentGraph,
+	inviteCollaborator,
+	updateCollaboratorPermission,
+	revokeCollaborator,
+	togglePublicLink,
+	toggleGuestDownloads,
+	closeSharePanel,
+	joinSharedGraph,
+	forkSharedGraph,
+	sharedGraphLoadError,
+	showShareToast,
+	shareToastMessage,
+	shareToastType,
+	flashShareToast,
+	confirmShare,
+	notifyLinkCopied,
+	canShareCurrentSelection,
+	shareTargetHasFiles,
+	initLocalOwnerSync,
+	quickAddRoutesHere,
+	setQuickAddRouting,
+	showQuickAddRoutingPrompt,
+} from '../composables/graphNode/useSharing';
+
 const { analyticsConsent, trackEvent } = useAnalytics();
+
+// ==============================================
+// SHARING (glue for useSharing.js - see plan doc "Rocus Sharing & Multiplayer")
+// ==============================================
+const route = useRoute();
+const inviteEmailInput = ref('');
+const invitePermissionInput = ref('view');
+
+// Badge next to the logo: "is this graph shared, and with whom." Covers both
+// ways of currently looking at a shared graph - the owner's own /dashboard
+// with an actively-shared album selected (activeShareGraphId, set by
+// useSharing.js's local-owner sync watcher), or actually viewing it via
+// /shared/:graphId (remoteGraphId). Membership (shareMembers) is only ever
+// fetched for non-guest roles server-side already, so a guest naturally
+// never sees it here either - matches the existing privacy rule that a
+// guest sees only the sharer's name, never other collaborators' identities.
+const isCurrentGraphShared = computed(() => !!remoteGraphId.value || !!activeShareGraphId.value);
+
+// Who to show in the avatar stack. Guests get nothing here at all (kept as
+// the existing generic "Shared graph" text pill below, unchanged) - never
+// identity-revealing, per the established privacy rule. For everyone else:
+// the owner's own view shows their collaborators (shareMembers); a
+// collaborator's view shows the owner first (shareOwnerName/PictureUrl,
+// only ever populated server-side for non-guest roles) plus any OTHER
+// collaborators, excluding the viewer's own entry - seeing your own email/
+// picture reflected back at you isn't useful information.
+const sharedAvatars = computed(() => {
+	if (remoteGraphRole.value === 'guest') return [];
+	const selfEmail = store.user?.email || null;
+	const list = [];
+	if (remoteGraphId.value && remoteGraphRole.value !== 'owner' && (shareOwnerName.value || shareOwnerPictureUrl.value)) {
+		list.push({ label: shareOwnerName.value || 'Owner', pictureUrl: shareOwnerPictureUrl.value });
+	}
+	for (const m of shareMembers.value) {
+		if (m.invited_email && m.invited_email === selfEmail) continue;
+		list.push({ label: m.invited_email || '?', pictureUrl: m.picture_url || null });
+	}
+	return list;
+});
+
+// The share icon itself is the trigger - one click both opens the panel and
+// (the first time, for this album) performs the actual share, toast
+// included. The earlier bug wasn't that the icon shares on click - it's
+// that it fired the toast even when nothing had actually changed (e.g.
+// reopening an already-shared panel). Now the toast only fires from
+// confirmShare()'s own success path, so re-clicking to just view an
+// existing share stays silent, and the "All Clusters" case gets its own
+// clear error instead of a generic failure.
+async function handleShareClick() {
+	if (isSharePanelOpen.value) {
+		isSharePanelOpen.value = false;
+		return;
+	}
+	if (activeShareUrl.value) {
+		isSharePanelOpen.value = true;
+		return;
+	}
+	if (!canShareCurrentSelection()) {
+		flashShareToast('Open a specific Album to share it - sharing isn\'t available from All Clusters.', 'error');
+		return;
+	}
+	await confirmShare();
+}
+
+async function handleInviteSubmit() {
+	if (!inviteEmailInput.value.trim()) return;
+	const result = await inviteCollaborator(inviteEmailInput.value, invitePermissionInput.value);
+	if (result?.success) inviteEmailInput.value = '';
+}
+
+function copyShareLink() {
+	if (!activeShareUrl.value) return;
+	navigator.clipboard?.writeText(activeShareUrl.value);
+	notifyLinkCopied();
+}
+
+// Quick-add routing popup: both explicit "No" and dismissing without
+// choosing record a permanent false via setQuickAddRouting() - the popup is
+// only ever meant to appear once per shared graph (see
+// maybeShowQuickAddRoutingPrompt()'s "already asked" check), so silently
+// re-prompting after a dismiss would defeat that.
+function acceptQuickAddRouting() {
+	setQuickAddRouting(true);
+	showQuickAddRoutingPrompt.value = false;
+}
+
+function declineQuickAddRouting() {
+	setQuickAddRouting(false);
+	showQuickAddRoutingPrompt.value = false;
+}
 
 // ==============================================
 // SETTINGS MODAL (simple glue - kept here rather than a dedicated composable)
@@ -2510,38 +2884,77 @@ onMounted(async () => {
 		loadThemePreference();
 		console.log("✅ IndexedDB ready");
 
-		await loadFromIndexedDB();
+		const sharedGraphId = route.params.graphId || null;
 
-		initializeGraph();
-		window.addEventListener("resize", handleResize);
+		if (sharedGraphId) {
+			// Resolve a pending invite (no-op/silently ignored if this visitor has
+			// no account or no invite waiting under their email) before loading
+			// the graph, so an invited collaborator's permissions are current
+			// from their very first view rather than needing a reload.
+			await joinSharedGraph(sharedGraphId).catch(() => {});
+			// Awaited + caught here (unlike the local-mode branch below, which
+			// fires initializeGraph() without awaiting) specifically so a failed
+			// load (graph not found/expired/access revoked) surfaces the banner
+			// below instead of silently leaving the page looking like an empty,
+			// freshly-installed Rocus with no explanation.
+			try {
+				await initializeGraph(sharedGraphId);
+			} catch (err) {
+				console.error("Failed to load shared graph:", err);
+			}
+			window.addEventListener("resize", handleResize);
+			messageListener = setupMessageListener();
+			// Compatibility check and the first-run tutorial are both
+			// local-single-player concerns - irrelevant for a quick shared-graph
+			// view (guest or collaborator), so skipped entirely in this branch.
+			// loadModels() is NOT one of those, though - it's what loads the
+			// embedding pipeline processWebsite()/processNote() require before
+			// they'll do anything ("Embedding model not loaded"), and an edit
+			// collaborator needs to be able to add content immediately, not just
+			// after the local dashboard happens to load it first.
+			loadModels().catch(err => {
+				console.error("Model loading failed (non-fatal):", err);
+			});
+		} else {
+			await loadFromIndexedDB();
 
-		messageListener = setupMessageListener();
-		console.log("✅ Message listener ready");
+			initializeGraph();
+			window.addEventListener("resize", handleResize);
 
-		const tutorialCompleted = localStorage.getItem('rocus-tutorial-completed');
+			// Covers "already had a shared album selected" if album selection is
+			// ever restored on load in the future - currentAlbum always starts
+			// null today, so this is a no-op in practice; the reactive watcher in
+			// useSharing.js handles every actual album selection from here on.
+			initLocalOwnerSync();
 
-		// Only run the WebGPU/memory/IndexedDB readiness check for users
-		// actually in local mode - irrelevant for commercial (cloud) mode,
-		// which is the default and never touches the local model.
-		if (processingMode.value === 'local') {
-			await runCompatibilityCheckIfNeeded();
+			messageListener = setupMessageListener();
+			console.log("✅ Message listener ready");
+
+			const tutorialCompleted = localStorage.getItem('rocus-tutorial-completed');
+
+			// Only run the WebGPU/memory/IndexedDB readiness check for users
+			// actually in local mode - irrelevant for commercial (cloud) mode,
+			// which is the default and never touches the local model.
+			if (processingMode.value === 'local') {
+				await runCompatibilityCheckIfNeeded();
+			}
+
+			// Tutorial start no longer depends on the compatibility check - it's
+			// gated purely on whether the user has seen it before.
+			if (!tutorialCompleted) {
+				setTimeout(() => {
+					if (graphData?.nodes?.length > 0) {
+						startTutorial();
+					} else {
+						startTutorialEmpty();
+					}
+				}, 2000);
+			}
+
+			loadModels().catch(err => {
+				console.error("Model loading failed (non-fatal):", err);
+			});
 		}
-
-		// Tutorial start no longer depends on the compatibility check - it's
-		// gated purely on whether the user has seen it before.
-		if (!tutorialCompleted) {
-			setTimeout(() => {
-				if (graphData?.nodes?.length > 0) {
-					startTutorial();
-				} else {
-					startTutorialEmpty();
-				}
-			}, 2000);
-		}
-
-		loadModels().catch(err => {
-			console.error("Model loading failed (non-fatal):", err);
-		});
 	} catch (err) {
 		error.value = `Initialization failed: ${err.message || err}`;
 		console.error("❌ Init error:", err);

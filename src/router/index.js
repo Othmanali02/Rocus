@@ -31,6 +31,16 @@ const router = createRouter({
 			component: GraphNode,
 		},
 		{
+			// Same component as the normal dashboard - GraphNode.vue checks
+			// route.params.graphId itself and sources data from the shared-graph
+			// API instead of IndexedDB when present, reusing the entire D3
+			// rendering/interaction layer (explode, website details, file
+			// downloads, etc.) for guests and invited collaborators alike.
+			path: "/shared/:graphId",
+			name: "SharedGraph",
+			component: GraphNode,
+		},
+		{
 			path: "/redirect",
 			name: "Redirect",
 			component: Redirect,

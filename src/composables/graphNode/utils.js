@@ -1,9 +1,24 @@
 // Pure, stateless helper functions shared across the graph page composables.
 
 import { stemmer } from "stemmer";
+import { store } from "../../router/store";
 
+// Matches the backend's identityForSession() convention exactly
+// (rocusnodejs/server.js) so a node's addedBy can be joined against
+// graph_membership.identity_key with no translation step. null when signed
+// out - most Rocus usage is anonymous/local, where "who added this" isn't a
+// meaningful question until the graph is actually shared.
+export function currentIdentityKey() {
+	return store.user?.email ? `email:${store.user.email}` : null;
+}
+
+// UUID rather than timestamp+random: once a graph can be shared/synced,
+// records from two independent installs can meet in the same server-side
+// table, and a timestamp+random string has no collision guarantee across
+// devices the way it did when every ID only ever had to be unique within one
+// browser's own IndexedDB.
 export function generateId() {
-	return Date.now().toString(36) + Math.random().toString(36).substr(2);
+	return crypto.randomUUID();
 }
 
 // Embedding provenance: the model that produced a vector, its dimensionality,

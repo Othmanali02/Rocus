@@ -22,7 +22,16 @@ onMounted(async () => {
 </script>
 
 <template>
-  <RouterView />
+  <!-- :key forces a clean remount on every route change. Not currently
+       load-bearing (no in-app navigation between routes that share a
+       component uses router.push/<router-link> today - it's all plain <a
+       href> hard navigations) but /dashboard and /shared/:graphId both
+       render GraphNode.vue, and Vue Router reuses a component instance
+       across a route change by default when the matched component is
+       identical - which would skip onMounted's local-vs-shared branching
+       entirely the moment any future in-app link does a soft navigation
+       between them. Cheap insurance against a real bug one router.push away. -->
+  <RouterView :key="$route.fullPath" />
 
 </template>
 
