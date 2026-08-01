@@ -1,5 +1,5 @@
 import { ref, reactive, watch } from 'vue';
-import { websites, currentAlbum, rankCandidateClusters, saveToIndexedDB, refreshData, NOTES_HUB_SENTINEL } from './useGraphEngine';
+import { websites, currentAlbum, rankCandidateClusters, saveToIndexedDB, refreshData, NOTES_HUB_SENTINEL, isReadOnlySharedView } from './useGraphEngine';
 import { processNote, generateEmbedding } from './useAIModels';
 
 export { NOTES_HUB_SENTINEL };
@@ -64,6 +64,10 @@ export function toggleSuggestion(clusterId) {
 // bound via @contextmenu.prevent so the native context menu never appears
 // over the graph background.
 export function handleGraphRightClick(event) {
+	// Guarded here, not just by hiding a button - this is a gesture on the
+	// graph background itself, so a view-only collaborator or guest needs to
+	// be stopped at the handler, not just have some UI element removed.
+	if (isReadOnlySharedView.value) return;
 	addNotePromptStyle.value = { left: event.pageX + 'px', top: event.pageY + 'px' };
 	showAddNotePrompt.value = true;
 }
@@ -88,6 +92,7 @@ export function confirmAddNoteFromPrompt() {
 let leftClickTimes = [];
 export function handleGraphLeftClick(event) {
 	if (event.button !== 0) return;
+	if (isReadOnlySharedView.value) return;
 	const now = Date.now();
 	leftClickTimes = leftClickTimes.filter((t) => now - t < 600);
 	leftClickTimes.push(now);

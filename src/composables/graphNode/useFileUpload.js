@@ -2,7 +2,7 @@ import { ref, computed } from 'vue';
 import { store } from '../../router/store';
 import { API_BASE } from '../../components/constants/config';
 import { signInUrl, openPremiumModal } from './usePremium';
-import { currentAlbum, websites, clusters, addProcessingPlaceholder, removeProcessingPlaceholder } from './useGraphEngine';
+import { websites, clusters, addProcessingPlaceholder, removeProcessingPlaceholder, remoteGraphId, effectiveAlbumId } from './useGraphEngine';
 import { processWebsite } from './useAIModels';
 
 // Drag-and-drop file upload onto the graph canvas. Signed-in only, full
@@ -104,7 +104,7 @@ async function uploadFile(file) {
 				keywords: '',
 			},
 			content: '',
-			album: currentAlbum.value?.id || null,
+			album: effectiveAlbumId(),
 			precomputedAnalysis: { summary: body.summary, topic: body.topic, query: body.search_query },
 			is_file: true,
 			file_id: body.file_id,
@@ -174,6 +174,17 @@ export function toggleUploadsPanel() {
 // The original file always lives on Rocus's server regardless of whether
 // this browser can resolve which local topic it landed in, so a file this
 // user uploaded is never a dead end - they can always pull it back down.
+//
+// Shared-view-aware: /api/uploads/:fileId/download is the owner's OWN
+// personal "My Files" route (requireSession + owner_key-only) - it 404s/
+// 401s for anyone else. A guest or invited collaborator viewing a shared
+// graph needs the separate, shared-graph-scoped route instead. Previously
+// this function always hit the personal route regardless of context, so
+// downloading a file from the shared view never actually worked for anyone
+// but the graph's own owner.
 export function downloadFile(fileId) {
-	window.open(`${API_BASE}/api/uploads/${fileId}/download`, '_blank');
+	const url = remoteGraphId.value
+		? `${API_BASE}/api/shared/${remoteGraphId.value}/uploads/${fileId}/download`
+		: `${API_BASE}/api/uploads/${fileId}/download`;
+	window.open(url, '_blank');
 }

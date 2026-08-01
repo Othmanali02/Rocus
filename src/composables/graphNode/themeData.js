@@ -193,9 +193,9 @@ export const themes = [
 		}
 	},
 	{
-		id: 'swaggy-ginger',
-		name: 'Ginger Sunshine',
-		description: 'When life gives you lemonade, make lemons... — Phil Dunphy',
+		id: 'orange-sun',
+		name: 'Orange Sun',
+		description: 'Life is a beautiful journey',
 		isDark: false,
 		preview: ['#FFF8F0', '#FF8C42', '#FFFFFF', '#FFD9B3'],
 		colors: {
@@ -330,18 +330,18 @@ export const themes = [
 		name: 'SpongeBob SquarePants',
 		description: 'Who lives in a pineapple',
 		isDark: false,
-		preview: ['#87CEEB', '#FFEB3B', '#8B4513', '#FFFFFF'],
+		preview: ['#FFEB3B', '#8B4513', '#FFFFFF', '#87CEEB'],
 		colors: {
-			background: '#87CEEB',
-			surface: '#FFFFFF',
-			primary: '#FFEB3B',
-			secondary: '#8B4513',
+			background: '#FFEB3B',
+			surface: '#8B4513',
+			primary: '#FFFFFF',
+			secondary: '#87CEEB',
 			accent: '#FF4444',
-			node: '#FFF9C4',
-			nodeStroke: '#FBC02D',
-			text: '#1A1A1A',
-			textSecondary: '#5D4037',
-			border: '#FFEB3B'
+			node: '#FFFFFF',
+			nodeStroke: '#8B4513',
+			text: '#FFFFFF',
+			textSecondary: '#FFF9C4',
+			border: '#8B4513'
 		}
 	},
 	{

@@ -1,4 +1,4 @@
-import { ref, reactive } from "vue";
+import { ref, reactive, computed } from "vue";
 import * as d3 from "d3";
 import { db } from "./useDatabase";
 import { currentTheme } from "./useThemes";
@@ -317,6 +317,32 @@ export async function fetchWebsiteDetails(websiteId) {
 	try {
 		console.log("Fetching website details for:", websiteId);
 
+		// Prefer the in-memory ref - it's already fully populated with every
+		// field this function returns, regardless of whether it got there via
+		// loadFromIndexedDB() (local/dashboard mode) or loadSharedGraphData()
+		// (shared-view mode, from the server). The IndexedDB read below only
+		// ever succeeds for local mode - a guest/collaborator's browser has no
+		// local record for someone else's website at all, which is why
+		// descriptions/summaries never rendered in the shared view. This is
+		// also a strict improvement for local mode: skips a redundant async
+		// IndexedDB round-trip on the common path.
+		const inMemory = websites.value[websiteId];
+		if (inMemory) {
+			return {
+				website: {
+					id: inMemory.id,
+					url: inMemory.url,
+					title: inMemory.title,
+					domain: inMemory.domain,
+					ai_summary: inMemory.ai_summary,
+					topic: inMemory.topic,
+					search_query: inMemory.search_query,
+					processed_at: inMemory.processed_at,
+					metadata: inMemory.metadata,
+				},
+			};
+		}
+
 		if (!db) return null;
 
 		const tx = db.transaction("websites", "readonly");
@@ -497,6 +523,7 @@ export async function loadFromIndexedDB() {
 }
 
 export async function deleteWebsite(websiteId) {
+	if (isReadOnlySharedView.value) return;
 	// Remove from clusters
 	for (const cluster of Object.values(clusters.value)) {
 		const index = cluster.websites.indexOf(websiteId);
@@ -821,6 +848,142 @@ export function processApiData(clustersData, similarities) {
 	return { nodes, links };
 }
 
+// Set while the current view is a shared graph (fetched from the server)
+// rather than this browser's own IndexedDB - null in normal single-player
+// use. Read by loadData()'s callers to decide which loader to invoke, and by
+// the sharing UI to know whether "add a node" should also push to the server.
+export const remoteGraphId = ref(null);
+export const remoteGraphRole = ref(null); // 'owner' | 'edit' | 'view' | 'guest' | null
+export const remoteGraphFrozen = ref(false);
+
+// Single source of truth for "this viewer should not be able to change
+// anything" - a view-only collaborator or an anonymous guest on a shared
+// graph. Local/single-player use (remoteGraphId null) and owner/edit
+// collaborators are never read-only. Used to hide/disable every mutating
+// control in GraphNode.vue (Albums/History switching, theme, uploads,
+// settings, note-creation gestures, website deletion) - previously only the
+// Share button itself checked remoteGraphRole, which meant a guest or
+// view-only collaborator could still use every other control in the app.
+export const isReadOnlySharedView = computed(
+	() => !!remoteGraphId.value && (remoteGraphRole.value === "guest" || remoteGraphRole.value === "view")
+);
+
+// Resolves the album new content (a note, an uploaded file) should be tagged
+// with. currentAlbum.value is correct on the owner's own /dashboard, but
+// loadSharedGraphData() deliberately sets it to null in shared/remote view
+// mode - a shared view isn't scoped to any of THIS browser's own local
+// albums. Without this fallback, anything added from within a shared view
+// got tagged album_id: null, which matches none of the real clusters
+// mirrored over from the owner's actual album (they all carry the owner's
+// real, non-null album id) - the content would still reach the owner via the
+// live-sync push, but arrive invisible, filed under an album nobody's
+// dashboard ever looks at. Every cluster in a shared-view session
+// originated from one gatherAlbumNodes() call for one specific album, so
+// they all already carry that same real id - this just reads it back
+// instead of assuming null.
+export function effectiveAlbumId() {
+	if (currentAlbum.value?.id) return currentAlbum.value.id;
+	if (remoteGraphId.value) {
+		const anyCluster = Object.values(clusters.value).find((c) => c.album_id);
+		if (anyCluster) return anyCluster.album_id;
+	}
+	return null;
+}
+
+// Mirrors fetchClusters()'s website-summarizing shape exactly, but reads from
+// the in-memory refs directly instead of IndexedDB - this is what lets
+// processApiData()/fetchSimilarities() stay completely unaware of whether
+// the data they're shaping came from a shared graph or a local one.
+function clusterRecordToClusterData(cluster) {
+	const websitesList = (cluster.websites || [])
+		.map((id) => websites.value[id])
+		.filter(Boolean)
+		.map((website) => ({
+			id: website.id,
+			title: website.title,
+			url: website.url,
+			domain: website.domain,
+			processed_at: website.processed_at,
+			is_file: !!website.is_file,
+			file_id: website.file_id || null,
+			is_note: !!website.is_note,
+			note_text: website.note_text || null,
+		}));
+
+	return {
+		cluster_id: cluster.id,
+		topic: cluster.topic,
+		website_count: websitesList.length,
+		websites: websitesList,
+		similar_links: cluster.similar_links || {},
+		is_notes_cluster: !!cluster.is_notes_cluster,
+		notes_hub_links: cluster.notes_hub_links || [],
+	};
+}
+
+// The remote counterpart to loadData(): same shape (fills websites/clusters/
+// embeddings, then runs the identical processApiData()/fetchSimilarities()
+// pipeline), just sourced from GET /api/shared/:graphId instead of
+// IndexedDB. This is the graph-store abstraction boundary described in the
+// plan doc - renderGraph()/centerView()/drag() never change, they only ever
+// see the resulting graphData either way.
+export async function loadSharedGraphData(graphId, { API_BASE, credentials = "include" } = {}) {
+	isLoading.value = true;
+	try {
+		const res = await fetch(`${API_BASE}/api/shared/${graphId}`, { credentials });
+		if (!res.ok) {
+			const body = await res.json().catch(() => ({}));
+			throw new Error(body.error || `load_failed_${res.status}`);
+		}
+		const payload = await res.json();
+
+		remoteGraphId.value = graphId;
+		remoteGraphRole.value = payload.role;
+		remoteGraphFrozen.value = !!payload.frozen;
+
+		// A shared graph's clusters carry the ORIGINAL owner's album_id, which is
+		// meaningless on a collaborator's own device - clearing the local
+		// album/day filters means fetchSimilarities()'s own album/day filtering
+		// (it reads these same refs) doesn't accidentally exclude everything.
+		currentAlbum.value = null;
+		currentHistoryDay.value = null;
+
+		websites.value = {};
+		clusters.value = {};
+		embeddings.value = {};
+
+		for (const node of payload.nodes || []) {
+			if (node.type === "website") {
+				websites.value[node.id] = node.data;
+				if (node.data?.embedding) embeddings.value[node.id] = node.data.embedding;
+			} else if (node.type === "cluster") {
+				clusters.value[node.id] = node.data;
+			}
+		}
+
+		const clustersData = Object.values(clusters.value).map(clusterRecordToClusterData);
+		rawClusters = clustersData;
+
+		const similarities = await fetchSimilarities();
+		rawSimilarities = similarities;
+
+		graphData = processApiData(clustersData, similarities);
+
+		return payload;
+	} finally {
+		isLoading.value = false;
+	}
+}
+
+// Called when leaving a shared-graph view (navigating back to the normal
+// local dashboard) so loadData()'s own IndexedDB-backed path takes over
+// again cleanly next time it runs.
+export function clearRemoteGraphState() {
+	remoteGraphId.value = null;
+	remoteGraphRole.value = null;
+	remoteGraphFrozen.value = false;
+}
+
 export async function loadData() {
 	isLoading.value = true;
 
@@ -934,6 +1097,23 @@ export async function refreshData() {
 	selectedWebsite.value = null;
 	explodedNode.value = null;
 	await loadData();
+	if (simulation) {
+		simulation.nodes(graphData.nodes);
+		simulation.force("link").links(graphData.links);
+		simulation.alpha(1).restart();
+		renderGraph();
+	}
+}
+
+// Same re-tick/re-render pattern as refreshData(), just sourced from
+// loadSharedGraphData() instead of the IndexedDB-backed loadData() - always a
+// full authoritative reload rather than an incremental patch, since a shared
+// graph's WebSocket messages only ever say "something changed," not what.
+export async function refreshRemoteGraph(API_BASE) {
+	if (!remoteGraphId.value) return;
+	selectedWebsite.value = null;
+	explodedNode.value = null;
+	await loadSharedGraphData(remoteGraphId.value, { API_BASE });
 	if (simulation) {
 		simulation.nodes(graphData.nodes);
 		simulation.force("link").links(graphData.links);
@@ -1152,11 +1332,20 @@ export function stopStickyDrag() {
 // ==============================================
 // D3 RENDERING
 // ==============================================
-export async function initializeGraph() {
+// sharedGraphId is optional - passed by GraphNode.vue when mounted at
+// /shared/:graphId. Dynamic import (rather than a static one) avoids turning
+// the existing useGraphEngine <-> useAlbums-style circular-import convention
+// into a three-way cycle for this one, optional, rarely-taken path.
+export async function initializeGraph(sharedGraphId = null) {
 	const width = graphContainer.value.clientWidth;
 	const height = graphContainer.value.clientHeight;
 
-	await loadData();
+	if (sharedGraphId) {
+		const { openSharedGraph } = await import("./useSharing");
+		await openSharedGraph(sharedGraphId);
+	} else {
+		await loadData();
+	}
 
 	svg = d3
 		.select(graphContainer.value)
@@ -1200,6 +1389,44 @@ export async function initializeGraph() {
 	setTimeout(() => {
 		centerView();
 	}, 1000);
+}
+
+// Node-anchored live-cursor badges for a shared graph: a small dot per
+// identity currently "looking at" a node, keyed the same way renderGraph()
+// keys node <g> elements (d.id) - see plan doc on why cursors are
+// node-anchored rather than coordinate-anchored (D3 force simulations are
+// non-deterministic per client, so a raw position means nothing on a
+// collaborator's independently-laid-out copy of the same graph). Called from
+// useSharing.js's watch(remoteCursors, ...), not from renderGraph() itself,
+// since it only ever needs to run when the cursor map changes, not on every
+// tick.
+export function renderRemoteCursors(cursorsByIdentity) {
+	if (!container) return;
+	const nodeGroup = container.select(".nodes");
+	if (nodeGroup.empty()) return;
+
+	const cursorsByNode = {};
+	Object.entries(cursorsByIdentity || {}).forEach(([identityKey, nodeId]) => {
+		if (!nodeId) return;
+		(cursorsByNode[nodeId] ||= []).push(identityKey);
+	});
+
+	nodeGroup.selectAll(".node").each(function (d) {
+		const g = d3.select(this);
+		const identities = cursorsByNode[d.id] || [];
+		const radius = d.size * settings.nodeSize;
+
+		g.selectAll(".node-cursor-badge")
+			.data(identities, (identityKey) => identityKey)
+			.join(
+				(enter) => enter.append("circle").attr("class", "node-cursor-badge").attr("r", 5).attr("stroke", "#fff").attr("stroke-width", 1.5),
+				(update) => update,
+				(exit) => exit.remove()
+			)
+			.attr("cy", -(radius + 10))
+			.attr("cx", (_, i) => radius + 10 + i * 14)
+			.attr("fill", currentTheme.value.colors.secondary);
+	});
 }
 
 export function centerView() {
@@ -1430,6 +1657,16 @@ export function handleNodeMouseOver(event, d) {
 	if (d.type === "cluster") {
 		highlightConnections(d);
 	}
+
+	// Node-anchored live cursor ping - dynamic import (not a static one)
+	// deliberately, matching the same safe pattern initializeGraph() already
+	// uses below: useSharing.js statically imports from this file, so a
+	// static import back would create the same circular-eval-order hazard
+	// that caused a real, app-breaking crash earlier in this project (see
+	// initLocalOwnerSync()'s comment in useSharing.js for the full story).
+	// sendCursorUpdate() itself already no-ops with no open socket and is
+	// internally throttled, so firing this on every hover is safe.
+	import("./useSharing").then(({ sendCursorUpdate }) => sendCursorUpdate(d.id));
 }
 
 export function handleNodeMouseOut() {
@@ -1509,6 +1746,11 @@ export function closeStickyNote() {
 export function handleNodeRightClick(event, d) {
 	event.preventDefault();
 	event.stopPropagation();
+
+	// No context menu at all in a read-only shared view - every item in both
+	// menus (Add to Album, Delete Cluster, Edit Title, etc.) is a mutation,
+	// and a guest/view-only collaborator shouldn't be offered any of them.
+	if (isReadOnlySharedView.value) return;
 
 	if (d.type === 'cluster') {
 		contextCluster.value = clusters.value[d.id];
