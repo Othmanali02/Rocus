@@ -1,5 +1,6 @@
 import { ref, computed } from "vue";
 import { useAnalytics } from "../useAnalytics";
+import { rocusAlert, rocusConfirm } from "../useRocusDialog";
 import {
 	contextCluster,
 	showContextMenu,
@@ -50,7 +51,7 @@ export async function confirmRename() {
 		contextCluster.value = null;
 	} catch (error) {
 		console.error('Error renaming cluster:', error);
-		alert('Failed to rename cluster');
+		rocusAlert('Failed to rename cluster');
 	}
 }
 
@@ -109,7 +110,7 @@ export async function confirmAddWebsites() {
 		contextCluster.value = null;
 	} catch (error) {
 		console.error('Error adding websites:', error);
-		alert('Failed to add websites');
+		rocusAlert('Failed to add websites');
 	}
 }
 
@@ -141,9 +142,10 @@ export async function confirmRemoveWebsites(deleteEntirely = false) {
 	if (!contextCluster.value || selectedWebsitesToRemove.value.length === 0) return;
 
 	const action = deleteEntirely ? 'delete' : 'remove';
-	const confirmed = confirm(
+	const confirmed = await rocusConfirm(
 		`Are you sure you want to ${action} ${selectedWebsitesToRemove.value.length} website(s)? ${deleteEntirely ? 'This will permanently delete them.' : 'They will be removed from this cluster only.'
-		}`
+		}`,
+		{ title: deleteEntirely ? 'Delete Websites' : 'Remove Websites', confirmText: deleteEntirely ? 'Delete' : 'Remove', danger: deleteEntirely }
 	);
 
 	if (!confirmed) return;
@@ -189,7 +191,7 @@ export async function confirmRemoveWebsites(deleteEntirely = false) {
 		contextCluster.value = null;
 	} catch (error) {
 		console.error('Error removing websites:', error);
-		alert('Failed to remove websites');
+		rocusAlert('Failed to remove websites');
 	}
 }
 
@@ -243,7 +245,7 @@ export async function confirmDeleteCluster(deleteWebsitesToo = false) {
 		contextCluster.value = null;
 	} catch (error) {
 		console.error('Error deleting cluster:', error);
-		alert('Failed to delete cluster');
+		rocusAlert('Failed to delete cluster');
 	}
 }
 
@@ -286,7 +288,7 @@ export async function confirmAddToAlbum() {
 		contextCluster.value = null;
 	} catch (error) {
 		console.error('Error adding cluster to album:', error);
-		alert('Failed to add cluster to album');
+		rocusAlert('Failed to add cluster to album');
 	}
 }
 
@@ -430,7 +432,7 @@ export async function confirmAddConnection() {
 		contextCluster.value = null;
 	} catch (error) {
 		console.error('Error adding connection:', error);
-		alert('Failed to add connection');
+		rocusAlert('Failed to add connection');
 	}
 }
 
@@ -472,7 +474,7 @@ export async function confirmRemoveConnection() {
 		contextCluster.value = null;
 	} catch (error) {
 		console.error('Error removing connection:', error);
-		alert('Failed to remove connection');
+		rocusAlert('Failed to remove connection');
 	}
 }
 

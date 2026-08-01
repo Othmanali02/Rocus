@@ -80,15 +80,26 @@ export const currentAlbum = ref(null);
 // intersection.
 const DROPDOWN_MODE_KEY = "rocus-dropdown-mode";
 const storedDropdownMode = localStorage.getItem(DROPDOWN_MODE_KEY);
-export const dropdownMode = ref(storedDropdownMode === "history" ? "history" : "albums");
+export const dropdownMode = ref(
+	storedDropdownMode === "history" || storedDropdownMode === "shared" ? storedDropdownMode : "albums"
+);
 export const currentHistoryDay = ref(null);
 
+// 'shared' is a third tab (Albums | Shared | History) but NOT a content
+// filter like the other two - it's just a picker view offering two lists
+// ("Shared" albums you own, "Shared with me" from others) to navigate from.
+// Switching to/from it deliberately does NOT reset currentAlbum/
+// currentHistoryDay or reload graph data - the view underneath stays
+// exactly as it was until the user actually clicks something inside it.
 export function setDropdownMode(mode) {
-	if (mode !== "albums" && mode !== "history") return;
+	if (mode !== "albums" && mode !== "history" && mode !== "shared") return;
 	if (dropdownMode.value === mode) return;
 
 	dropdownMode.value = mode;
 	localStorage.setItem(DROPDOWN_MODE_KEY, mode);
+
+	if (mode !== "albums" && mode !== "history") return;
+
 	currentAlbum.value = null;
 	currentHistoryDay.value = null;
 

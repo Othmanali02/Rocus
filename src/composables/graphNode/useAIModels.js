@@ -2,6 +2,7 @@ import { ref, computed } from "vue";
 import { pipeline, env } from "@xenova/transformers";
 import { CreateMLCEngine } from "@mlc-ai/web-llm";
 import { useAnalytics } from "../useAnalytics";
+import { rocusAlert, rocusConfirm } from "../useRocusDialog";
 import { promptConsent } from "./useAnalyticsBanner";
 import { albums } from "./useAlbums";
 import {
@@ -426,18 +427,26 @@ export async function processWebsite(data) {
 
 		console.log(`📝 Processing: ${metadata.title || data.url}`);
 
-		// A collaborator viewing /shared/:graphId has no meaningful local
-		// album for the extension's own picker to offer (loadSharedGraphData()
-		// never populates albums.value in that mode), so data.album normally
-		// reflects nothing real there - not wrong exactly, just meaningless.
-		// That's the root cause of "quick-add went to my own local history
-		// instead of the shared graph." Only override it when the
-		// collaborator has explicitly opted in via the quick-add routing
-		// prompt (quickAddRoutesHere) - never silently redirect a bookmark
-		// into someone else's shared graph without asking first.
-		const targetAlbumId = (remoteGraphId.value && quickAddRoutesHere.value)
-			? effectiveAlbumId()
-			: (data.album || null);
+		// An explicit album chosen in the extension's own "Save to Album" grid
+		// always wins. Otherwise: a collaborator viewing /shared/:graphId has no
+		// meaningful local album for the extension's own picker to offer
+		// (loadSharedGraphData() never populates albums.value in that mode), so
+		// only default into the shared graph once they've explicitly opted in
+		// via the quick-add routing prompt (quickAddRoutesHere) - never silently
+		// redirect a bookmark into someone else's shared graph without asking
+		// first. For an ordinary local dashboard, default to whatever album is
+		// currently open on screen, matching how processNote() already behaves
+		// for in-app note creation - previously this branch always fell through
+		// to null, so quick-adding while an album was open silently missed it
+		// and the item only ever showed up under History.
+		let targetAlbumId;
+		if (data.album) {
+			targetAlbumId = data.album;
+		} else if (remoteGraphId.value) {
+			targetAlbumId = quickAddRoutesHere.value ? effectiveAlbumId() : null;
+		} else {
+			targetAlbumId = effectiveAlbumId();
+		}
 
 		// Generate summary and topic (Web-LLM locally, Claude Haiku in commercial
 		// mode, or already computed server-side for a file upload - the upload
@@ -707,10 +716,10 @@ export function setupMessageListener() {
 }
 
 export async function clearModelCache() {
-	const confirmed = confirm(
-		'Reset AI Model Cache?\n\n' +
+	const confirmed = await rocusConfirm(
 		'This will delete downloaded AI models (~300–700MB) and reload the app.\n\n' +
-		'Your bookmarks, topics, clusters, and albums will NOT be deleted.'
+		'Your bookmarks, topics, clusters, and albums will NOT be deleted.',
+		{ title: 'Reset AI Model Cache?', confirmText: 'Reset' }
 	);
 
 	if (!confirmed) return;
@@ -745,14 +754,15 @@ export async function clearModelCache() {
 			}
 		}
 
-		alert('✅ AI model cache cleared.\n\nReloading…');
+		await rocusAlert('AI model cache cleared.\n\nReloading…', { title: 'Done' });
 		location.reload();
 
 	} catch (err) {
 		console.error('Failed to clear AI cache:', err);
-		alert(
-			'⚠️ Could not fully reset AI cache automatically.\n\n' +
-			'Please clear site data for rocus.io in browser settings.'
+		rocusAlert(
+			'Could not fully reset AI cache automatically.\n\n' +
+			'Please clear site data for rocus.io in browser settings.',
+			{ title: 'Reset Failed' }
 		);
 	}
 }

@@ -16,7 +16,7 @@ import {
 	clearRemoteGraphState,
 	renderRemoteCursors,
 } from "./useGraphEngine";
-import { createAlbum, iconOptions } from "./useAlbums";
+import { createAlbum, iconOptions, albums } from "./useAlbums";
 import { generateId, currentIdentityKey } from "./utils";
 import { API_BASE } from "../../components/constants/config";
 import { openPremiumModal, signInUrl } from "./usePremium";
@@ -301,7 +301,7 @@ export async function shareCurrentGraph({ publicLinkEnabled = false, guestDownlo
 			method: "POST",
 			credentials: "include",
 			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ graphId, nodes, publicLinkEnabled, guestDownloadsEnabled }),
+			body: JSON.stringify({ graphId, nodes, publicLinkEnabled, guestDownloadsEnabled, title: albums.value[albumId]?.name || null }),
 		});
 
 		if (res.status === 401) {
@@ -460,6 +460,56 @@ export function closeSharePanel() {
 	isSharePanelOpen.value = false;
 }
 
+// ---------------------------------------------------------------------------
+// "Shared with me" / "Shared" dropdown sections. Powers navigation to
+// graphs OTHER people have shared with you, and an at-a-glance list of your
+// OWN albums that are currently actively shared. Fetched lazily (only when
+// the dropdown is actually opened, matching the existing toggleUploadsPanel
+// -> fetchUploadedFiles() pattern), not on every page load.
+// ---------------------------------------------------------------------------
+
+// { id, ownerName, ownerPictureUrl, permissionLevel, lastActivityAt }[] -
+// graphs owned by someone ELSE that this identity has joined as a
+// collaborator. Ready to render directly; there's no local data to
+// cross-reference since none of this lives in this browser's own IndexedDB.
+export const sharedWithMeGraphs = ref([]);
+
+// Set of graph ids the server confirms are still actively owned+shared by
+// this identity - used only to validate the local rocus-shared-graph-ids
+// cache below, never rendered directly.
+const activelyOwnedSharedGraphIds = ref(new Set());
+
+export async function fetchMySharedGraphs() {
+	try {
+		const res = await fetch(`${API_BASE}/api/shared`, { credentials: "include" });
+		if (!res.ok) return;
+		const data = await res.json();
+		sharedWithMeGraphs.value = data.memberOf || [];
+		activelyOwnedSharedGraphIds.value = new Set((data.owned || []).map((g) => g.id));
+	} catch (err) {
+		console.error("Failed to fetch my shared graphs:", err);
+	}
+}
+
+// { album, graphId }[] - this identity's OWN albums that are currently
+// actively shared. Built from the local rocus-shared-graph-ids map + the
+// already-loaded albums.value (names/icons only ever live locally - the
+// server has no "title" for a shared graph), filtered down to entries
+// activelyOwnedSharedGraphIds confirms are still genuinely live server-side,
+// so a stale local mapping (e.g. the graph since expired) never lingers
+// here misleadingly.
+export const myActivelySharedAlbums = computed(() => {
+	const map = readSharedGraphIds();
+	const result = [];
+	for (const [albumId, graphId] of Object.entries(map)) {
+		if (!activelyOwnedSharedGraphIds.value.has(graphId)) continue;
+		const album = albums.value[albumId];
+		if (!album) continue;
+		result.push({ album, graphId });
+	}
+	return result;
+});
+
 // Called by the frontend right after a non-user finishes signup/login via an
 // invite link (see router redirect flow) - resolves their now-known session
 // onto the pending invited_email row.
@@ -561,10 +611,21 @@ export function leaveSharedGraph() {
 // mergeRemoteNodesIntoLocalAlbum(). This is the fix for "a collaborator's
 // edit didn't show up on the owner's page": previously no socket was ever
 // opened for the owner's plain dashboard view at all.
+const RECONNECT_DELAY_MS = 3000;
+const MAX_RECONNECT_ATTEMPTS = 5;
+let reconnectTimer = null;
+let reconnectAttempts = 0;
+let intentionalDisconnect = false;
+
 function connectSharedGraphSocket(graphId, mode = "remote") {
 	disconnectSharedGraphSocket();
+	intentionalDisconnect = false;
 	socketMode = mode;
 	socket = new WebSocket(`${wsBaseUrl()}/ws/shared/${graphId}`);
+
+	socket.onopen = () => {
+		reconnectAttempts = 0; // a successful (re)connection resets the retry budget
+	};
 
 	socket.onmessage = (event) => {
 		let msg;
@@ -616,13 +677,34 @@ function connectSharedGraphSocket(graphId, mode = "remote") {
 		}
 	};
 
+	// Reconnect on an unexpected close - previously a dropped connection
+	// (tab backgrounded and browsers throttling/suspending WebSocket
+	// activity, a brief network blip) stayed dead until a full manual page
+	// reload, silently missing anything pushed in the meantime (the
+	// catch-up fetch above only runs once, on initial connect - it doesn't
+	// help a connection that dies mid-session). Capped at
+	// MAX_RECONNECT_ATTEMPTS so a genuinely dead end (the graph expired, or
+	// this identity was revoked - the server will just reject the socket
+	// again immediately) doesn't retry forever; a flat delay, not a full
+	// backoff scheme, since this is closing an obvious gap, not building
+	// general-purpose resilience infrastructure.
 	socket.onclose = () => {
 		socket = null;
+		if (intentionalDisconnect || reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) return;
+		reconnectAttempts++;
+		reconnectTimer = setTimeout(() => {
+			if (!intentionalDisconnect) connectSharedGraphSocket(graphId, mode);
+		}, RECONNECT_DELAY_MS);
 	};
 }
 
 function disconnectSharedGraphSocket() {
+	intentionalDisconnect = true;
+	clearTimeout(reconnectTimer);
+	reconnectTimer = null;
+	reconnectAttempts = 0;
 	if (socket) {
+		socket.onopen = null;
 		socket.onmessage = null;
 		socket.onclose = null;
 		socket.close();
@@ -686,7 +768,33 @@ function syncLocalOwnerSocketForAlbum(album) {
 	activeShareGraphId.value = graphId;
 	activeShareUrl.value = `${window.location.origin}/shared/${graphId}`;
 	refreshShareMembers();
+	catchUpSharedGraphNodes(graphId);
 	connectSharedGraphSocket(graphId, "local-owner");
+}
+
+// Pulls the graph's FULL current node list from the server and merges it in
+// - not just the delta a live broadcast would carry. Without this, the only
+// way anything ever reached the owner's local state was a live broadcast
+// landing at the exact moment their socket happened to be connected: a
+// network blip, the tab being backgrounded (browsers throttle/suspend
+// background WebSocket activity), a page load completing a beat after a
+// collaborator's push, or the collaborator pushing before the owner's own
+// connection finished its handshake, all silently and PERMANENTLY lost that
+// content - nothing anywhere ever re-fetched it, not on reconnect, not on
+// a full page reload (re-selecting the same album is a no-op per the early
+// return above). Reuses mergeRemoteNodesIntoLocalAlbum()'s own per-node
+// upsert logic - the GET /api/shared/:graphId response's nodes array is the
+// same {id, type, data} shape a WS broadcast carries, just the whole graph's
+// worth instead of one push's worth.
+async function catchUpSharedGraphNodes(graphId) {
+	try {
+		const res = await fetch(`${API_BASE}/api/shared/${graphId}`, { credentials: "include" });
+		if (!res.ok) return;
+		const payload = await res.json();
+		await mergeRemoteNodesIntoLocalAlbum(payload.nodes);
+	} catch (err) {
+		console.error("Failed to catch up on shared graph nodes:", err);
+	}
 }
 
 let localOwnerWatchStarted = false;
