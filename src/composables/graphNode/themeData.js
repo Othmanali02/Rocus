@@ -330,18 +330,18 @@ export const themes = [
 		name: 'SpongeBob SquarePants',
 		description: 'Who lives in a pineapple',
 		isDark: false,
-		preview: ['#FFEB3B', '#8B4513', '#FFFFFF', '#87CEEB'],
+		preview: ['#FFEB3B', '#00B8D4', '#FFFFFF', '#8B4513'],
 		colors: {
 			background: '#FFEB3B',
-			surface: '#8B4513',
+			surface: '#00B8D4',
 			primary: '#FFFFFF',
-			secondary: '#87CEEB',
+			secondary: '#0091EA',
 			accent: '#FF4444',
-			node: '#FFFFFF',
-			nodeStroke: '#8B4513',
-			text: '#FFFFFF',
-			textSecondary: '#FFF9C4',
-			border: '#8B4513'
+			node: '#8B4513',
+			nodeStroke: '#5D2E0C',
+			text: '#1A1A1A',
+			textSecondary: '#5D4037',
+			border: '#00B8D4'
 		}
 	},
 	{

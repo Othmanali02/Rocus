@@ -100,7 +100,7 @@
 								{{ currentAlbum ? currentAlbum.name : 'Shared Graph' }}
 							</div>
 						</div>
-						<button v-else @click.stop="toggleAlbumsDropdown"
+						<button v-else @click.stop="handleToggleAlbumsDropdown"
 							class="w-full flex items-center justify-between px-4 py-2.5 rounded-xl border transition-all duration-200 group"
 							:style="{
 								backgroundColor: currentTheme.colors.surface,
@@ -143,16 +143,21 @@
 								backgroundColor: currentTheme.colors.surface,
 								borderColor: currentTheme.colors.border
 							}">
-							<!-- Minimal Albums / History switch -->
+							<!-- Albums / Shared / History switch -->
 							<div class="px-3 pt-3 pb-1">
 								<div class="relative flex rounded-full p-0.5"
 									:style="{ backgroundColor: currentTheme.colors.background, border: `1px solid ${currentTheme.colors.border}` }">
-									<div class="absolute top-0.5 bottom-0.5 left-0.5 w-[calc(50%-2px)] rounded-full bg-[#4A90E2] transition-transform duration-200 ease-out"
-										:style="{ transform: dropdownMode === 'history' ? 'translateX(100%)' : 'translateX(0)' }"></div>
+									<div class="absolute top-0.5 bottom-0.5 left-0.5 w-[calc(33.333%-2px)] rounded-full bg-[#4A90E2] transition-transform duration-200 ease-out"
+										:style="{ transform: dropdownMode === 'shared' ? 'translateX(100%)' : dropdownMode === 'history' ? 'translateX(200%)' : 'translateX(0)' }"></div>
 									<button @click.stop="setDropdownMode('albums')"
 										class="relative z-10 flex-1 py-1.5 text-xs font-semibold rounded-full transition-colors duration-200"
 										:style="{ color: dropdownMode === 'albums' ? '#fff' : currentTheme.colors.textSecondary }">
 										Albums
+									</button>
+									<button @click.stop="setDropdownMode('shared')"
+										class="relative z-10 flex-1 py-1.5 text-xs font-semibold rounded-full transition-colors duration-200"
+										:style="{ color: dropdownMode === 'shared' ? '#fff' : currentTheme.colors.textSecondary }">
+										Shared
 									</button>
 									<button @click.stop="setDropdownMode('history')"
 										class="relative z-10 flex-1 py-1.5 text-xs font-semibold rounded-full transition-colors duration-200"
@@ -162,7 +167,7 @@
 								</div>
 							</div>
 
-							<button @click="selectAllClusters"
+							<button v-if="dropdownMode !== 'shared'" @click="selectAllClusters"
 								class="w-full flex items-center gap-3 px-4 py-3 transition-colors group"
 								:style="{ color: currentTheme.colors.text }" :class="{
 									'bg-[#4A90E2]/10': !currentAlbum && !currentHistoryDay,
@@ -185,7 +190,7 @@
 								</svg>
 							</button>
 
-							<div class="h-px mx-4" :style="{ backgroundColor: currentTheme.colors.border }"></div>
+							<div v-if="dropdownMode !== 'shared'" class="h-px mx-4" :style="{ backgroundColor: currentTheme.colors.border }"></div>
 
 							<template v-if="dropdownMode === 'albums'">
 								<div class="max-h-64 overflow-y-auto">
@@ -239,7 +244,7 @@
 								</button>
 							</template>
 
-							<template v-else>
+							<template v-else-if="dropdownMode === 'history'">
 								<div class="max-h-64 overflow-y-auto">
 									<button v-if="historyDays.length === 0"
 										class="w-full px-4 py-3 text-sm text-center cursor-default"
@@ -273,6 +278,79 @@
 									</button>
 								</div>
 							</template>
+
+							<!-- Shared tab: two stacked lists, not a content filter for the
+								 current view - see setDropdownMode()'s comment on why
+								 switching here never touches currentAlbum/currentHistoryDay. -->
+							<template v-else-if="dropdownMode === 'shared'">
+								<div v-if="myActivelySharedAlbums.length === 0 && sharedWithMeGraphs.length === 0"
+									class="w-full px-4 py-6 text-sm text-center cursor-default"
+									:style="{ color: currentTheme.colors.textSecondary }">
+									Nothing shared yet
+								</div>
+
+								<!-- "Shared (Owner)" - the current user's OWN albums that are
+									 actively shared. Behaves exactly like a normal album row
+									 (same selectAlbum() call) since this is the owner's own
+									 local data, just annotated. -->
+								<template v-if="myActivelySharedAlbums.length > 0">
+									<div class="px-4 pt-3 pb-1 text-xs font-semibold uppercase tracking-wide"
+										:style="{ color: currentTheme.colors.textSecondary }">
+										Shared (Owner)
+									</div>
+									<div class="max-h-40 overflow-y-auto">
+										<button v-for="entry in myActivelySharedAlbums" :key="entry.graphId" @click="selectAlbum(entry.album)"
+											class="w-full flex items-center gap-3 px-4 py-3 transition-colors" :class="{
+												'bg-[#4A90E2]/10': currentAlbum?.id === entry.album.id,
+											}">
+											<img :src="getIconUrl(entry.album.icon)" alt="Album icon" class="w-8 h-8 object-contain" />
+											<div class="flex-1 text-left">
+												<div class="text-sm font-medium" :style="{ color: currentTheme.colors.text }">
+													{{ entry.album.name }}
+												</div>
+											</div>
+											<span class="text-[10px] font-medium px-2 py-0.5 rounded-full"
+												:style="{ backgroundColor: withAlpha(currentTheme.colors.primary, 0.12), color: currentTheme.colors.primary }">
+												Shared
+											</span>
+										</button>
+									</div>
+								</template>
+
+								<!-- "Shared with Me" - graphs someone ELSE shared with you.
+									 This data lives on their account, not this browser's local
+									 library, so clicking navigates to the real /shared/:graphId
+									 page rather than filtering the current view in place. -->
+								<template v-if="sharedWithMeGraphs.length > 0">
+									<div v-if="myActivelySharedAlbums.length > 0" class="h-px mx-4 mt-1" :style="{ backgroundColor: currentTheme.colors.border }"></div>
+									<div class="px-4 pt-3 pb-1 text-xs font-semibold uppercase tracking-wide"
+										:style="{ color: currentTheme.colors.textSecondary }">
+										Shared with Me
+									</div>
+									<div class="max-h-40 overflow-y-auto">
+										<button v-for="graph in sharedWithMeGraphs" :key="graph.id" @click="openSharedWithMeGraph(graph.id)"
+											class="w-full flex items-center gap-3 px-4 py-3 transition-colors">
+											<div class="w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold overflow-hidden shrink-0"
+												:style="{ backgroundColor: currentTheme.colors.primary, color: '#fff' }">
+												<img v-if="graph.ownerPictureUrl" :src="graph.ownerPictureUrl" :alt="graph.ownerName || '?'" class="w-full h-full object-cover" />
+												<span v-else>{{ (graph.ownerName || '?').charAt(0).toUpperCase() }}</span>
+											</div>
+											<div class="flex-1 text-left min-w-0">
+												<div class="text-sm font-medium truncate" :style="{ color: currentTheme.colors.text }">
+													{{ graph.title || 'Shared graph' }}
+												</div>
+												<div class="text-xs truncate" :style="{ color: currentTheme.colors.textSecondary }">
+													Shared by {{ graph.ownerName || 'someone' }}
+												</div>
+											</div>
+										<span class="text-[10px] font-medium px-2 py-0.5 rounded-full"
+											:style="{ backgroundColor: currentTheme.colors.background, color: currentTheme.colors.textSecondary, border: `1px solid ${currentTheme.colors.border}` }">
+											{{ graph.permissionLevel === 'edit' ? 'Edit' : 'View' }}
+										</span>
+									</button>
+								</div>
+							</template>
+						</template>
 						</div>
 					</div>
 
@@ -595,8 +673,8 @@
 						}">
 						Cancel
 					</button>
-					<button @click="saveAlbum"
-						class="flex-1 px-6 py-3 bg-[#4A90E2] text-white rounded-xl font-medium hover:bg-[#357ABD] transition-all shadow-lg shadow-[#4A90E2]/30">
+					<button @click="saveAlbum" :disabled="!albumForm.name.trim()"
+						class="flex-1 px-6 py-3 bg-[#4A90E2] text-white rounded-xl font-medium hover:bg-[#357ABD] transition-all shadow-lg shadow-[#4A90E2]/30 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-[#4A90E2]">
 						{{ editingAlbum ? "Save" : "Create" }}
 					</button>
 				</div>
@@ -2327,6 +2405,7 @@
 
 	</div>
 	<PremiumUpsell />
+	<RocusDialog />
 
 	<!-- Shown when a /shared/:graphId load fails, instead of silently leaving
 		 the page looking like an empty, freshly-installed Rocus with no nodes
@@ -2400,6 +2479,8 @@ import {
 } from "vue";
 import { useAnalytics } from '../composables/useAnalytics';
 import PremiumUpsell from './PremiumUpsell.vue';
+import RocusDialog from './RocusDialog.vue';
+import { rocusAlert, rocusConfirm } from '../composables/useRocusDialog';
 
 import { formatDate, withAlpha } from '../composables/graphNode/utils';
 
@@ -2673,6 +2754,9 @@ import {
 	quickAddRoutesHere,
 	setQuickAddRouting,
 	showQuickAddRoutingPrompt,
+	sharedWithMeGraphs,
+	myActivelySharedAlbums,
+	fetchMySharedGraphs,
 } from '../composables/graphNode/useSharing';
 
 const { analyticsConsent, trackEvent } = useAnalytics();
@@ -2683,6 +2767,18 @@ const { analyticsConsent, trackEvent } = useAnalytics();
 const route = useRoute();
 const inviteEmailInput = ref('');
 const invitePermissionInput = ref('view');
+
+// Lazily loads the "Shared with me" / "Shared" dropdown sections only when
+// the dropdown is actually opened, matching the existing toggleUploadsPanel
+// -> fetchUploadedFiles() pattern rather than fetching on every page load.
+function handleToggleAlbumsDropdown() {
+	toggleAlbumsDropdown();
+	if (showAlbumsDropdown.value) fetchMySharedGraphs();
+}
+
+function openSharedWithMeGraph(graphId) {
+	window.location.href = `/shared/${graphId}`;
+}
 
 // Badge next to the logo: "is this graph shared, and with whom." Covers both
 // ways of currently looking at a shared graph - the owner's own /dashboard
@@ -2835,7 +2931,7 @@ const historyBadge = computed(() => computeDayBadge(currentHistoryDay.value));
 async function deleteSelectedWebsite() {
 	if (!selectedWebsite.value) return;
 	const label = selectedWebsite.value.is_note ? 'this note' : `"${selectedWebsite.value.title}"`;
-	if (!confirm(`Delete ${label}? This can't be undone.`)) return;
+	if (!(await rocusConfirm(`Delete ${label}? This can't be undone.`, { title: 'Delete', confirmText: 'Delete', danger: true }))) return;
 
 	await deleteWebsite(selectedWebsite.value.websiteId);
 	closeStickyNote();
@@ -2863,7 +2959,7 @@ function resetSettings() {
 }
 
 function handleProfileClick() {
-	alert("Profile functionality would be implemented here");
+	rocusAlert("Profile functionality would be implemented here");
 }
 
 // ==============================================

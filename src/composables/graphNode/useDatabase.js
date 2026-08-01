@@ -1,4 +1,5 @@
 import { ref } from "vue";
+import { rocusAlert, rocusConfirm } from "../useRocusDialog";
 
 // IndexedDB connection lifecycle + platform detection.
 // `db` is a plain (non-reactive) module-level binding, mirroring the original
@@ -68,21 +69,21 @@ export async function checkAndRepairDatabase() {
 	} catch (error) {
 		console.error('❌ IndexedDB corruption detected:', error);
 
-		const shouldReset = confirm(
-			'Database Error Detected\n\n' +
+		const shouldReset = await rocusConfirm(
 			'Your browser storage appears corrupted. This happens when:\n' +
 			'• Browser crashed during save\n' +
 			'• Multiple tabs competed for storage\n' +
 			'• Storage quota exceeded\n\n' +
-			'Click OK to reset and fix the issue.\n' +
-			'Click Cancel to try manual fixes first.'
+			'Click Reset to fix the issue.\n' +
+			'Click Cancel to try manual fixes first.',
+			{ title: 'Database Error Detected', confirmText: 'Reset', danger: true }
 		);
 
 		if (shouldReset) {
 			await resetDatabase();
 			location.reload();
 		} else {
-			alert(
+			rocusAlert(
 				'Manual Fix Instructions:\n\n' +
 				'Windows:\n' +
 				'1. Close ALL browser windows\n' +
@@ -93,7 +94,8 @@ export async function checkAndRepairDatabase() {
 				'2. Delete: ~/Library/Application Support/Google/Chrome/Default/IndexedDB\n' +
 				'3. Restart browser\n\n' +
 				'Or use Chrome DevTools:\n' +
-				'F12 → Application → Storage → Clear site data'
+				'F12 → Application → Storage → Clear site data',
+				{ title: 'Manual Fix Instructions' }
 			);
 		}
 
@@ -142,7 +144,7 @@ export async function resetDatabase() {
 
 	} catch (error) {
 		console.error('Reset failed:', error);
-		alert('Automatic reset failed. Please manually clear site data:\n\n' +
+		rocusAlert('Automatic reset failed. Please manually clear site data:\n\n' +
 			'Chrome DevTools (F12) → Application → Storage → Clear site data');
 	}
 }

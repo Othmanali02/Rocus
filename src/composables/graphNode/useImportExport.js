@@ -1,5 +1,6 @@
 import { ref } from "vue";
 import { useAnalytics } from "../useAnalytics";
+import { rocusAlert, rocusConfirm } from "../useRocusDialog";
 import { albums } from "./useAlbums";
 import { currentTheme, applyTheme, themes } from "./useThemes";
 import {
@@ -90,7 +91,7 @@ export async function exportAllData() {
 		trackEvent('data_exported');
 	} catch (error) {
 		console.error('❌ Error exporting data:', error);
-		alert('Failed to export data');
+		rocusAlert('Failed to export data');
 	}
 }
 
@@ -104,8 +105,9 @@ export async function handleImport(event) {
 	const file = event.target.files?.[0];
 	if (!file) return;
 
-	const confirmed = confirm(
-		'⚠️ Importing will replace ALL current data. Are you sure?\n\nMake sure you have a backup first!'
+	const confirmed = await rocusConfirm(
+		'Importing will replace ALL current data. Are you sure?\n\nMake sure you have a backup first!',
+		{ title: 'Import Data?', confirmText: 'Import', danger: true }
 	);
 
 	if (!confirmed) {
@@ -188,13 +190,13 @@ export async function handleImport(event) {
 		isLoading.value = false;
 		event.target.value = ''; // Reset input
 
-		alert('✅ Data imported successfully!');
+		rocusAlert('Data imported successfully!', { title: 'Import Complete' });
 		console.log('✅ Import complete');
 
 	} catch (error) {
 		isLoading.value = false;
 		console.error('❌ Error importing data:', error);
-		alert('Failed to import data: ' + error.message);
+		rocusAlert('Failed to import data: ' + error.message);
 		event.target.value = ''; // Reset input
 	}
 }

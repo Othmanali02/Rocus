@@ -2,6 +2,7 @@ import { ref, computed } from 'vue';
 import { store } from '../../router/store';
 import { API_BASE } from '../../components/constants/config';
 import { signInUrl, openPremiumModal } from './usePremium';
+import { rocusAlert } from '../useRocusDialog';
 import { websites, clusters, addProcessingPlaceholder, removeProcessingPlaceholder, remoteGraphId, effectiveAlbumId } from './useGraphEngine';
 import { processWebsite } from './useAIModels';
 
@@ -53,7 +54,7 @@ export function handleDrop(event) {
 
 async function uploadFile(file) {
 	if (!ACCEPTED_MIMETYPES.has(file.type)) {
-		alert(`Rocus doesn't support "${file.name}" yet - PDF and DOCX only for now.`);
+		rocusAlert(`Rocus doesn't support "${file.name}" yet - PDF and DOCX only for now.`);
 		return;
 	}
 
@@ -91,7 +92,7 @@ async function uploadFile(file) {
 
 		if (!response.ok || !body.success) {
 			console.error('Upload failed:', body);
-			alert(`Failed to process "${file.name}". Please try again.`);
+			rocusAlert(`Failed to process "${file.name}". Please try again.`);
 			return;
 		}
 
@@ -111,7 +112,7 @@ async function uploadFile(file) {
 		});
 	} catch (err) {
 		console.error('Upload error:', err);
-		alert(`Failed to process "${file.name}". Please try again.`);
+		rocusAlert(`Failed to process "${file.name}". Please try again.`);
 	}
 }
 

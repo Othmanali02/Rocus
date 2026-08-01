@@ -2,6 +2,7 @@ import { ref, reactive } from "vue";
 import { db } from "./useDatabase";
 import { generateId } from "./utils";
 import { useAnalytics } from "../useAnalytics";
+import { rocusAlert, rocusConfirm } from "../useRocusDialog";
 import {
 	currentAlbum,
 	simulation,
@@ -231,26 +232,39 @@ export async function saveAlbum() {
 		};
 
 		if (editingAlbum.value) {
-			await updateAlbum(editingAlbum.value.id, albumData);
+			const { album } = await updateAlbum(editingAlbum.value.id, albumData);
+			// Without this, editing the album you're CURRENTLY viewing left
+			// currentAlbum.value pointing at the stale pre-edit object -
+			// fetchAlbums() refreshes the dropdown's own list, but nothing ever
+			// told the header/current-selection ref about the change, so an
+			// icon/name edit silently didn't show up until something else
+			// happened to reassign currentAlbum.value (e.g. reselecting it).
+			if (currentAlbum.value?.id === editingAlbum.value.id) {
+				currentAlbum.value = album;
+			}
 		} else {
-			await createAlbum(albumData);
+			const { album } = await createAlbum(albumData);
+			// Navigate straight into the album you just created, matching how
+			// selecting any existing album already works - previously this just
+			// closed the modal and left you on whatever was selected before.
+			selectAlbum(album);
 		}
 
 		closeAlbumModal();
 	} catch (error) {
 		console.error("Error saving album:", error);
-		alert("Failed to save album. Please try again.");
+		rocusAlert("Failed to save album. Please try again.");
 	}
 }
 
 export async function deleteAlbum(album) {
-	if (!confirm(`Are you sure you want to delete "${album.name}"?`)) return;
+	if (!(await rocusConfirm(`Are you sure you want to delete "${album.name}"?`, { title: 'Delete Album', confirmText: 'Delete', danger: true }))) return;
 
 	try {
 		await deleteAlbumById(album.id);
 	} catch (error) {
 		console.error("Error deleting album:", error);
-		alert("Failed to delete album. Please try again.");
+		rocusAlert("Failed to delete album. Please try again.");
 	}
 }
 
