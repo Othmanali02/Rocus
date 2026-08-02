@@ -3,7 +3,7 @@ import { store } from '../../router/store';
 import { API_BASE } from '../../components/constants/config';
 import { signInUrl, openPremiumModal } from './usePremium';
 import { rocusAlert } from '../useRocusDialog';
-import { websites, clusters, addProcessingPlaceholder, removeProcessingPlaceholder, remoteGraphId, effectiveAlbumId } from './useGraphEngine';
+import { websites, clusters, addProcessingPlaceholder, removeProcessingPlaceholder, remoteGraphId, activeShareGraphId, effectiveAlbumId, isReadOnlySharedView } from './useGraphEngine';
 import { processWebsite } from './useAIModels';
 
 // Drag-and-drop file upload onto the graph canvas. Signed-in only, full
@@ -20,12 +20,18 @@ const ACCEPTED_MIMETYPES = new Set([
 ]);
 
 export function handleDragEnter(event) {
+	// A view-only guest/collaborator has no permission to add content - same
+	// guard as every other add-content entry point (see handleGraphRightClick
+	// in useNotes.js), applied here too so the drop UI is never offered in
+	// the first place rather than failing only once they actually drop.
+	if (isReadOnlySharedView.value) return;
 	if (!event.dataTransfer?.types?.includes('Files')) return;
 	dragCounter++;
 	showDropOverlay.value = true;
 }
 
 export function handleDragOver(event) {
+	if (isReadOnlySharedView.value) return;
 	if (!event.dataTransfer?.types?.includes('Files')) return;
 	event.preventDefault();
 }
@@ -38,6 +44,8 @@ export function handleDragLeave() {
 export function handleDrop(event) {
 	dragCounter = 0;
 	showDropOverlay.value = false;
+
+	if (isReadOnlySharedView.value) return;
 
 	const files = Array.from(event.dataTransfer?.files || []);
 	if (files.length === 0) return;
@@ -52,7 +60,23 @@ export function handleDrop(event) {
 	}
 }
 
-async function uploadFile(file) {
+// File picker triggered from the right-click "Add" menu's "File" entry - same
+// destination (uploadFile) as a drag-and-drop, just a different entry point.
+export const addFileInput = ref(null);
+
+export function triggerAddFilePicker() {
+	addFileInput.value?.click();
+}
+
+export function handleAddFileSelected(event) {
+	const files = Array.from(event.target.files || []);
+	event.target.value = '';
+	for (const file of files) {
+		uploadFile(file);
+	}
+}
+
+export async function uploadFile(file) {
 	if (!ACCEPTED_MIMETYPES.has(file.type)) {
 		rocusAlert(`Rocus doesn't support "${file.name}" yet - PDF and DOCX only for now.`);
 		return;
@@ -177,15 +201,20 @@ export function toggleUploadsPanel() {
 // user uploaded is never a dead end - they can always pull it back down.
 //
 // Shared-view-aware: /api/uploads/:fileId/download is the owner's OWN
-// personal "My Files" route (requireSession + owner_key-only) - it 404s/
-// 401s for anyone else. A guest or invited collaborator viewing a shared
-// graph needs the separate, shared-graph-scoped route instead. Previously
-// this function always hit the personal route regardless of context, so
-// downloading a file from the shared view never actually worked for anyone
-// but the graph's own owner.
+// personal "My Files" route (requireSession + owner_key-only on
+// uploaded_files) - it 404s for any file the requester didn't personally
+// upload themselves, including the graph owner viewing a file a
+// COLLABORATOR uploaded into their own shared album. remoteGraphId alone
+// only covers a collaborator/guest visiting /shared/:graphId - it's never
+// set for the owner browsing that same album from their own /dashboard, so
+// also check activeShareGraphId (same combined check useSharing.js's own
+// nodes/members/public-link calls already use) to route the owner's own
+// shared-album downloads through the shared-graph-scoped route too, which
+// authorizes by graph role rather than by who happened to upload the file.
 export function downloadFile(fileId) {
-	const url = remoteGraphId.value
-		? `${API_BASE}/api/shared/${remoteGraphId.value}/uploads/${fileId}/download`
+	const graphId = remoteGraphId.value || activeShareGraphId.value;
+	const url = graphId
+		? `${API_BASE}/api/shared/${graphId}/uploads/${fileId}/download`
 		: `${API_BASE}/api/uploads/${fileId}/download`;
 	window.open(url, '_blank');
 }

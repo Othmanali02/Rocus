@@ -9,6 +9,7 @@ import {
 	graphData,
 	loadData,
 	renderGraph,
+	resetView,
 } from "./useGraphEngine";
 
 // Album CRUD + the album switcher dropdown. Albums live in their own
@@ -201,6 +202,12 @@ export function selectAlbum(album) {
 			simulation.force("link").links(graphData.links);
 			simulation.alpha(1).restart();
 			renderGraph();
+			// Same delay initializeGraph() uses before its own centerView() call -
+			// calling it immediately fits the view to the simulation's transient
+			// fresh-circle starting layout (alpha just got reset to 1 above), not
+			// the settled clustered layout, which is what caused the view to pan
+			// way out. Give the simulation a beat to actually settle first.
+			setTimeout(() => resetView(), 1000);
 		}
 	});
 }

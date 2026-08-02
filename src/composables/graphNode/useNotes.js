@@ -18,6 +18,13 @@ export const noteForm = reactive({ text: '' });
 export const showAddNotePrompt = ref(false);
 export const addNotePromptStyle = ref({});
 
+// The "Note"/"File" dropdown opened by left-clicking the "+" - separate from
+// showAddNotePrompt (which only ever controls the round "+" button itself),
+// positioned at wherever that left-click actually landed on the button
+// rather than reusing the original right-click coordinates.
+export const showAddTypeMenu = ref(false);
+export const addTypeMenuStyle = ref({});
+
 // Live "suggested clusters" - read-only preview of where Create would send
 // this note, computed from the exact same rankCandidateClusters() the real
 // save uses, so the preview can never promise something the save doesn't
@@ -70,10 +77,24 @@ export function handleGraphRightClick(event) {
 	if (isReadOnlySharedView.value) return;
 	addNotePromptStyle.value = { left: event.pageX + 'px', top: event.pageY + 'px' };
 	showAddNotePrompt.value = true;
+	showAddTypeMenu.value = false;
 }
 
 export function dismissAddNotePrompt() {
 	showAddNotePrompt.value = false;
+	showAddTypeMenu.value = false;
+}
+
+// Left-click on the "+" - opens the Note/File dropdown right where the click
+// landed, and hides the "+" itself while the dropdown is open.
+export function openAddTypeMenu(event) {
+	addTypeMenuStyle.value = { left: event.pageX + 'px', top: event.pageY + 'px' };
+	showAddTypeMenu.value = true;
+	showAddNotePrompt.value = false;
+}
+
+export function closeAddTypeMenu() {
+	showAddTypeMenu.value = false;
 }
 
 export function confirmAddNoteFromPrompt() {
@@ -110,6 +131,7 @@ export function openNoteCreator() {
 	selectedSuggestionClusterId.value = null;
 	showNoteModal.value = true;
 	showAddNotePrompt.value = false;
+	showAddTypeMenu.value = false;
 }
 
 export function openNoteEditor(note) {

@@ -5,7 +5,7 @@ import { currentTheme } from "./useThemes";
 import { searchTerm } from "./useSearch";
 import { handleDiscoverClick } from "./useDiscover";
 import { fetchAlbums, showAlbumsDropdown } from "./useAlbums";
-import { showAddNotePrompt } from "./useNotes";
+import { showAddNotePrompt, showAddTypeMenu } from "./useNotes";
 import { useAnalytics } from "../useAnalytics";
 import {
 	generateId,
@@ -59,6 +59,21 @@ const FILE_ICON_PATH =
 	"M 1.5 -5 L 1.5 -2.5 L 4 -2.5 Z " + // folded corner
 	"M -2 0.5 H 2 " + // text line 1
 	"M -2 3 H 2"; // text line 2
+
+// "Who added this" attribution badge color - a deterministic hash of the raw
+// added_by identity-key string into an HSL hue (fixed saturation/lightness,
+// only the hue varies), so the same person always gets the same color on
+// every viewer's screen with no server round-trip or cross-client sync
+// needed (it's a pure function of the string itself). A hue rotation over
+// 360 degrees collides far less often between two arbitrary identity
+// strings than a small fixed palette would (an earlier version using an
+// 8-color palette put two real test identities on the exact same color).
+function colorForIdentity(identityKey) {
+	let hash = 0;
+	for (let i = 0; i < identityKey.length; i++) hash = (hash * 31 + identityKey.charCodeAt(i)) | 0;
+	const hue = Math.abs(hash) % 360;
+	return `hsl(${hue}, 65%, 55%)`;
+}
 
 // ---- Core reactive data -----------------------------------------------
 export const clusters = ref({});
@@ -208,7 +223,8 @@ export async function fetchClusters() {
 								is_file: !!website.is_file,
 								file_id: website.file_id || null,
 								is_note: !!website.is_note,
-								note_text: website.note_text || null
+								note_text: website.note_text || null,
+								added_by: website.added_by || null
 							}));
 
 						return {
@@ -867,6 +883,16 @@ export const remoteGraphId = ref(null);
 export const remoteGraphRole = ref(null); // 'owner' | 'edit' | 'view' | 'guest' | null
 export const remoteGraphFrozen = ref(false);
 
+// The owner's own /dashboard equivalent of remoteGraphId: set (by
+// useSharing.js) whenever the currently-selected local album is actively
+// shared, null otherwise. Declared here rather than in useSharing.js - which
+// owns every read/write of it - specifically so this file's own rendering
+// code (renderGraph()) can read it directly without a static import back to
+// useSharing.js, which would recreate the circular-eval-order crash this
+// project has hit before (useSharing.js already imports heavily from this
+// file; the reverse direction is never safe at module-eval time).
+export const activeShareGraphId = ref(null);
+
 // Single source of truth for "this viewer should not be able to change
 // anything" - a view-only collaborator or an anonymous guest on a shared
 // graph. Local/single-player use (remoteGraphId null) and owner/edit
@@ -919,6 +945,7 @@ function clusterRecordToClusterData(cluster) {
 			file_id: website.file_id || null,
 			is_note: !!website.is_note,
 			note_text: website.note_text || null,
+			added_by: website.added_by || null,
 		}));
 
 	return {
@@ -1133,6 +1160,43 @@ export async function refreshRemoteGraph(API_BASE) {
 	}
 }
 
+// Re-renders from whatever's already in clusters.value/websites.value (no
+// network fetch), honoring currentAlbum/currentHistoryDay - the in-memory
+// equivalent of fetchClusters()'s own IndexedDB query+filter, for a shared
+// graph's data. loadSharedGraphData() deliberately never persists a shared
+// graph to IndexedDB (see its own comment above), so selectHistoryDay()
+// calling the ordinary loadData() there queried THIS BROWSER's own local
+// IndexedDB store instead - correctly empty/irrelevant on a fresh session,
+// which is exactly why the History tab's day badges (built from this same
+// in-memory data) showed real counts but clicking one produced nothing.
+export async function refreshRemoteGraphView() {
+	if (!remoteGraphId.value) return;
+	selectedWebsite.value = null;
+	explodedNode.value = null;
+
+	const activeAlbumId = currentAlbum.value?.id ?? null;
+	const activeDayKey = currentHistoryDay.value;
+	const clustersData = Object.values(clusters.value)
+		.filter((c) => {
+			if (activeAlbumId !== null && c.album_id !== activeAlbumId) return false;
+			if (activeDayKey !== null && getClusterDayKey(c) !== activeDayKey) return false;
+			return true;
+		})
+		.map(clusterRecordToClusterData);
+
+	rawClusters = clustersData;
+	const similarities = await fetchSimilarities();
+	rawSimilarities = similarities;
+	graphData = processApiData(clustersData, similarities);
+
+	if (simulation) {
+		simulation.nodes(graphData.nodes);
+		simulation.force("link").links(graphData.links);
+		simulation.alpha(1).restart();
+		renderGraph();
+	}
+}
+
 export function addProcessingPlaceholder(data) {
 	if (!graphData || !simulation) return { id: null };
 	const nodeId = `processing-${generateId()}`;
@@ -1216,6 +1280,7 @@ export function performExplosion(clusterNode) {
 			file_id: website.file_id || null,
 			is_note: !!website.is_note,
 			note_text: website.note_text || null,
+			added_by: website.added_by || null,
 			size: 10,
 			baseSize: 10,
 			type: "website",
@@ -1506,6 +1571,15 @@ export function renderGraph() {
 	// top of the exact same circle every other node gets. The circle's own
 	// r/fill/stroke logic is unchanged; only the wrapper changed, so "same
 	// size and same color" for file nodes falls out for free.
+	// Attribution badges only matter once there's more than one possible
+	// contributor - a plain local album's added_by is always just the
+	// viewer themself, so the badge would be pure clutter there. Covers both
+	// a collaborator/guest on /shared/:graphId (remoteGraphId) and the
+	// owner's own /dashboard with an actively-shared album selected
+	// (activeShareGraphId) - both refs are declared in this same file
+	// specifically so code here can read them directly with no import.
+	const isSharedContext = !!(remoteGraphId.value || activeShareGraphId.value);
+
 	const nodes = nodeGroup
 		.selectAll(".node")
 		.data(graphData.nodes, (d) => d.id)
@@ -1523,6 +1597,19 @@ export function renderGraph() {
 					.attr("class", "node-note-icon")
 					.attr("d", NOTE_ICON_PATH)
 					.attr("pointer-events", "none");
+				// "Who added this" - a persistent satellite dot, opposite corner
+				// from .node-cursor-badge (renderRemoteCursors()) so the two never
+				// collide: this one is static per-node data, that one is a live,
+				// ephemeral presence ping.
+				if (isSharedContext) {
+					g.filter((d) => d.type === "website" && d.added_by)
+						.append("circle")
+						.attr("class", "node-attribution-badge")
+						.attr("r", 5)
+						.attr("stroke", "#fff")
+						.attr("stroke-width", 1.5)
+						.attr("pointer-events", "none");
+				}
 				return g;
 			},
 			(update) => update,
@@ -1564,6 +1651,12 @@ export function renderGraph() {
 		.attr("stroke", currentTheme.value.colors.nodeStroke)
 		.attr("stroke-width", 0.8)
 		.attr("stroke-linejoin", "round");
+
+	nodes
+		.select(".node-attribution-badge")
+		.attr("cy", (d) => d.size * settings.nodeSize + 8)
+		.attr("cx", (d) => -(d.size * settings.nodeSize + 8))
+		.attr("fill", (d) => colorForIdentity(d.added_by));
 
 	const labels = labelGroup
 		.selectAll(".node-label")
@@ -1660,6 +1753,18 @@ export function handleNodeMouseOver(event, d) {
 		tooltipContent = `<strong>Processing…</strong><br>${d.title}`;
 	}
 
+	// "Added by X" - appended asynchronously once resolved (same dynamic-
+	// import pattern as sendCursorUpdate below, to avoid the circular-import
+	// hazard this project has hit before). Skipped for older content with no
+	// added_by, and resolves to nothing for a guest viewer (never reveals
+	// identities to guests - see resolveAddedByName()'s own comment).
+	if (d.type === "website" && d.added_by) {
+		import("./useSharing").then(({ resolveAddedByName }) => {
+			const name = resolveAddedByName(d.added_by);
+			if (name) tooltipEl.html(tooltipEl.html() + `<br>Added by ${name}`);
+		});
+	}
+
 	tooltipEl
 		.html(tooltipContent)
 		.style("left", event.pageX + 15 + "px")
@@ -1686,11 +1791,18 @@ export function handleNodeMouseOut() {
 		.duration(200 / settings.animationSpeed)
 		.style("opacity", 0);
 	clearHighlights();
+
+	// Clears this viewer's presence dot on every other collaborator's
+	// screen - previously nothing ever did, so a dot stuck around on
+	// whatever node was last hovered until someone happened to hover a
+	// different one. Same dynamic-import pattern as handleNodeMouseOver.
+	import("./useSharing").then(({ sendCursorUpdate }) => sendCursorUpdate(null));
 }
 
 export async function handleNodeClick(event, d) {
 	event.stopPropagation();
 	showAddNotePrompt.value = false;
+	showAddTypeMenu.value = false;
 
 	if (d.type === 'processing') return;
 
@@ -1747,6 +1859,7 @@ export function handleBackgroundClick() {
 	showAlbumsDropdown.value = false;
 	closeContextMenu();
 	showWebsiteContextMenu.value = false;
+	showAddTypeMenu.value = false;
 }
 
 export function closeStickyNote() {
