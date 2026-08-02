@@ -1,10 +1,36 @@
 <script setup>
+import { computed } from 'vue';
 import { useRouter } from 'vue-router';
 import { currentTheme } from '../composables/graphNode/useThemes';
-import { isPremium, showPremiumModal, openPremiumModal, closePremiumModal } from '../composables/graphNode/usePremium';
+import { isPremium, showPremiumModal, premiumModalReason, openPremiumModal, closePremiumModal } from '../composables/graphNode/usePremium';
 import { setProcessingMode } from '../composables/graphNode/useAIModels';
 
 const router = useRouter();
+
+// "Use the free and local mode" and the AI-processing footer note only make
+// sense for the default (Cloud AI Processing) trigger - a sharing-limit
+// trigger has nothing to do with the local model, so both are hidden then.
+const copy = computed(() => {
+	if (premiumModalReason.value === 'share_seat_cap') {
+		return {
+			body: "Upgrade to Rocus Premium to invite more people to your workspace - free accounts can invite 1 collaborator per shared graph.",
+			showStayLocal: false,
+			footerNote: null,
+		};
+	}
+	if (premiumModalReason.value === 'share_graph_cap') {
+		return {
+			body: "Upgrade to Rocus Premium to share more graphs - free accounts can share up to 3 graphs at a time.",
+			showStayLocal: false,
+			footerNote: null,
+		};
+	}
+	return {
+		body: "Unlock Cloud AI Processing - Rocus summarizes and organizes every page using Claude instead of the local model, for faster and richer results.",
+		showStayLocal: true,
+		footerNote: "Rocus itself stays free and open - Premium just unlocks Cloud AI Processing.",
+	};
+});
 
 function handleStayLocal() {
 	setProcessingMode('local');
@@ -41,8 +67,7 @@ function goToPricing() {
 			</div>
 
 			<p class="mb-6" :style="{ color: currentTheme.colors.textSecondary }">
-				Unlock Cloud AI Processing - Rocus summarizes and organizes every page using Claude instead of the
-				local model, for faster and richer results.
+				{{ copy.body }}
 			</p>
 
 			<button @click="goToPricing"
@@ -52,14 +77,15 @@ function goToPricing() {
 			</button>
 
 			<button
+				v-if="copy.showStayLocal"
 				@click="handleStayLocal"
 				class="w-full mt-3 flex items-center justify-center gap-2 px-5 py-3 rounded-lg font-semibold transition-all border"
 				:style="{ color: currentTheme.colors.text, borderColor: currentTheme.colors.border }">
 				Use the free and local mode
 			</button>
 
-			<p class="text-xs mt-4 text-center" :style="{ color: currentTheme.colors.textSecondary }">
-				Rocus itself stays free and open - Premium just unlocks Cloud AI Processing.
+			<p v-if="copy.footerNote" class="text-xs mt-4 text-center" :style="{ color: currentTheme.colors.textSecondary }">
+				{{ copy.footerNote }}
 			</p>
 		</div>
 	</div>

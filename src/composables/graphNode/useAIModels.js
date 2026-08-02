@@ -17,6 +17,7 @@ import {
 	clusters,
 	effectiveAlbumId,
 	remoteGraphId,
+	activeShareGraphId,
 } from "./useGraphEngine";
 import { addSimilarLinksToCluster } from "./useDiscover";
 import { generateId, wrapEmbedding, EMBEDDING_MODEL_ID, cleanAiLabel, toTitleCase, currentIdentityKey } from "./utils";
@@ -442,7 +443,12 @@ export async function processWebsite(data) {
 		let targetAlbumId;
 		if (data.album) {
 			targetAlbumId = data.album;
-		} else if (remoteGraphId.value) {
+		} else if (remoteGraphId.value || activeShareGraphId.value) {
+			// Covers both a collaborator/guest on /shared/:graphId (remoteGraphId)
+			// and the owner on their own /dashboard with an actively-shared
+			// album selected (activeShareGraphId) - quickAddRoutesHere already
+			// defaults correctly for each (route for the owner's own graph,
+			// opt-in only for someone else's), so both cases can share one path.
 			targetAlbumId = quickAddRoutesHere.value ? effectiveAlbumId() : null;
 		} else {
 			targetAlbumId = effectiveAlbumId();

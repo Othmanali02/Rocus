@@ -4,8 +4,13 @@ import { API_BASE } from '../../components/constants/config';
 
 export const isPremium = computed(() => !!store.user?.premium);
 export const showPremiumModal = ref(false);
+// null (default) = the original Cloud AI Processing upsell. Other values
+// pick a different, contextual message in PremiumUpsell.vue for a trigger
+// that has nothing to do with AI processing (e.g. a sharing limit).
+export const premiumModalReason = ref(null);
 
-export function openPremiumModal() {
+export function openPremiumModal(reason = null) {
+	premiumModalReason.value = reason;
 	showPremiumModal.value = true;
 }
 

@@ -43,7 +43,8 @@
 								<div v-for="(avatar, i) in sharedAvatars.slice(0, 3)" :key="avatar.label"
 									class="w-7 h-7 rounded-full border-2 flex items-center justify-center text-xs font-semibold overflow-hidden"
 									:style="{ borderColor: currentTheme.colors.background, backgroundColor: currentTheme.colors.primary, color: '#fff', marginLeft: '-6px', zIndex: 3 - i }">
-									<img v-if="avatar.pictureUrl" :src="avatar.pictureUrl" :alt="avatar.label" class="w-full h-full object-cover" />
+									<img v-if="avatar.pictureUrl && !failedAvatarUrls.has(avatar.pictureUrl)" :src="avatar.pictureUrl"
+										:alt="avatar.label" class="w-full h-full object-cover" @error="markAvatarFailed(avatar.pictureUrl)" />
 									<span v-else>{{ avatar.label.charAt(0).toUpperCase() }}</span>
 								</div>
 								<div v-if="sharedAvatars.length > 3"
@@ -58,7 +59,7 @@
 							</svg>
 						</button>
 
-						<div v-if="isSharePanelOpen && remoteGraphRole !== 'owner'" @click.stop
+						<div v-if="isSharePanelOpen && remoteGraphId && remoteGraphRole !== 'owner'" @click.stop
 							class="absolute top-full left-0 mt-2 w-80 rounded-2xl shadow-2xl border overflow-hidden z-50 animate-fadeIn"
 							:style="{ backgroundColor: currentTheme.colors.surface, borderColor: currentTheme.colors.border }">
 							<div class="px-4 py-3 border-b flex items-center justify-between" :style="{ borderColor: currentTheme.colors.border }">
@@ -69,7 +70,8 @@
 								<div v-for="avatar in sharedAvatars" :key="avatar.label" class="flex items-center gap-2">
 									<div class="w-6 h-6 rounded-full flex items-center justify-center font-semibold overflow-hidden"
 										:style="{ backgroundColor: currentTheme.colors.primary, color: '#fff' }">
-										<img v-if="avatar.pictureUrl" :src="avatar.pictureUrl" :alt="avatar.label" class="w-full h-full object-cover" />
+										<img v-if="avatar.pictureUrl && !failedAvatarUrls.has(avatar.pictureUrl)" :src="avatar.pictureUrl"
+											:alt="avatar.label" class="w-full h-full object-cover" @error="markAvatarFailed(avatar.pictureUrl)" />
 										<span v-else>{{ avatar.label.charAt(0).toUpperCase() }}</span>
 									</div>
 									<span :style="{ color: currentTheme.colors.text }">{{ avatar.label }}</span>
@@ -332,7 +334,8 @@
 											class="w-full flex items-center gap-3 px-4 py-3 transition-colors">
 											<div class="w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold overflow-hidden shrink-0"
 												:style="{ backgroundColor: currentTheme.colors.primary, color: '#fff' }">
-												<img v-if="graph.ownerPictureUrl" :src="graph.ownerPictureUrl" :alt="graph.ownerName || '?'" class="w-full h-full object-cover" />
+												<img v-if="graph.ownerPictureUrl && !failedAvatarUrls.has(graph.ownerPictureUrl)" :src="graph.ownerPictureUrl"
+													:alt="graph.ownerName || '?'" class="w-full h-full object-cover" @error="markAvatarFailed(graph.ownerPictureUrl)" />
 												<span v-else>{{ (graph.ownerName || '?').charAt(0).toUpperCase() }}</span>
 											</div>
 											<div class="flex-1 text-left min-w-0">
@@ -494,6 +497,18 @@
 							<div class="p-4 space-y-4 max-h-96 overflow-y-auto">
 								<div v-if="shareBusy" class="text-sm" :style="{ color: currentTheme.colors.textSecondary }">Sharing…</div>
 								<div v-if="shareError" class="text-sm text-red-500">{{ shareError }}</div>
+
+								<!-- Available whenever there's an actively-shared graph to route
+									 into, whether that's this /dashboard's currently-selected
+									 album (activeShareGraphId) or a reopened share link
+									 (remoteGraphId) - placed outside the activeShareUrl block
+									 below since that's only ever populated by shareCurrentGraph()
+									 in this same session, not by reopening an existing link. -->
+								<label v-if="remoteGraphId || activeShareGraphId"
+									class="flex items-center gap-2 text-xs" :style="{ color: currentTheme.colors.textSecondary }">
+									<input type="checkbox" :checked="quickAddRoutesHere" @change="setQuickAddRouting($event.target.checked)" />
+									Route new quick-adds into this shared graph
+								</label>
 
 								<div v-if="activeShareUrl">
 									<div class="flex items-center gap-2">
@@ -1090,7 +1105,7 @@
 		<!-- "+" prompt after a right click on empty canvas (triple left-click opens the note creator directly) -->
 		<div v-if="showAddNotePrompt" class="fixed z-[1400] animate-fadeIn"
 			:style="{ ...addNotePromptStyle, transform: 'translate(-50%, -50%)' }">
-			<button @click.stop="confirmAddNoteFromPrompt" title="Add a note here"
+			<button @click.stop="openAddTypeMenu" title="Add a note or file"
 				class="w-9 h-9 rounded-full flex items-center justify-center shadow-lg transition-transform hover:scale-110"
 				:style="{ backgroundColor: currentTheme.colors.primary }">
 				<svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1098,6 +1113,34 @@
 				</svg>
 			</button>
 		</div>
+
+		<!-- "Note"/"File" menu opened by left-clicking the "+" above -->
+		<div v-if="showAddTypeMenu" @click.stop
+			class="fixed z-[2500] rounded-xl shadow-2xl border overflow-hidden min-w-[160px] animate-scaleIn" :style="{
+				...addTypeMenuStyle,
+				backgroundColor: currentTheme.colors.surface,
+				borderColor: currentTheme.colors.border
+			}">
+			<button @click="confirmAddNoteFromPrompt" class="w-full flex items-center gap-3 px-4 py-3 transition-colors"
+				:style="{ color: currentTheme.colors.text }">
+				<svg class="w-4 h-4" viewBox="-5 -6 10 12" fill="none" stroke="currentColor" stroke-width="0.7">
+					<path stroke-linecap="round" stroke-linejoin="round"
+						d="M -4 -4 L 4 -4 L 4 2.5 L 1.5 5 L -4 5 Z M 1.5 2.5 L 1.5 5 L 4 2.5 Z M -2 -1.5 H 2 M -2 1 H 1" />
+				</svg>
+				<span class="text-sm font-medium">Note</span>
+			</button>
+			<button @click="triggerAddFilePicker(); closeAddTypeMenu()"
+				class="w-full flex items-center gap-3 px-4 py-3 transition-colors"
+				:style="{ color: currentTheme.colors.text }">
+				<svg class="w-4 h-4" viewBox="-5 -6 10 12" fill="none" stroke="currentColor" stroke-width="0.7">
+					<path stroke-linecap="round" stroke-linejoin="round"
+						d="M -4 -5 L 1.5 -5 L 4 -2.5 L 4 5 L -4 5 Z M 1.5 -5 L 1.5 -2.5 L 4 -2.5 Z M -2 0.5 H 2 M -2 3 H 2" />
+				</svg>
+				<span class="text-sm font-medium">File</span>
+			</button>
+		</div>
+		<input ref="addFileInput" type="file" accept=".pdf,.docx" multiple style="display: none"
+			@change="handleAddFileSelected" />
 
 		<!-- Create/edit note modal -->
 		<div v-if="showNoteModal" @click="closeNoteModal"
@@ -2693,6 +2736,10 @@ import {
 	noteForm,
 	showAddNotePrompt,
 	addNotePromptStyle,
+	showAddTypeMenu,
+	addTypeMenuStyle,
+	openAddTypeMenu,
+	closeAddTypeMenu,
 	handleGraphLeftClick,
 	handleGraphRightClick,
 	confirmAddNoteFromPrompt,
@@ -2716,15 +2763,17 @@ import {
 	uploadedFilesWithTopics,
 	filesByTopic,
 	downloadFile,
+	addFileInput,
+	triggerAddFilePicker,
+	handleAddFileSelected,
 } from '../composables/graphNode/useFileUpload';
 
 import { useRoute } from 'vue-router';
 import { store } from '../router/store';
-import { remoteGraphId, remoteGraphRole, remoteGraphFrozen } from '../composables/graphNode/useGraphEngine';
+import { remoteGraphId, remoteGraphRole, remoteGraphFrozen, activeShareGraphId } from '../composables/graphNode/useGraphEngine';
 import {
 	isSharePanelOpen,
 	activeShareUrl,
-	activeShareGraphId,
 	shareMembers,
 	shareOwnerName,
 	shareOwnerPictureUrl,
@@ -2757,6 +2806,7 @@ import {
 	sharedWithMeGraphs,
 	myActivelySharedAlbums,
 	fetchMySharedGraphs,
+	activelyOwnedSharedGraphIds,
 } from '../composables/graphNode/useSharing';
 
 const { analyticsConsent, trackEvent } = useAnalytics();
@@ -2798,6 +2848,16 @@ const isCurrentGraphShared = computed(() => !!remoteGraphId.value || !!activeSha
 // only ever populated server-side for non-guest roles) plus any OTHER
 // collaborators, excluding the viewer's own entry - seeing your own email/
 // picture reflected back at you isn't useful information.
+// A stale/expired profile-picture URL (common with Google-provided photos)
+// would otherwise render a broken-image icon with no initial ever shown -
+// once an <img> fails to load, its URL lands here and every avatar spot
+// using that same URL falls back to the initial letter instead.
+const failedAvatarUrls = ref(new Set());
+function markAvatarFailed(url) {
+	if (!url || failedAvatarUrls.value.has(url)) return;
+	failedAvatarUrls.value = new Set(failedAvatarUrls.value).add(url);
+}
+
 const sharedAvatars = computed(() => {
 	if (remoteGraphRole.value === 'guest') return [];
 	const selfEmail = store.user?.email || null;
@@ -3022,11 +3082,29 @@ onMounted(async () => {
 			// null today, so this is a no-op in practice; the reactive watcher in
 			// useSharing.js handles every actual album selection from here on.
 			initLocalOwnerSync();
+			// Eager, not lazy - previously only fetched when the Shared dropdown
+			// tab was manually opened (fetchMySharedGraphs()'s own doc comment),
+			// so a returning user on a fresh browser/device saw an empty Shared
+			// tab until they happened to click into it once, even though the
+			// server already has everything needed to populate it immediately.
+			fetchMySharedGraphs();
 
 			messageListener = setupMessageListener();
 			console.log("✅ Message listener ready");
 
 			const tutorialCompleted = localStorage.getItem('rocus-tutorial-completed');
+			// A returning, experienced account has no local memory of that on a
+			// fresh device/browser (empty localStorage) - fall back to server-
+			// backed signals so they don't see the first-run tutorial again.
+			// hasPriorUsage comes from quota_usage.first_seen_date (server.js);
+			// the shared-graph checks reuse fetchMySharedGraphs() above, which
+			// (being fire-and-forget, not awaited) will very likely have
+			// already resolved by the time this fires, same as store.user.
+			const isExperiencedUser = !!(
+				store.user?.hasPriorUsage ||
+				activelyOwnedSharedGraphIds.value.size > 0 ||
+				sharedWithMeGraphs.value.length > 0
+			);
 
 			// Only run the WebGPU/memory/IndexedDB readiness check for users
 			// actually in local mode - irrelevant for commercial (cloud) mode,
@@ -3037,7 +3115,7 @@ onMounted(async () => {
 
 			// Tutorial start no longer depends on the compatibility check - it's
 			// gated purely on whether the user has seen it before.
-			if (!tutorialCompleted) {
+			if (!tutorialCompleted && !isExperiencedUser) {
 				setTimeout(() => {
 					if (graphData?.nodes?.length > 0) {
 						startTutorial();

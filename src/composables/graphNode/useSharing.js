@@ -10,6 +10,7 @@ import {
 	remoteGraphId,
 	remoteGraphRole,
 	remoteGraphFrozen,
+	activeShareGraphId,
 	loadSharedGraphData,
 	refreshRemoteGraph,
 	refreshData,
@@ -33,7 +34,6 @@ import { store } from "../../router/store";
 // ---------------------------------------------------------------------------
 
 export const isSharePanelOpen = ref(false);
-export const activeShareGraphId = ref(null);
 export const activeShareUrl = ref(null);
 export const shareMembers = ref([]);
 export const sharePublicLinkEnabled = ref(false);
@@ -51,6 +51,23 @@ export const shareOwnerName = ref(null);
 export const shareOwnerPictureUrl = ref(null);
 export const shareBusy = ref(false);
 export const shareError = ref("");
+
+// Resolves a raw added_by identity-key (e.g. "email:x@y.com", as embedded in
+// a website/note's own data at creation time) into a display name for the
+// "who added this" node tooltip. Never called for a guest viewer (returns
+// null) - matches the existing privacy rule elsewhere in this file that a
+// guest never sees other identities (see sharedAvatars in GraphNode.vue).
+// Deliberately never needs the owner's own raw identity key exposed by the
+// server: only the owner and invited members can ever add content to a
+// shared graph, so any identity that doesn't match a known member is
+// necessarily the owner - a safe inference, not a guess.
+export function resolveAddedByName(identityKey) {
+	if (!identityKey || remoteGraphRole.value === "guest") return null;
+	if (identityKey === currentIdentityKey()) return "You";
+	const member = shareMembers.value.find((m) => m.identity_key === identityKey);
+	if (member) return member.invited_email;
+	return shareOwnerName.value || "the owner";
+}
 
 // Themed toast (styled via currentTheme in GraphNode.vue, not hardcoded
 // colors like the older showNewDataNotification toast it's modeled after).
@@ -142,7 +159,20 @@ const quickAddRoutingWriteTick = ref(0);
 export const quickAddRoutesHere = computed(() => {
 	quickAddRoutingWriteTick.value; // dependency: re-evaluate after setQuickAddRouting()
 	const graphId = remoteGraphId.value || activeShareGraphId.value;
-	return quickAddRoutingChoice(graphId) === true;
+	if (!graphId) return false;
+
+	const stored = quickAddRoutingChoice(graphId);
+	if (stored !== null) return stored; // explicit choice always wins, either way
+
+	// No explicit choice yet: default depends on whose graph this is. The
+	// owner's own actively-shared album has always auto-routed quick-adds
+	// (activeShareGraphId is only ever set for the owner's own local-owner
+	// sync - never for a collaborator), so the default stays "route" there,
+	// now just an explicit, visible, turn-off-able choice instead of
+	// hardcoded. A collaborator's default stays "don't route" - never
+	// silently redirect someone's bookmark into a graph they don't own
+	// without asking first (see maybeShowQuickAddRoutingPrompt()).
+	return !remoteGraphId.value || remoteGraphRole.value === "owner";
 });
 
 export function setQuickAddRouting(enabled) {
@@ -308,6 +338,13 @@ export async function shareCurrentGraph({ publicLinkEnabled = false, guestDownlo
 			shareError.value = "Sign in to share a graph.";
 			return null;
 		}
+		if (res.status === 403) {
+			const body = await res.json().catch(() => ({}));
+			if (body.code === "SHARE_GRAPH_CAP") {
+				openPremiumModal("share_graph_cap");
+				return null;
+			}
+		}
 		if (!res.ok) throw new Error(`share_failed_${res.status}`);
 
 		const data = await res.json();
@@ -386,7 +423,7 @@ export async function inviteCollaborator(email, permissionLevel = "view") {
 	const body = await res.json().catch(() => ({}));
 
 	if (res.status === 403 && body.code === "SHARE_SEAT_CAP") {
-		openPremiumModal();
+		openPremiumModal("share_seat_cap");
 		return { success: false, code: "SHARE_SEAT_CAP" };
 	}
 	if (!res.ok) {
@@ -477,7 +514,7 @@ export const sharedWithMeGraphs = ref([]);
 // Set of graph ids the server confirms are still actively owned+shared by
 // this identity - used only to validate the local rocus-shared-graph-ids
 // cache below, never rendered directly.
-const activelyOwnedSharedGraphIds = ref(new Set());
+export const activelyOwnedSharedGraphIds = ref(new Set());
 
 export async function fetchMySharedGraphs() {
 	try {
@@ -713,6 +750,20 @@ function disconnectSharedGraphSocket() {
 	remoteCursors.value = {};
 }
 
+// Order-independent structural equality - a plain JSON.stringify comparison
+// isn't safe here because the server round-trips node data through a
+// Postgres JSONB column, which doesn't preserve original key order, so two
+// semantically-identical objects can stringify differently and falsely look
+// "changed" on every single catch-up fetch.
+function deepEqual(a, b) {
+	if (a === b) return true;
+	if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
+	const aKeys = Object.keys(a);
+	const bKeys = Object.keys(b);
+	if (aKeys.length !== bKeys.length) return false;
+	return aKeys.every((key) => deepEqual(a[key], b[key]));
+}
+
 // Merges nodes a collaborator just pushed into the OWNER's real local
 // IndexedDB-backed state - deliberately not a wholesale replace (that's what
 // refreshRemoteGraph() does for a read-only remote view), since the owner's
@@ -720,16 +771,32 @@ function disconnectSharedGraphSocket() {
 // not just this one shared album.
 async function mergeRemoteNodesIntoLocalAlbum(nodes) {
 	if (!Array.isArray(nodes)) return;
+	// Only persist+re-render when the merge actually changed something - this
+	// runs on every album selection (see syncLocalOwnerSocketForAlbum below),
+	// and the overwhelmingly common case is catching up on an album that has
+	// no new remote content at all. refreshData() rebuilds every node's
+	// position from scratch (processApiData() places them on a fresh circle),
+	// so calling it unconditionally here caused a visible double-render flash
+	// on top of selectAlbum()'s own render - once from local IndexedDB data,
+	// then immediately again from this catch-up fetch finding nothing new.
+	let changed = false;
 	for (const node of nodes) {
 		if (!node?.id || !node?.type) continue;
 		if (node.type === "website") {
 			const { embedding, ...websiteFields } = node.data || {};
-			websites.value[node.id] = websiteFields;
+			if (!deepEqual(websites.value[node.id], websiteFields)) {
+				websites.value[node.id] = websiteFields;
+				changed = true;
+			}
 			if (embedding) embeddings.value[node.id] = embedding;
 		} else if (node.type === "cluster") {
-			clusters.value[node.id] = node.data;
+			if (!deepEqual(clusters.value[node.id], node.data)) {
+				clusters.value[node.id] = node.data;
+				changed = true;
+			}
 		}
 	}
+	if (!changed) return;
 	await saveToIndexedDB();
 	await refreshData();
 }

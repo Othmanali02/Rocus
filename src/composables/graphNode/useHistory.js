@@ -6,8 +6,11 @@ import {
 	graphData,
 	loadData,
 	renderGraph,
+	resetView,
 	currentHistoryDay,
 	getClusterDayKey,
+	remoteGraphId,
+	refreshRemoteGraphView,
 } from "./useGraphEngine";
 
 // The History view of the switcher dropdown (see useAlbums.js for its
@@ -49,12 +52,25 @@ export function selectHistoryDay(dayKey) {
 	currentHistoryDay.value = dayKey;
 	showAlbumsDropdown.value = false;
 
+	if (remoteGraphId.value) {
+		// A shared graph's data lives only in memory (loadSharedGraphData()
+		// never persists it to IndexedDB) - loadData() below would instead
+		// query THIS BROWSER's own local IndexedDB store, which is wrong/
+		// empty here regardless of what the day badges above are showing.
+		refreshRemoteGraphView().then(() => setTimeout(() => resetView(), 1000));
+		return;
+	}
+
 	loadData().then(() => {
 		if (simulation) {
 			simulation.nodes(graphData.nodes);
 			simulation.force("link").links(graphData.links);
 			simulation.alpha(1).restart();
 			renderGraph();
+			// Same settle delay selectAlbum() uses (useAlbums.js) - centering
+			// immediately would fit the view to the simulation's transient
+			// fresh-circle starting layout instead of the settled one.
+			setTimeout(() => resetView(), 1000);
 		}
 	});
 }
