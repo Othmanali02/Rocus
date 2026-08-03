@@ -185,15 +185,11 @@ export async function deleteAlbumById(albumId) {
 
 export function toggleAlbumsDropdown() {
 	showAlbumsDropdown.value = !showAlbumsDropdown.value;
-	console.log(showAlbumsDropdown.value);
 }
 
 export function selectAlbum(album) {
 	currentAlbum.value = album;
 	showAlbumsDropdown.value = false;
-
-	console.log(albums.value)
-	console.log("Selected album:", album?.name || "All Clusters");
 
 	// Reload everything with new filter
 	loadData().then(() => {

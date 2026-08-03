@@ -2,9 +2,32 @@
 
 export const versionHistory = [
 	{
+		version: 'v1.2.0',
+		date: 'August 3rd 2026',
+		current: true,
+		features: [
+			'Real-time collaborative graph sharing — invite collaborators with view or edit access, or share a public view-only link',
+			'"Added by" attribution badges show who on a shared graph added each website or note',
+			'Live presence indicators show where collaborators are looking on a shared graph',
+		],
+		improvements: [
+			'Smarter quick-add routing while viewing a shared graph',
+			'Cleaner sharing panel — fixed duplicate popups, a missing routing toggle, share icon visibility, collaborator avatar initials, and graph title display',
+			'Clear upgrade prompts when free-tier sharing limits (shared graph count, collaborator seats) are reached',
+			'Shared graphs now merge simultaneous edits from multiple collaborators instead of one overwriting another\'s changes',
+			'File downloads now work reliably for collaborators and guests on shared graphs',
+			'Shared-graph rendering, history browsing, and view recentering fixes',
+		],
+		bugFixes: [
+			'Fixed a privilege-escalation bug and two identity-leak issues found during a full security audit of the sharing system',
+			'Fixed shared-graph connections not always disconnecting cleanly when leaving a page or when a graph expires or is deleted',
+			'Fixed a rare data-loss bug where two collaborators adding different websites to the same cluster at nearly the same time could cause one addition to be silently dropped',
+		]
+	},
+	{
 		version: 'v1.1.0',
 		date: 'July 25th 2026',
-		current: true,
+		current: false,
 		features: [
 			'Cloud AI Processing powered by Claude — everyone gets a free daily taste, Premium unlocks unlimited use',
 		],
