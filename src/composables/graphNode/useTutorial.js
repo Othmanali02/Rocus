@@ -1,6 +1,70 @@
-import { ref } from "vue";
+import { ref, computed } from "vue";
 import { tutorialSteps as tutorialStepsData, tutorialStepsEmpty } from "./tutorialData";
 import { graphData, container, explodeNode, collapseNode } from "./useGraphEngine";
+
+// Real, published extension IDs (Chrome Web Store / addons.mozilla.org - same
+// ones Landing.vue's installExtension() links to). Both extensions' manifests
+// declare rocus.io (+ localhost:5173 for dev) in externally_connectable, which
+// is what lets an ordinary web page - not another extension - reach them via
+// chrome.runtime.sendMessage/browser.runtime.sendMessage at all.
+const CHROME_EXTENSION_ID = "ekhebfoaaokmbhieckfkpapfkiicpbma";
+const FIREFOX_EXTENSION_ID = "rocus@rocus.io";
+
+// null = still checking, true/false = resolved. Read by the "Browser
+// Extension" tutorial step to show install-needed messaging only when the
+// extension genuinely isn't reachable, instead of always nagging.
+export const extensionDetected = ref(null);
+
+export const extensionStoreUrl = computed(() =>
+	navigator.userAgent.toLowerCase().includes("firefox")
+		? "https://addons.mozilla.org/en-US/firefox/addon/rocus/"
+		: "https://chromewebstore.google.com/detail/rocus/ekhebfoaaokmbhieckfkpapfkiicpbma"
+);
+
+function detectRocusExtension(timeoutMs = 700) {
+	return new Promise((resolve) => {
+		let settled = false;
+		const finish = (installed) => {
+			if (settled) return;
+			settled = true;
+			resolve(installed);
+		};
+		const timer = setTimeout(() => finish(false), timeoutMs);
+
+		try {
+			if (typeof chrome !== "undefined" && chrome.runtime?.sendMessage) {
+				chrome.runtime.sendMessage(CHROME_EXTENSION_ID, { type: "ROCUS_PING" }, (response) => {
+					clearTimeout(timer);
+					// chrome.runtime.lastError is set (not thrown) when there's no
+					// listening extension at that ID - has to be read either way or
+					// it logs an "Unchecked runtime.lastError" console warning.
+					const err = chrome.runtime.lastError;
+					finish(!err && response?.type === "ROCUS_PONG");
+				});
+				return;
+			}
+			if (typeof browser !== "undefined" && browser.runtime?.sendMessage) {
+				browser.runtime
+					.sendMessage(FIREFOX_EXTENSION_ID, { type: "ROCUS_PING" })
+					.then((response) => {
+						clearTimeout(timer);
+						finish(response?.type === "ROCUS_PONG");
+					})
+					.catch(() => {
+						clearTimeout(timer);
+						finish(false);
+					});
+				return;
+			}
+		} catch {
+			// chrome.runtime.sendMessage can throw synchronously (not just via
+			// lastError) for a malformed ID or an unexpectedly-absent API -
+			// falls through to "not installed" below either way.
+		}
+		clearTimeout(timer);
+		finish(false);
+	});
+}
 
 // Onboarding tutorial overlay. Reads graphData/container/explodeNode/collapseNode
 // from useGraphEngine (one direction only - useGraphEngine never reads anything
@@ -147,6 +211,16 @@ export function updateTutorialHighlight() {
 				element = document.querySelector('.fixed.top-24') ||
 					document.querySelector('input[type="text"]');
 				break;
+
+			case 'share-button':
+				// Share icon - safe to always expect this element since the
+				// tutorial only ever runs on the owner's own /dashboard (the
+				// shared-graph view skips the tutorial entirely, see GraphNode.vue).
+				element = Array.from(document.querySelectorAll('button')).find(btn => {
+					const svg = btn.querySelector('svg');
+					return svg && svg.innerHTML.includes('M3 16.5v2.25');
+				});
+				break;
 		}
 
 		if (element) {
@@ -194,6 +268,16 @@ export function performTutorialAction() {
 			console.log("No websites to explode, skipping demo");
 			nextTutorialStep();
 		}
+	} else if (step.action === 'checkExtension') {
+		extensionDetected.value = null;
+		detectRocusExtension().then((installed) => {
+			// Stale-response guard: if the user has already navigated off this
+			// step (or restarted the tutorial) by the time this resolves, don't
+			// overwrite whatever the current state should be.
+			if (tutorialSteps[tutorialStep.value]?.action === 'checkExtension') {
+				extensionDetected.value = installed;
+			}
+		});
 	} else if (step.action === 'cleanup') {
 		// Collapse any exploded node
 		if (tutorialDemoCluster.value) {

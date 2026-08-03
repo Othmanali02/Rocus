@@ -22,6 +22,13 @@ export const matchCount = ref(0);
 export const isSearchFocused = ref(false);
 export const searchInputRef = ref(null);
 
+// "/" tips panel - a quick reference for how the app works, opened from the
+// search bar. State lives here (not GraphNode.vue) alongside the rest of the
+// search bar's own state and its one existing global keydown handler.
+export const showShortcutsPanel = ref(false);
+export function openShortcutsPanel() { showShortcutsPanel.value = true; }
+export function closeShortcutsPanel() { showShortcutsPanel.value = false; }
+
 export function performSearch() {
 	const term = searchInput.value.toLowerCase().trim();
 	currentSearchTerm = term;
@@ -176,14 +183,19 @@ export function handleSearchBlur() {
 // Handle click outside
 export function handleClickOutside(event) {
 	const searchContainer = event.target.closest('.fixed.top-24');
-	if (!searchContainer && isSearchFocused.value && !searchInput.value) {
-		isSearchFocused.value = false;
+	if (!searchContainer) {
+		if (isSearchFocused.value && !searchInput.value) isSearchFocused.value = false;
+		if (showShortcutsPanel.value) showShortcutsPanel.value = false;
 	}
 }
 
 export function handleKeyDown(event) {
 	if (event.key === 'Escape') {
 		event.preventDefault();
+		if (showShortcutsPanel.value) {
+			showShortcutsPanel.value = false;
+			return;
+		}
 		if (isSearchFocused.value) {
 			// If already focused, blur and clear
 			searchInputRef.value?.blur();
@@ -193,5 +205,20 @@ export function handleKeyDown(event) {
 			// If not focused, focus the search
 			focusSearch();
 		}
+		return;
+	}
+
+	if (event.key === '/') {
+		// Guard against every other free-text field in the app (cluster
+		// rename, album name, note textarea, website title, invite email,
+		// the "connect clusters" search, and this file's own search input) -
+		// without this, typing a literal "/" anywhere would instead toggle
+		// this panel out from under the user.
+		const el = document.activeElement;
+		const tag = el?.tagName;
+		const isTyping = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el?.isContentEditable;
+		if (isTyping) return;
+		event.preventDefault();
+		showShortcutsPanel.value = !showShortcutsPanel.value;
 	}
 }

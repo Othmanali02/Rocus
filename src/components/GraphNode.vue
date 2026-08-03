@@ -22,12 +22,10 @@
 						<img v-if="currentTheme.isDark" src="./images/RocusBlue.png" alt="Rocus" class="h-10 w-auto" />
 						<img v-else src="./images/RocusBlue.png" alt="Rocus" class="h-10 w-auto" />
 					</a>
-					<!-- Guest: unchanged generic pill, no identities at all. -->
-					<div v-if="isCurrentGraphShared && remoteGraphRole === 'guest'"
-						class="px-2.5 py-1 rounded-full text-xs font-medium"
-						:style="{ backgroundColor: withAlpha(currentTheme.colors.primary, 0.12), color: currentTheme.colors.primary }">
-						Shared graph
-					</div>
+					<!-- Guest gets no pill here at all - the top-right role indicator
+						 ("Shared (view only)" / "Frozen copy") already says it, and having
+						 both said the same thing in two different spots in the header was
+						 redundant clutter, especially on a narrow mobile viewport. -->
 					<!-- Owner/collaborator: avatar stack + small share icon, click opens
 						 the share panel - the OWNER's own existing full management panel
 						 (top-right icon row, unchanged) for role==='owner' since it's the
@@ -35,7 +33,7 @@
 						 panel (member list + quick-add toggle, no management controls)
 						 rendered right here for a collaborator, who has no owner panel to
 						 reuse. -->
-					<div v-else-if="isCurrentGraphShared && (sharedAvatars.length > 0 || sharePublicLinkEnabled)" class="relative">
+					<div v-if="isCurrentGraphShared && remoteGraphRole !== 'guest' && (sharedAvatars.length > 0 || sharePublicLinkEnabled)" class="relative">
 						<button @click.stop="isSharePanelOpen = !isSharePanelOpen"
 							:title="sharedAvatars.map((a) => a.label).join(', ')"
 							class="flex items-center gap-1.5">
@@ -90,7 +88,7 @@
 					</div>
 				</div>
 
-				<div class="flex-1 max-w-2xl mx-8">
+				<div v-if="!isCoarsePointer" class="flex-1 max-w-2xl mx-8">
 					<div class="relative">
 						<!-- Bare-bones read-only shell (guest/view-only shared graph): no
 							 album switching, just a static label - see isReadOnlySharedView -->
@@ -375,11 +373,11 @@
 							<input ref="searchInputRef" v-model="searchInput" @input="performSearch"
 								@focus="isSearchFocused = true" @blur="handleSearchBlur" type="text"
 								placeholder="Search clusters, websites, domains..."
-								class="bg-transparent border-none focus:outline-none focus:ring-0 outline-none w-80 placeholder-gray-400 transition-all duration-200"
+								class="bg-transparent border-none focus:outline-none focus:ring-0 outline-none w-[min(20rem,calc(100vw-8rem))] placeholder-gray-400 transition-all duration-200"
 								:style="{ color: currentTheme.colors.text }" />
 
 							<button v-if="searchInput" @click="clearSearch"
-								class="p-1.5 rounded-full transition-all duration-200 flex-shrink-0"
+								:class="[isCoarsePointer ? 'p-2.5' : 'p-1.5', 'rounded-full transition-all duration-200 flex-shrink-0']"
 								:style="{ color: currentTheme.colors.textSecondary }">
 								<svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
 									<path fill-rule="evenodd"
@@ -400,6 +398,16 @@
 								</span>
 							</div>
 
+							<button @click.stop="openShortcutsPanel" title="Tips & shortcuts"
+								class="flex items-center gap-1.5 px-2 py-1 rounded-lg transition-all duration-200 flex-shrink-0 border"
+								:style="{
+									backgroundColor: currentTheme.isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
+									borderColor: currentTheme.colors.border,
+									color: currentTheme.colors.textSecondary
+								}">
+								<span class="text-xs font-medium tracking-wider">/</span>
+							</button>
+
 							<!-- <div v-if="showContextMenu" @click.stop
 								class="fixed z-[2500] rounded-xl shadow-2xl border overflow-hidden min-w-[200px] animate-scaleIn"
 								:style="{
@@ -411,12 +419,40 @@
 								{{ matchCount }}
 							</div> -->
 						</div>
+
+						<div v-if="showShortcutsPanel" @click.stop
+							class="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-96 rounded-2xl shadow-2xl border overflow-hidden z-50 animate-fadeIn"
+							:style="{ backgroundColor: currentTheme.colors.surface, borderColor: currentTheme.colors.border }">
+							<div class="px-4 py-3 border-b flex items-center justify-between" :style="{ borderColor: currentTheme.colors.border }">
+								<div>
+									<div class="text-sm font-semibold" :style="{ color: currentTheme.colors.text }">Tips & shortcuts</div>
+									<div class="text-xs mt-0.5" :style="{ color: currentTheme.colors.textSecondary }">A quick reference for how Rocus works</div>
+								</div>
+								<button @click="closeShortcutsPanel" :style="{ color: currentTheme.colors.textSecondary }">✕</button>
+							</div>
+							<div class="p-4 space-y-4 max-h-96 overflow-y-auto">
+								<div v-for="section in shortcutSections" :key="section.title">
+									<div class="flex items-center gap-2 mb-2">
+										<svg class="w-4 h-4" :style="{ color: currentTheme.colors.primary }" fill="none"
+											stroke="currentColor" viewBox="0 0 24 24">
+											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="section.icon" />
+										</svg>
+										<span class="text-xs font-semibold uppercase tracking-wider"
+											:style="{ color: currentTheme.colors.textSecondary }">{{ section.title }}</span>
+									</div>
+									<ul class="space-y-1.5 pl-6">
+										<li v-for="tip in section.tips" :key="tip" class="text-sm list-disc"
+											:style="{ color: currentTheme.colors.text }">{{ tip }}</li>
+									</ul>
+								</div>
+							</div>
+						</div>
 					</div>
 
 				</div>
 
 				<div class="flex items-center gap-3">
-					<button v-if="!isReadOnlySharedView" @click="toggleThemes" class="p-2.5 rounded-xl transition-all"
+					<button v-if="!isReadOnlySharedView" @click="toggleThemes" :class="[isCoarsePointer ? 'p-3.5' : 'p-2.5', 'rounded-xl transition-all']"
 						:style="{ backgroundColor: currentTheme.colors.surface }">
 						<svg class="w-5 h-5" :style="{ color: currentTheme.colors.textSecondary }" fill="none"
 							stroke="currentColor" viewBox="0 0 24 24">
@@ -426,7 +462,7 @@
 					</button>
 
 					<div v-if="!isReadOnlySharedView" class="relative uploads-panel-container">
-						<button @click.stop="toggleUploadsPanel" class="p-2.5 rounded-xl transition-all"
+						<button @click.stop="toggleUploadsPanel" :class="[isCoarsePointer ? 'p-3.5' : 'p-2.5', 'rounded-xl transition-all']"
 							:style="{ backgroundColor: currentTheme.colors.surface }">
 							<svg class="w-5 h-5" :style="{ color: currentTheme.colors.textSecondary }" fill="none"
 								stroke="currentColor" viewBox="0 0 24 24">
@@ -478,7 +514,7 @@
 
 					<!-- Share icon: top right, every graph, per plan doc "UI surfaces" -->
 					<div v-if="!remoteGraphId || remoteGraphRole === 'owner'" class="relative share-panel-container">
-						<button @click.stop="handleShareClick" class="p-2.5 rounded-xl transition-all"
+						<button @click.stop="handleShareClick" :class="[isCoarsePointer ? 'p-3.5' : 'p-2.5', 'rounded-xl transition-all']"
 							:style="{ backgroundColor: currentTheme.colors.surface }" title="Share this graph">
 							<svg class="w-5 h-5" :style="{ color: currentTheme.colors.textSecondary }" fill="none"
 								stroke="currentColor" viewBox="0 0 24 24">
@@ -577,7 +613,7 @@
 						{{ remoteGraphFrozen ? 'Frozen copy' : remoteGraphRole === 'guest' ? 'Shared (view only)' : `Shared (${remoteGraphRole})` }}
 					</div>
 
-					<button v-if="!isReadOnlySharedView" @click="toggleSettings" class="p-2.5 rounded-xl transition-all"
+					<button v-if="!isReadOnlySharedView" @click="toggleSettings" :class="[isCoarsePointer ? 'p-3.5' : 'p-2.5', 'rounded-xl transition-all']"
 						:style="{ backgroundColor: currentTheme.colors.surface }">
 						<svg class="w-5 h-5" :style="{ color: currentTheme.colors.textSecondary }" fill="none"
 							stroke="currentColor" viewBox="0 0 24 24">
@@ -588,7 +624,7 @@
 						</svg>
 					</button>
 
-					<button @click="toggleModelStatus" class="relative p-2.5 rounded-xl transition-all"
+					<button v-if="!isReadOnlySharedView" @click="toggleModelStatus" class="relative p-2.5 rounded-xl transition-all"
 						:style="{ backgroundColor: currentTheme.colors.surface }">
 						<svg v-if="showModelLoadingIndicator" class="w-5 h-5 text-[#4A90E2] animate-spin" fill="none"
 							stroke="currentColor" viewBox="0 0 24 24">
@@ -614,7 +650,7 @@
 						</div>
 					</button>
 
-					<!-- <button @click="handleProfileClick" class="p-2.5 rounded-xl transition-all"
+					<!-- <button @click="handleProfileClick" :class="[isCoarsePointer ? 'p-3.5' : 'p-2.5', 'rounded-xl transition-all']"
 						:style="{ backgroundColor: currentTheme.colors.surface }">
 						<svg class="w-5 h-5" :style="{ color: currentTheme.colors.textSecondary }" fill="none"
 							stroke="currentColor" viewBox="0 0 24 24">
@@ -1663,7 +1699,7 @@
 
 		<div v-if="selectedWebsite" :style="stickyNoteStyle" @click.stop
 			class="fixed z-[1500] rounded-2xl shadow-2xl min-w-[320px] max-w-md animate-scaleIn bg-yellow-100">
-			<div @mousedown="startDraggingSticky"
+			<div @mousedown="startDraggingSticky" @touchstart="startDraggingSticky"
 				class="flex justify-between items-center p-4 cursor-move border-b border-yellow-200">
 				<h4 class="font-semibold text-base truncate pr-4 text-gray-900">
 					{{ selectedWebsite.title }}
@@ -1895,7 +1931,7 @@
 			<span>New clusters detected! Updating graph...</span>
 		</div>
 
-		<div class="fixed bottom-8 left-8 z-[1000] px-4 py-2 backdrop-blur-xl rounded-xl text-xs border" :style="{
+		<div v-if="!isCoarsePointer" class="fixed bottom-8 left-8 z-[1000] px-4 py-2 backdrop-blur-xl rounded-xl text-xs border" :style="{
 			backgroundColor: currentTheme.isDark ? 'rgba(0,0,0,0.8)' : 'rgba(255,255,255,0.8)',
 			color: currentTheme.colors.textSecondary,
 			borderColor: currentTheme.colors.border
@@ -1903,7 +1939,7 @@
 			Mouse wheel to zoom • Click and drag to pan • Click clusters to explode
 		</div>
 
-		<button @click="showVersionHistory = true"
+		<button v-if="!isCoarsePointer" @click="showVersionHistory = true"
 			class="fixed bottom-8 right-24 z-[1000] px-3 py-2 rounded-lg text-xs font-mono transition-all" :style="{
 				backgroundColor: currentTheme.colors.surface,
 				color: currentTheme.colors.textSecondary,
@@ -2270,6 +2306,34 @@
 						{{ tutorialSteps[tutorialStep]?.description }}
 					</p>
 
+					<!-- Extension detection status - only rendered on the "Browser
+						 Extension" step (action === 'checkExtension'), driven by a real
+						 ping/pong to the extension's published Chrome/Firefox ID (see
+						 detectRocusExtension() in useTutorial.js), not a guess. -->
+					<div v-if="tutorialSteps[tutorialStep]?.action === 'checkExtension'" class="mb-6 -mt-3">
+						<div v-if="extensionDetected === null" class="flex items-center gap-2 text-xs"
+							:style="{ color: currentTheme.colors.textSecondary }">
+							<svg class="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+									d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+							</svg>
+							Checking for the extension...
+						</div>
+						<div v-else-if="extensionDetected" class="flex items-center gap-2 text-xs font-medium text-emerald-600">
+							<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+							</svg>
+							Extension detected - you're all set!
+						</div>
+						<div v-else class="rounded-xl px-3 py-2.5 text-xs"
+							:style="{ backgroundColor: withAlpha('#f59e0b', 0.12), color: currentTheme.colors.text }">
+							You don't have the extension yet - it's required to save websites into Rocus.
+							<a :href="extensionStoreUrl" target="_blank" rel="noopener" class="font-semibold underline">
+								Install it here
+							</a>
+						</div>
+					</div>
+
 					<!-- Navigation Buttons -->
 					<div class="flex gap-3">
 						<button v-if="tutorialStep > 0" @click="previousTutorialStep"
@@ -2294,6 +2358,66 @@
 						Skip Tutorial
 					</button>
 				</div>
+			</div>
+		</div>
+
+		<!-- "What's New" - a one-time, per-version splash (see checkShowWhatsNew()
+			 in useVersionHistory.js) for anyone who hasn't dismissed the current
+			 version's entry yet, new signup or five-year returning user alike.
+			 Reuses the same versionHistory data as the full Version History
+			 modal below, just scoped to versionHistory[0] and framed as an
+			 announcement rather than a browsable log. -->
+		<div v-if="showWhatsNew" @click="dismissWhatsNew"
+			class="fixed inset-0 bg-black/50 backdrop-blur-sm z-[2100] flex items-center justify-center p-4 animate-fadeIn">
+			<div @click.stop
+				class="border rounded-3xl p-8 w-full max-w-lg shadow-2xl animate-scaleIn max-h-[80vh] overflow-y-auto"
+				:style="{ backgroundColor: currentTheme.colors.surface, borderColor: currentTheme.colors.border }">
+				<div class="flex items-start gap-3 mb-6">
+					<div class="w-11 h-11 rounded-full flex items-center justify-center shrink-0"
+						:style="{ backgroundColor: withAlpha(currentTheme.colors.primary, 0.12) }">
+						<svg class="w-6 h-6" :style="{ color: currentTheme.colors.primary }" fill="none"
+							stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+								d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.196-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.783-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
+						</svg>
+					</div>
+					<div>
+						<h3 class="text-xl font-bold" :style="{ color: currentTheme.colors.text }">
+							What's New in {{ versionHistory[0]?.version }}
+						</h3>
+						<p class="text-sm mt-0.5" :style="{ color: currentTheme.colors.textSecondary }">
+							{{ versionHistory[0]?.date }}
+						</p>
+					</div>
+				</div>
+
+				<div class="space-y-4 mb-6">
+					<div v-if="versionHistory[0]?.features.length">
+						<p class="text-sm font-semibold mb-2" :style="{ color: currentTheme.colors.text }">Features</p>
+						<ul class="space-y-1">
+							<li v-for="feature in versionHistory[0].features" :key="feature"
+								class="text-sm flex items-start gap-2" :style="{ color: currentTheme.colors.textSecondary }">
+								<span class="text-green-500">•</span>
+								<span>{{ feature }}</span>
+							</li>
+						</ul>
+					</div>
+					<div v-if="versionHistory[0]?.improvements.length">
+						<p class="text-sm font-semibold mb-2" :style="{ color: currentTheme.colors.text }">Improvements</p>
+						<ul class="space-y-1">
+							<li v-for="item in versionHistory[0].improvements" :key="item"
+								class="text-sm flex items-start gap-2" :style="{ color: currentTheme.colors.textSecondary }">
+								<span class="text-blue-500">•</span>
+								<span>{{ item }}</span>
+							</li>
+						</ul>
+					</div>
+				</div>
+
+				<button @click="dismissWhatsNew" class="w-full py-2.5 rounded-xl font-semibold text-sm transition-transform hover:scale-[1.02]"
+					:style="{ backgroundColor: currentTheme.colors.primary, color: '#fff' }">
+					Got it
+				</button>
 			</div>
 		</div>
 
@@ -2499,12 +2623,25 @@
 	<!-- Primary viral surface: a guest gets the full graph for free, no signup -
 		 the CTA is the only thing gated, per plan doc "Viral surface" -->
 	<div v-if="remoteGraphRole === 'guest' && !remoteGraphFrozen"
-		class="fixed bottom-6 left-1/2 -translate-x-1/2 z-[1600] flex items-center gap-3 px-5 py-3 rounded-2xl shadow-2xl animate-fadeIn"
+		class="fixed bottom-6 left-1/2 -translate-x-1/2 z-[1600] flex items-center gap-3 rounded-2xl shadow-2xl animate-fadeIn max-w-[calc(100vw-2rem)]"
+		:class="isCoarsePointer ? 'pl-3 pr-2 py-2' : 'pl-4 pr-3 py-3'"
 		:style="{ backgroundColor: currentTheme.colors.surface, border: `1px solid ${currentTheme.colors.border}` }">
-		<span class="text-sm" :style="{ color: currentTheme.colors.textSecondary }">Like this graph?</span>
-		<button @click="forkSharedGraph" class="text-sm font-medium px-4 py-2 rounded-xl"
+		<div class="w-9 h-9 rounded-full flex items-center justify-center shrink-0"
+			:style="{ backgroundColor: withAlpha(currentTheme.colors.primary, 0.12) }">
+			<svg class="w-5 h-5" :style="{ color: currentTheme.colors.primary }" fill="none"
+				stroke="currentColor" viewBox="0 0 24 24">
+				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+					d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
+			</svg>
+		</div>
+		<div v-if="!isCoarsePointer" class="leading-tight">
+			<div class="text-sm font-semibold" :style="{ color: currentTheme.colors.text }">Like this graph?</div>
+			<div class="text-xs" :style="{ color: currentTheme.colors.textSecondary }">Make your own editable copy</div>
+		</div>
+		<button @click="forkSharedGraph" class="font-semibold rounded-xl shrink-0 transition-transform hover:scale-105"
+			:class="isCoarsePointer ? 'text-sm px-3 py-2' : 'text-sm px-4 py-2.5'"
 			:style="{ backgroundColor: currentTheme.colors.primary, color: '#fff' }">
-			Fork into your own Rocus
+			{{ isCoarsePointer ? 'Fork' : 'Fork into your own Rocus' }}
 		</button>
 	</div>
 
@@ -2570,6 +2707,9 @@ import {
 	handleSearchBlur,
 	handleClickOutside,
 	handleKeyDown,
+	showShortcutsPanel,
+	openShortcutsPanel,
+	closeShortcutsPanel,
 } from '../composables/graphNode/useSearch';
 
 import {
@@ -2633,6 +2773,8 @@ import {
 	previousTutorialStep,
 	skipTutorial,
 	updateTutorialHighlight,
+	extensionDetected,
+	extensionStoreUrl,
 } from '../composables/graphNode/useTutorial';
 
 import {
@@ -2726,7 +2868,7 @@ import {
 	handleResize,
 } from '../composables/graphNode/useGraphEngine';
 
-import { showVersionHistory, versionHistory } from '../composables/graphNode/useVersionHistory';
+import { showVersionHistory, versionHistory, showWhatsNew, checkShowWhatsNew, dismissWhatsNew } from '../composables/graphNode/useVersionHistory';
 
 import { historyDays, selectHistoryDay, formatDayLabel } from '../composables/graphNode/useHistory';
 
@@ -2770,7 +2912,7 @@ import {
 
 import { useRoute } from 'vue-router';
 import { store } from '../router/store';
-import { remoteGraphId, remoteGraphRole, remoteGraphFrozen, activeShareGraphId } from '../composables/graphNode/useGraphEngine';
+import { remoteGraphId, remoteGraphRole, remoteGraphFrozen, activeShareGraphId, isSharedGraphContext, isCoarsePointer } from '../composables/graphNode/useGraphEngine';
 import {
 	isSharePanelOpen,
 	activeShareUrl,
@@ -2839,7 +2981,53 @@ function openSharedWithMeGraph(graphId) {
 // fetched for non-guest roles server-side already, so a guest naturally
 // never sees it here either - matches the existing privacy rule that a
 // guest sees only the sharer's name, never other collaborators' identities.
-const isCurrentGraphShared = computed(() => !!remoteGraphId.value || !!activeShareGraphId.value);
+const isCurrentGraphShared = computed(() => isSharedGraphContext());
+
+// Content for the "/" tips panel - a "how this app works" quick reference,
+// not a keybinding cheatsheet (Escape is genuinely the only real keyboard
+// shortcut today). Icon paths are copied from their existing buttons
+// elsewhere in this file (reset/refresh FABs, the "+" add-content prompt,
+// the share icon, the search icon) rather than introducing any new icon
+// system - this project has no icon library dependency.
+const shortcutSections = [
+	{
+		title: 'Navigation & View',
+		icon: 'M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4',
+		tips: [
+			'Scroll or pinch to zoom',
+			'Click and drag empty space to pan',
+			'Click a cluster to explode it into its websites',
+			'Click the ✕ (bottom-right) to collapse it back',
+			'Reset / Refresh buttons (bottom-right) recenter or reload the graph',
+		],
+	},
+	{
+		title: 'Search',
+		icon: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z',
+		tips: [
+			'Type to filter clusters, websites, and domains — also searches summaries and descriptions',
+			'Esc clears search, or closes this panel',
+			'/ opens this panel, whenever you\'re not already typing elsewhere',
+		],
+	},
+	{
+		title: 'Adding Content',
+		icon: 'M12 4v16m8-8H4',
+		tips: [
+			'Right-click empty canvas, then + to add a Note or upload a File',
+		],
+	},
+	{
+		title: 'Sharing & Collaboration',
+		icon: 'M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5',
+		tips: [
+			'Click the share icon to generate a link for the current Album',
+			'Invite collaborators by email with View or Edit access',
+			'A colored dot on a node shows who added it, once shared',
+			'Guests and View-only collaborators can look but not edit',
+		],
+	},
+];
 
 // Who to show in the avatar stack. Guests get nothing here at all (kept as
 // the existing generic "Shared graph" text pill below, unchanged) - never
@@ -3064,14 +3252,19 @@ onMounted(async () => {
 			// Compatibility check and the first-run tutorial are both
 			// local-single-player concerns - irrelevant for a quick shared-graph
 			// view (guest or collaborator), so skipped entirely in this branch.
-			// loadModels() is NOT one of those, though - it's what loads the
-			// embedding pipeline processWebsite()/processNote() require before
-			// they'll do anything ("Embedding model not loaded"), and an edit
-			// collaborator needs to be able to add content immediately, not just
-			// after the local dashboard happens to load it first.
-			loadModels().catch(err => {
-				console.error("Model loading failed (non-fatal):", err);
-			});
+			// loadModels() is what loads the embedding pipeline
+			// processWebsite()/processNote() require before they'll do anything
+			// ("Embedding model not loaded") - an edit collaborator needs that
+			// immediately, not just after the local dashboard happens to load it
+			// first. A guest/view-only visitor can never add content though (no
+			// edit capability at all), so there's no reason to spend the
+			// download/init cost on them - isReadOnlySharedView is already
+			// resolved by now since initializeGraph() above was awaited.
+			if (!isReadOnlySharedView.value) {
+				loadModels().catch(err => {
+					console.error("Model loading failed (non-fatal):", err);
+				});
+			}
 		} else {
 			await loadFromIndexedDB();
 
@@ -3114,16 +3307,37 @@ onMounted(async () => {
 				await runCompatibilityCheckIfNeeded();
 			}
 
+			// "What's New" is gated per-version (see checkShowWhatsNew - anyone
+			// who hasn't dismissed the CURRENT version's entry sees it, new
+			// account or returning), independent of the tutorial's own
+			// new-account gating just below. If it's about to show, the
+			// tutorial waits for it to be dismissed first rather than stacking
+			// two modals on top of each other.
+			checkShowWhatsNew();
+
 			// Tutorial start no longer depends on the compatibility check - it's
 			// gated purely on whether the user has seen it before.
-			if (!tutorialCompleted && !isExperiencedUser) {
-				setTimeout(() => {
-					if (graphData?.nodes?.length > 0) {
-						startTutorial();
-					} else {
-						startTutorialEmpty();
+			const maybeStartTutorial = () => {
+				if (!tutorialCompleted && !isExperiencedUser) {
+					setTimeout(() => {
+						if (graphData?.nodes?.length > 0) {
+							startTutorial();
+						} else {
+							startTutorialEmpty();
+						}
+					}, 2000);
+				}
+			};
+
+			if (showWhatsNew.value) {
+				const unwatchWhatsNew = watch(showWhatsNew, (isShowing) => {
+					if (!isShowing) {
+						unwatchWhatsNew();
+						maybeStartTutorial();
 					}
-				}, 2000);
+				});
+			} else {
+				maybeStartTutorial();
 			}
 
 			loadModels().catch(err => {
@@ -3198,6 +3412,14 @@ watch(tutorialActive, (isActive) => {
 * {
 	font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI",
 		sans-serif;
+}
+
+/* d3.zoom()/d3.drag() on #graph-container already handle touch input out of
+   the box - this just stops the browser's own native scroll/pinch-zoom from
+   fighting them for the same gesture. */
+#graph-container,
+#graph-container svg {
+	touch-action: none;
 }
 
 
