@@ -43,10 +43,18 @@ export async function confirmRename() {
 
 	try {
 		const clusterId = contextCluster.value.id;
+		const albumId = contextCluster.value.album_id;
 		clusters.value[clusterId].topic = renameInput.value.trim();
 
 		await saveToIndexedDB();
 		await refreshData();
+
+		// Live-push to a shared graph if relevant (no-op internally otherwise) -
+		// without this, a rename only ever changed the renaming browser's own
+		// local copy; every other collaborator's next refetch silently
+		// overwrote it back to the old name, since the server's own row never
+		// changed at all.
+		pushNodeUpdateForAlbum(albumId, [{ id: clusterId, type: "cluster", data: clusters.value[clusterId] }]);
 
 		closeRenameModal();
 		contextCluster.value = null;
@@ -96,16 +104,28 @@ export async function confirmAddWebsites() {
 
 	try {
 		const clusterId = contextCluster.value.id;
+		const albumId = contextCluster.value.album_id;
+		const addedWebsites = [];
 
 		for (const websiteId of selectedWebsitesToAdd.value) {
 			if (!clusters.value[clusterId].websites.includes(websiteId)) {
 				clusters.value[clusterId].websites.push(websiteId);
 				websites.value[websiteId].cluster_id = clusterId;
+				addedWebsites.push(websiteId);
 			}
 		}
 
 		await saveToIndexedDB();
 		await refreshData();
+
+		// Live-push to a shared graph if relevant (no-op internally otherwise) -
+		// the cluster's own websites array changed, plus each added website's
+		// own data (new cluster_id) - both need to reach the server or this
+		// only ever showed up in the adding browser's own local copy.
+		pushNodeUpdateForAlbum(albumId, [{ id: clusterId, type: "cluster", data: clusters.value[clusterId] }]);
+		if (addedWebsites.length > 0) {
+			pushNodeUpdateForAlbum(albumId, addedWebsites.map((id) => ({ id, type: "website", data: { ...websites.value[id], embedding: embeddings.value[id] } })));
+		}
 
 		closeAddWebsitesModal();
 		contextCluster.value = null;
@@ -311,20 +331,35 @@ export async function confirmAddToAlbum() {
 
 	try {
 		const clusterId = contextCluster.value.id;
-		const albumId = selectedAlbumForCluster.value;
+		const oldAlbumId = contextCluster.value.album_id;
+		const newAlbumId = selectedAlbumForCluster.value;
+		const websiteIds = [...clusters.value[clusterId].websites];
 
 		// Update cluster's album_id
-		clusters.value[clusterId].album_id = albumId;
+		clusters.value[clusterId].album_id = newAlbumId;
 
 		// Update all websites in this cluster
-		for (const websiteId of clusters.value[clusterId].websites) {
+		for (const websiteId of websiteIds) {
 			if (websites.value[websiteId]) {
-				websites.value[websiteId].album_id = albumId;
+				websites.value[websiteId].album_id = newAlbumId;
 			}
 		}
 
 		await saveToIndexedDB();
 		await refreshData();
+
+		// Live-push to shared graphs if relevant (no-op internally for either
+		// call if that particular album isn't actively shared) - the cluster
+		// and its websites no longer belong in the OLD album's shared graph
+		// (if it has one) and need to land in the NEW album's (if it has one).
+		// Without this, moving a cluster between two separately-shared albums
+		// left it fully intact in the old one's server-side state and never
+		// created it in the new one's at all.
+		pushNodeDeleteForAlbum(oldAlbumId, [clusterId, ...websiteIds]);
+		pushNodeUpdateForAlbum(newAlbumId, [
+			{ id: clusterId, type: "cluster", data: clusters.value[clusterId] },
+			...websiteIds.filter((id) => websites.value[id]).map((id) => ({ id, type: "website", data: { ...websites.value[id], embedding: embeddings.value[id] } })),
+		]);
 
 		closeAddToAlbumModal();
 		contextCluster.value = null;
@@ -470,6 +505,17 @@ export async function confirmAddConnection() {
 		await saveToIndexedDB();
 		await refreshData();
 
+		// Live-push both clusters to a shared graph if relevant (no-op
+		// internally otherwise) - manual_connections is bidirectional data
+		// on BOTH cluster nodes, and without this neither side's change ever
+		// reached the server, so it silently vanished for every other
+		// collaborator on their next refetch.
+		const albumId = contextCluster.value.album_id;
+		pushNodeUpdateForAlbum(albumId, [
+			{ id: sourceId, type: "cluster", data: clusters.value[sourceId] },
+			{ id: targetId, type: "cluster", data: clusters.value[targetId] },
+		]);
+
 		closeAddConnectionModal();
 		contextCluster.value = null;
 	} catch (error) {
@@ -512,6 +558,15 @@ export async function confirmRemoveConnection() {
 		await saveToIndexedDB();
 		await refreshData();
 
+		// Live-push both clusters to a shared graph if relevant (no-op
+		// internally otherwise) - same rationale as confirmAddConnection's
+		// own push, in reverse.
+		const albumId = contextCluster.value.album_id;
+		pushNodeUpdateForAlbum(albumId, [
+			{ id: sourceId, type: "cluster", data: clusters.value[sourceId] },
+			{ id: targetId, type: "cluster", data: clusters.value[targetId] },
+		]);
+
 		closeRemoveConnectionModal();
 		contextCluster.value = null;
 	} catch (error) {
@@ -545,6 +600,14 @@ export async function confirmWebsiteEdit() {
 		websites.value[websiteId].title = newTitle;
 		await saveToIndexedDB();
 		await refreshData();
+
+		// Live-push to a shared graph if relevant (no-op internally otherwise) -
+		// without this, a title edit only ever changed the editing browser's
+		// own local copy; every other collaborator's next refetch silently
+		// overwrote it back to the old title.
+		pushNodeUpdateForAlbum(websites.value[websiteId].album_id, [
+			{ id: websiteId, type: "website", data: { ...websites.value[websiteId], embedding: embeddings.value[websiteId] } },
+		]);
 	}
 	closeWebsiteEditModal();
 }
