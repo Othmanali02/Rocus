@@ -606,6 +606,20 @@ export async function openSharedGraph(graphId) {
 		shareOwnerName.value = payload.ownerName || null;
 		shareOwnerPictureUrl.value = payload.ownerPictureUrl || null;
 
+		// Reset unconditionally BEFORE the owner-only branch below - matches
+		// the same pattern leaveSharedGraph()/syncLocalOwnerSocketForAlbum()
+		// already use, and for the same reason: several functions
+		// (refreshShareMembers, inviteCollaborator, revokeCollaborator,
+		// togglePublicLink, etc.) read activeShareGraphId alone with no
+		// remoteGraphId fallback, so a stale value surviving from a
+		// previously-loaded graph would make those act on the WRONG graph.
+		// Not reachable via any button in the app today (every shared-graph
+		// switch is a hard page navigation, which resets all this module's
+		// state from scratch anyway) - cheap insurance the moment that
+		// changes, same reasoning as App.vue's own :key comment.
+		activeShareGraphId.value = null;
+		activeShareUrl.value = null;
+
 		// Without this, activeShareGraphId stays null whenever the owner opens
 		// their own share link fresh (a full page load resets all in-memory
 		// state) - clicking "Share" again would then think no graph exists yet
@@ -691,7 +705,7 @@ function connectSharedGraphSocket(graphId, mode = "remote") {
 				// snapshot, same as expiry" behavior. Only meaningful in 'remote'
 				// mode - an owner can't be revoked from their own graph.
 				if (socketMode === "remote" && msg.identityKey && msg.identityKey === currentIdentityKey()) {
-					freezeSharedGraphToLocalAlbum();
+					freezeSharedGraphToLocalAlbum("revoked");
 				} else {
 					refreshShareMembers();
 				}
@@ -699,10 +713,22 @@ function connectSharedGraphSocket(graphId, mode = "remote") {
 			case "graph-expired":
 				if (socketMode === "remote") {
 					remoteGraphFrozen.value = true;
-					freezeSharedGraphToLocalAlbum();
+					freezeSharedGraphToLocalAlbum("expired");
 				} else {
 					// The owner already has their own local copy by definition - no
 					// freeze needed, just stop listening on a graph that no longer exists.
+					disconnectSharedGraphSocket();
+				}
+				break;
+			case "graph-deleted":
+				// Only reachable if a socket reconnected during the expired->deleted
+				// grace window (see runExpirySweep) - same handling as expiry, just
+				// with its own wording since the graph is now gone for good rather
+				// than just frozen-but-still-fetchable.
+				if (socketMode === "remote") {
+					remoteGraphFrozen.value = true;
+					freezeSharedGraphToLocalAlbum("deleted");
+				} else {
 					disconnectSharedGraphSocket();
 				}
 				break;
@@ -735,7 +761,7 @@ function connectSharedGraphSocket(graphId, mode = "remote") {
 	};
 }
 
-function disconnectSharedGraphSocket() {
+export function disconnectSharedGraphSocket() {
 	intentionalDisconnect = true;
 	clearTimeout(reconnectTimer);
 	reconnectTimer = null;
@@ -758,10 +784,17 @@ function disconnectSharedGraphSocket() {
 function deepEqual(a, b) {
 	if (a === b) return true;
 	if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
+	// Array-ness must match too - without this, a plain object and an array
+	// sharing the same numeric-string keys/values would compare equal.
+	if (Array.isArray(a) !== Array.isArray(b)) return false;
 	const aKeys = Object.keys(a);
 	const bKeys = Object.keys(b);
 	if (aKeys.length !== bKeys.length) return false;
-	return aKeys.every((key) => deepEqual(a[key], b[key]));
+	// Compare the actual key SET, not just the count - two same-size objects
+	// with different key names (a swapped field) would otherwise slip
+	// through as "equal" as long as every value happens to resolve to
+	// undefined on the other side.
+	return aKeys.every((key) => Object.prototype.hasOwnProperty.call(b, key) && deepEqual(a[key], b[key]));
 }
 
 // Merges nodes a collaborator just pushed into the OWNER's real local
@@ -915,10 +948,22 @@ async function copyLoadedGraphIntoNewLocalAlbum(name) {
 // a brand-new local Album, exactly like the spec describes for both expiry
 // and revoke - "Add to Albums" was a live subscription while shared; once
 // access ends, it becomes a static local copy with all attributions intact.
-async function freezeSharedGraphToLocalAlbum() {
+async function freezeSharedGraphToLocalAlbum(reason) {
 	disconnectSharedGraphSocket();
 	await copyLoadedGraphIntoNewLocalAlbum("Shared graph (frozen copy)");
 	clearRemoteGraphState();
+	// Without this, the view silently swaps to an unrelated new local album
+	// with zero explanation - remoteGraphFrozen/remoteGraphId both just got
+	// reset above by clearRemoteGraphState(), so nothing else on screen
+	// tells the viewer their live shared session just ended mid-visit.
+	flashShareToast(
+		reason === "revoked"
+			? "Your access to this shared graph was revoked - saved a local copy for you."
+			: reason === "deleted"
+			? "This shared graph was permanently deleted - saved a local copy for you."
+			: "This shared graph expired - saved a local copy for you.",
+		"error"
+	);
 }
 
 // The primary viral surface's conversion action: a guest viewing a public

@@ -280,7 +280,6 @@ export class QuotaExceededError extends Error {
 }
 
 async function callHaikuSummarizeOnce(metadata, contentChunk) {
-	console.log("Yup this is is being called.");
 	const response = await fetch(HAIKU_SUMMARIZE_URL, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
@@ -305,7 +304,6 @@ async function callHaikuSummarizeOnce(metadata, contentChunk) {
 	}
 
 	const data = await response.json();
-	console.log(data);
 	if (!data.success || !data.summary) {
 		throw new Error('Invalid response from summarize API');
 	}
@@ -318,13 +316,11 @@ async function callHaikuSummarizeOnce(metadata, contentChunk) {
 // processWebsite can use either path interchangeably. On failure, retries
 // once, then falls back to the same extractive fallback local mode uses.
 export async function generateSummaryTopicQueryViaHaiku(metadata, content) {
-	console.log("The generateSummaryTopicQueryViaHaiku is being called fosho.");
 	const contentChunk = content.substring(0, 2500);
 
 	for (let attempt = 0; attempt < 2; attempt++) {
 		try {
 			const data = await callHaikuSummarizeOnce(metadata, contentChunk);
-			console.log("HAIKU DATA", data);
 			return {
 				summary: data.summary || extractFallbackSummary(content, metadata),
 				topic: data.topic,

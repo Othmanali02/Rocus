@@ -35,7 +35,7 @@
 						 panel (member list + quick-add toggle, no management controls)
 						 rendered right here for a collaborator, who has no owner panel to
 						 reuse. -->
-					<div v-else-if="isCurrentGraphShared" class="relative">
+					<div v-else-if="isCurrentGraphShared && (sharedAvatars.length > 0 || sharePublicLinkEnabled)" class="relative">
 						<button @click.stop="isSharePanelOpen = !isSharePanelOpen"
 							:title="sharedAvatars.map((a) => a.label).join(', ')"
 							class="flex items-center gap-1.5">
@@ -1909,7 +1909,7 @@
 				color: currentTheme.colors.textSecondary,
 				border: `1px solid ${currentTheme.colors.border}`
 			}">
-			v1.1.0
+			v1.2.0
 		</button>
 
 		<!-- <button @click="startTutorial"
@@ -2312,7 +2312,7 @@
 							Version History
 						</h3>
 						<p class="text-sm mt-1" :style="{ color: currentTheme.colors.textSecondary }">
-							Current version: v1.1.0 (Beta)
+							Current version: v1.2.0 (Beta)
 						</p>
 					</div>
 					<button @click="showVersionHistory = false" class="p-2 rounded-xl transition-all">
@@ -2807,6 +2807,7 @@ import {
 	myActivelySharedAlbums,
 	fetchMySharedGraphs,
 	activelyOwnedSharedGraphIds,
+	disconnectSharedGraphSocket,
 } from '../composables/graphNode/useSharing';
 
 const { analyticsConsent, trackEvent } = useAnalytics();
@@ -3140,6 +3141,10 @@ onBeforeUnmount(() => {
 	window.removeEventListener('keydown', handleKeyDown);
 	document.removeEventListener('click', handleClickOutside);
 	window.removeEventListener("resize", handleResize);
+	// Currently masked by every exit from this component being a hard page
+	// navigation (which destroys the whole JS context, socket included) -
+	// cheap insurance the moment any SPA-style exit is ever introduced.
+	disconnectSharedGraphSocket();
 });
 
 onUnmounted(() => {
