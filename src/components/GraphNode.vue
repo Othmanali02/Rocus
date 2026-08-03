@@ -3182,9 +3182,14 @@ async function deleteSelectedWebsite() {
 	const label = selectedWebsite.value.is_note ? 'this note' : `"${selectedWebsite.value.title}"`;
 	if (!(await rocusConfirm(`Delete ${label}? This can't be undone.`, { title: 'Delete', confirmText: 'Delete', danger: true }))) return;
 
+	// deleteWebsite() already refreshes correctly on its own now (choosing
+	// between refreshData()/refreshRemoteGraphView() based on whether this
+	// is a remote/collaborator view) - an unconditional refreshData() here
+	// afterward would re-break that for a remote viewer by reading this
+	// browser's own irrelevant local IndexedDB right after the correct
+	// refresh already ran.
 	await deleteWebsite(selectedWebsite.value.websiteId);
 	closeStickyNote();
-	await refreshData();
 }
 
 // "All Clusters" is shared between the Albums and History views of the

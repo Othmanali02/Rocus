@@ -12,6 +12,8 @@ import {
 	rawSimilarities,
 	saveToIndexedDB,
 	refreshData,
+	remoteGraphId,
+	refreshRemoteGraphView,
 } from "./useGraphEngine";
 import { pushNodeUpdateForAlbum, pushNodeDeleteForAlbum } from "./useSharing";
 
@@ -22,6 +24,21 @@ import { pushNodeUpdateForAlbum, pushNodeDeleteForAlbum } from "./useSharing";
 // anything from this file, so it's fully acyclic.
 
 const { trackEvent } = useAnalytics();
+
+// A remote/collaborator viewer's clusters.value/websites.value live only in
+// memory (loadSharedGraphData() never persists to IndexedDB) - refreshData()
+// would instead re-read THIS BROWSER's own local IndexedDB store, which is
+// empty/irrelevant for a shared-graph viewer, silently wiping out the edit
+// that was just correctly applied in memory until a full page reload
+// re-triggers the real openSharedGraph() load path. Same fix already applied
+// to selectHistoryDay() in useHistory.js for the identical reason.
+async function refreshAfterMutation() {
+	if (remoteGraphId.value) {
+		await refreshRemoteGraphView();
+	} else {
+		await refreshData();
+	}
+}
 
 // ---- Rename cluster ------------------------------------------------------
 export const showRenameModal = ref(false);
@@ -47,7 +64,7 @@ export async function confirmRename() {
 		clusters.value[clusterId].topic = renameInput.value.trim();
 
 		await saveToIndexedDB();
-		await refreshData();
+		await refreshAfterMutation();
 
 		// Live-push to a shared graph if relevant (no-op internally otherwise) -
 		// without this, a rename only ever changed the renaming browser's own
@@ -116,7 +133,7 @@ export async function confirmAddWebsites() {
 		}
 
 		await saveToIndexedDB();
-		await refreshData();
+		await refreshAfterMutation();
 
 		// Live-push to a shared graph if relevant (no-op internally otherwise) -
 		// the cluster's own websites array changed, plus each added website's
@@ -213,7 +230,7 @@ export async function confirmRemoveWebsites(deleteEntirely = false) {
 		}
 
 		await saveToIndexedDB();
-		await refreshData();
+		await refreshAfterMutation();
 
 		// Live-push to a shared graph if relevant (no-op internally otherwise) -
 		// same rationale as confirmDeleteCluster: a local-only mutation here
@@ -286,7 +303,7 @@ export async function confirmDeleteCluster(deleteWebsitesToo = false) {
 		delete clusters.value[clusterId];
 
 		await saveToIndexedDB();
-		await refreshData();
+		await refreshAfterMutation();
 
 		// Live-push to a shared graph if relevant (no-op internally otherwise,
 		// same as every other pushNode*ForAlbum call site) - without this, the
@@ -346,7 +363,7 @@ export async function confirmAddToAlbum() {
 		}
 
 		await saveToIndexedDB();
-		await refreshData();
+		await refreshAfterMutation();
 
 		// Live-push to shared graphs if relevant (no-op internally for either
 		// call if that particular album isn't actively shared) - the cluster
@@ -503,7 +520,7 @@ export async function confirmAddConnection() {
 		rawSimilarities[targetId][sourceId] = 1.0;
 
 		await saveToIndexedDB();
-		await refreshData();
+		await refreshAfterMutation();
 
 		// Live-push both clusters to a shared graph if relevant (no-op
 		// internally otherwise) - manual_connections is bidirectional data
@@ -556,7 +573,7 @@ export async function confirmRemoveConnection() {
 		}
 
 		await saveToIndexedDB();
-		await refreshData();
+		await refreshAfterMutation();
 
 		// Live-push both clusters to a shared graph if relevant (no-op
 		// internally otherwise) - same rationale as confirmAddConnection's
@@ -599,7 +616,7 @@ export async function confirmWebsiteEdit() {
 	if (websites.value[websiteId]) {
 		websites.value[websiteId].title = newTitle;
 		await saveToIndexedDB();
-		await refreshData();
+		await refreshAfterMutation();
 
 		// Live-push to a shared graph if relevant (no-op internally otherwise) -
 		// without this, a title edit only ever changed the editing browser's

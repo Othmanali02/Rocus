@@ -1,5 +1,5 @@
 import { ref, reactive, watch } from 'vue';
-import { websites, currentAlbum, rankCandidateClusters, saveToIndexedDB, refreshData, NOTES_HUB_SENTINEL, isReadOnlySharedView } from './useGraphEngine';
+import { websites, currentAlbum, rankCandidateClusters, saveToIndexedDB, refreshData, NOTES_HUB_SENTINEL, isReadOnlySharedView, remoteGraphId, refreshRemoteGraphView } from './useGraphEngine';
 import { processNote, generateEmbedding } from './useAIModels';
 
 export { NOTES_HUB_SENTINEL };
@@ -167,7 +167,27 @@ export async function saveNote() {
 			website.ai_summary = text;
 			website.title = text.slice(0, 60) || 'Note';
 			await saveToIndexedDB();
-			await refreshData();
+
+			// Live-push to a shared graph if relevant (no-op internally
+			// otherwise) - same missing-sync bug as every other local-only
+			// mutation found this session: without this, editing a note's
+			// text only ever changed this browser's own local copy, silently
+			// reverting for every other collaborator on their next refetch.
+			// Dynamic import - this file sits in the same
+			// useGraphEngine -> useNotes -> useAIModels -> useSharing eval
+			// chain documented in useSharing.js's own initLocalOwnerSync()
+			// comment, so it gets the same safe-import treatment
+			// useGraphEngine.js itself uses for reaching into useSharing.js.
+			const { pushNodeUpdateForAlbum } = await import('./useSharing');
+			pushNodeUpdateForAlbum(website.album_id, [
+				{ id: editingNoteId.value, type: 'website', data: website },
+			]);
+
+			if (remoteGraphId.value) {
+				await refreshRemoteGraphView();
+			} else {
+				await refreshData();
+			}
 		}
 		closeNoteModal();
 	} else {

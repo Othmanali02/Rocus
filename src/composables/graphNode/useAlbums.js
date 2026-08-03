@@ -11,6 +11,7 @@ import {
 	renderGraph,
 	resetView,
 } from "./useGraphEngine";
+import { readSharedGraphIds, catchUpSharedGraphNodes } from "./useSharing";
 
 // Album CRUD + the album switcher dropdown. Albums live in their own
 // IndexedDB store (independent of the websites/clusters/embeddings store
@@ -187,9 +188,19 @@ export function toggleAlbumsDropdown() {
 	showAlbumsDropdown.value = !showAlbumsDropdown.value;
 }
 
-export function selectAlbum(album) {
+export async function selectAlbum(album) {
 	currentAlbum.value = album;
 	showAlbumsDropdown.value = false;
+
+	// If this album is actively shared, catch up on it BEFORE the plain
+	// IndexedDB reload below - otherwise this function's own loadData() (no
+	// network involved, resolves fast) races the async catch-up fetch
+	// syncLocalOwnerSocketForAlbum() independently triggers via the
+	// currentAlbum watcher, and usually wins with stale data. Awaiting it
+	// here first closes that race outright instead of relying on incidental
+	// timing for who finishes last.
+	const graphId = album?.id ? readSharedGraphIds()[album.id] : null;
+	if (graphId) await catchUpSharedGraphNodes(graphId);
 
 	// Reload everything with new filter
 	loadData().then(() => {

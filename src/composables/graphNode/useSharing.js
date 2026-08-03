@@ -101,7 +101,7 @@ const SHARED_GRAPH_IDS_KEY = "rocus-shared-graph-ids";
 // collaborators already have a link to - any permission change made in a
 // since-refreshed session would appear to "not stick" because it was really
 // being read back from a completely different graph.
-function readSharedGraphIds() {
+export function readSharedGraphIds() {
 	try {
 		return JSON.parse(localStorage.getItem(SHARED_GRAPH_IDS_KEY) || "{}");
 	} catch {
@@ -857,14 +857,35 @@ async function mergeRemoteNodesIntoLocalAlbum(nodes) {
 		if (!node?.id || !node?.type) continue;
 		if (node.type === "website") {
 			const { embedding, ...websiteFields } = node.data || {};
+			// Force album_id to the OWNER's own local album for THIS graph,
+			// not whatever value (often null) the pushing collaborator's
+			// client happened to stamp on it. A collaborator who hasn't
+			// opted into "route quick-adds into this shared graph"
+			// (quickAddRoutesHere defaults to false for them) still has
+			// their edits pushed into the graph they're actively viewing -
+			// but with album_id: null, since their own remote view never
+			// filters by album at all and has no reason to set it correctly.
+			// The OWNER's dashboard, unlike a remote view, DOES filter
+			// fetchClusters()/websites by exact album_id match - without
+			// this override, a real content-loss bug: the collaborator's
+			// addition was correctly pushed, correctly received over the
+			// live socket, and correctly saved to IndexedDB, but silently
+			// never rendered because its album_id didn't match the
+			// currently-selected album. Confirmed live: WS frame arrived
+			// with the right data, IndexedDB had it, only the album filter
+			// was hiding it.
+			if (localOwnerSocketAlbumId) websiteFields.album_id = localOwnerSocketAlbumId;
 			if (!deepEqual(websites.value[node.id], websiteFields)) {
 				websites.value[node.id] = websiteFields;
 				changed = true;
 			}
 			if (embedding) embeddings.value[node.id] = embedding;
 		} else if (node.type === "cluster") {
-			if (!deepEqual(clusters.value[node.id], node.data)) {
-				clusters.value[node.id] = node.data;
+			const clusterData = localOwnerSocketAlbumId
+				? { ...node.data, album_id: localOwnerSocketAlbumId }
+				: node.data;
+			if (!deepEqual(clusters.value[node.id], clusterData)) {
+				clusters.value[node.id] = clusterData;
 				changed = true;
 			}
 		}
@@ -960,7 +981,7 @@ function syncLocalOwnerSocketForAlbum(album) {
 // upsert logic - the GET /api/shared/:graphId response's nodes array is the
 // same {id, type, data} shape a WS broadcast carries, just the whole graph's
 // worth instead of one push's worth.
-async function catchUpSharedGraphNodes(graphId) {
+export async function catchUpSharedGraphNodes(graphId) {
 	try {
 		const res = await fetch(`${API_BASE}/api/shared/${graphId}`, { credentials: "include" });
 		if (!res.ok) return;
