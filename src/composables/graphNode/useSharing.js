@@ -591,6 +591,37 @@ export async function pushNodeUpdateForAlbum(albumId, nodes) {
 	}
 }
 
+// Same resolution logic as pushNodeUpdateForAlbum above, for the delete side -
+// a cluster/website removed locally (rename/remove-websites/delete-cluster in
+// useClusterActions.js) needs the matching shared_graph_nodes row(s) removed
+// too, or it silently reappears for every other collaborator on their next
+// refetch (this was a real, reported bug: deleting a cluster while
+// collaborating left it fully intact for everyone else).
+export async function pushNodeDeleteForAlbum(albumId, nodeIds) {
+	if (!Array.isArray(nodeIds) || nodeIds.length === 0) return;
+	let graphId = null;
+
+	if (remoteGraphId.value) {
+		if (remoteGraphRole.value !== "owner" && remoteGraphRole.value !== "edit") return;
+		graphId = remoteGraphId.value;
+	} else if (albumId) {
+		graphId = readSharedGraphIds()[albumId] || null;
+	}
+
+	if (!graphId) return;
+
+	try {
+		await fetch(`${API_BASE}/api/shared/${graphId}/nodes`, {
+			method: "DELETE",
+			credentials: "include",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ nodeIds }),
+		});
+	} catch (err) {
+		console.error("Failed to push node deletion to shared graph:", err);
+	}
+}
+
 // Loads a shared graph as the current view (guest, invited collaborator, or
 // the owner reopening it) - the entry point the /shared/:graphId route calls.
 export async function openSharedGraph(graphId) {
@@ -689,6 +720,17 @@ function connectSharedGraphSocket(graphId, mode = "remote") {
 				if (socketMode === "local-owner") {
 					mergeRemoteNodesIntoLocalAlbum(msg.nodes);
 				} else {
+					refreshRemoteGraph(API_BASE);
+				}
+				break;
+			case "nodes-deleted":
+				if (socketMode === "local-owner") {
+					removeNodesFromLocalAlbum(msg.nodeIds);
+				} else {
+					// refreshRemoteGraph() does a full re-fetch + re-render, which
+					// already correctly reflects a deletion (the removed node just
+					// isn't in the response anymore) - no separate removal logic
+					// needed for a remote/collaborator viewer.
 					refreshRemoteGraph(API_BASE);
 				}
 				break;
@@ -823,6 +865,40 @@ async function mergeRemoteNodesIntoLocalAlbum(nodes) {
 		} else if (node.type === "cluster") {
 			if (!deepEqual(clusters.value[node.id], node.data)) {
 				clusters.value[node.id] = node.data;
+				changed = true;
+			}
+		}
+	}
+	if (!changed) return;
+	await saveToIndexedDB();
+	await refreshData();
+}
+
+// The delete-side counterpart to mergeRemoteNodesIntoLocalAlbum above - a
+// collaborator deleting a cluster/website needs the OWNER's own local
+// IndexedDB copy to drop it too, not just the server's shared_graph_nodes row
+// (which pushNodeDeleteForAlbum/the DELETE route already handle).
+async function removeNodesFromLocalAlbum(nodeIds) {
+	if (!Array.isArray(nodeIds) || nodeIds.length === 0) return;
+	let changed = false;
+	for (const nodeId of nodeIds) {
+		if (clusters.value[nodeId]) {
+			delete clusters.value[nodeId];
+			changed = true;
+		}
+		if (websites.value[nodeId]) {
+			delete websites.value[nodeId];
+			delete embeddings.value[nodeId];
+			changed = true;
+		}
+		// A website id can still be referenced from a cluster's own websites
+		// array even after the two checks above (e.g. it was only removed
+		// from ONE cluster locally, or this ID was never this browser's own
+		// top-level record to begin with) - strip it everywhere it's listed.
+		for (const cluster of Object.values(clusters.value)) {
+			const idx = cluster.websites?.indexOf(nodeId);
+			if (idx > -1) {
+				cluster.websites.splice(idx, 1);
 				changed = true;
 			}
 		}

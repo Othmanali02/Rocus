@@ -13,6 +13,7 @@ import {
 	saveToIndexedDB,
 	refreshData,
 } from "./useGraphEngine";
+import { pushNodeUpdateForAlbum, pushNodeDeleteForAlbum } from "./useSharing";
 
 // Cluster/website context-menu actions: rename, add/remove websites,
 // manual connections, add-to-album, delete cluster, edit website title.
@@ -152,6 +153,9 @@ export async function confirmRemoveWebsites(deleteEntirely = false) {
 
 	try {
 		const clusterId = contextCluster.value.id;
+		const albumId = contextCluster.value.album_id;
+		const deletedNodeIds = [];
+		const updatedWebsites = [];
 
 		for (const websiteId of selectedWebsitesToRemove.value) {
 			const index = clusters.value[clusterId].websites.indexOf(websiteId);
@@ -163,6 +167,7 @@ export async function confirmRemoveWebsites(deleteEntirely = false) {
 				// Delete website entirely from all clusters and embeddings
 				delete websites.value[websiteId];
 				delete embeddings.value[websiteId];
+				deletedNodeIds.push(websiteId);
 
 				// Remove from other clusters too
 				for (const cluster of Object.values(clusters.value)) {
@@ -175,17 +180,36 @@ export async function confirmRemoveWebsites(deleteEntirely = false) {
 				// Just remove cluster reference
 				if (websites.value[websiteId]) {
 					delete websites.value[websiteId].cluster_id;
+					updatedWebsites.push(websiteId);
 				}
 			}
 		}
 
 		// Delete cluster if empty
-		if (clusters.value[clusterId].websites.length === 0) {
+		const clusterEmptied = clusters.value[clusterId].websites.length === 0;
+		if (clusterEmptied) {
 			delete clusters.value[clusterId];
+			deletedNodeIds.push(clusterId);
 		}
 
 		await saveToIndexedDB();
 		await refreshData();
+
+		// Live-push to a shared graph if relevant (no-op internally otherwise) -
+		// same rationale as confirmDeleteCluster: a local-only mutation here
+		// left the server's shared_graph_nodes rows untouched, so removed/
+		// ungrouped websites (and an emptied-out cluster) silently reappeared
+		// for every other collaborator.
+		if (deletedNodeIds.length > 0) pushNodeDeleteForAlbum(albumId, deletedNodeIds);
+		if (!clusterEmptied) {
+			// The cluster's own websites array changed even when it wasn't
+			// emptied out entirely - push its updated data too, not just the
+			// individual websites that were ungrouped/deleted.
+			pushNodeUpdateForAlbum(albumId, [{ id: clusterId, type: "cluster", data: clusters.value[clusterId] }]);
+		}
+		if (updatedWebsites.length > 0) {
+			pushNodeUpdateForAlbum(albumId, updatedWebsites.map((id) => ({ id, type: "website", data: { ...websites.value[id], embedding: embeddings.value[id] } })));
+		}
 
 		closeRemoveWebsitesModal();
 		contextCluster.value = null;
@@ -216,7 +240,9 @@ export async function confirmDeleteCluster(deleteWebsitesToo = false) {
 
 	try {
 		const clusterId = contextCluster.value.id;
+		const albumId = contextCluster.value.album_id;
 		const websiteIds = [...clusters.value[clusterId].websites];
+		const updatedWebsites = [];
 
 		for (const websiteId of websiteIds) {
 			if (deleteWebsitesToo) {
@@ -233,6 +259,7 @@ export async function confirmDeleteCluster(deleteWebsitesToo = false) {
 				}
 			} else if (websites.value[websiteId]) {
 				delete websites.value[websiteId].cluster_id;
+				updatedWebsites.push(websiteId);
 			}
 		}
 
@@ -240,6 +267,21 @@ export async function confirmDeleteCluster(deleteWebsitesToo = false) {
 
 		await saveToIndexedDB();
 		await refreshData();
+
+		// Live-push to a shared graph if relevant (no-op internally otherwise,
+		// same as every other pushNode*ForAlbum call site) - without this, the
+		// cluster (and, if deleteWebsitesToo, its websites) stayed fully
+		// intact in the server's shared_graph_nodes table, silently
+		// reappearing for every other collaborator on their next refetch even
+		// though the deleting browser's own local view correctly dropped it.
+		const deletedNodeIds = deleteWebsitesToo ? [clusterId, ...websiteIds] : [clusterId];
+		pushNodeDeleteForAlbum(albumId, deletedNodeIds);
+		// Websites that were only ungrouped (not deleted) still exist as their
+		// own shared_graph_nodes row - their data changed (lost cluster_id),
+		// so that's an upsert, not a delete.
+		if (updatedWebsites.length > 0) {
+			pushNodeUpdateForAlbum(albumId, updatedWebsites.map((id) => ({ id, type: "website", data: { ...websites.value[id], embedding: embeddings.value[id] } })));
+		}
 
 		showDeleteClusterModal.value = false;
 		contextCluster.value = null;
