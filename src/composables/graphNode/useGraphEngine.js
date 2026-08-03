@@ -562,6 +562,11 @@ export async function loadFromIndexedDB() {
 
 export async function deleteWebsite(websiteId) {
 	if (isReadOnlySharedView.value) return;
+
+	const albumId = websites.value[websiteId]?.album_id ?? null;
+	const deletedNodeIds = [websiteId];
+	const updatedClusterIds = [];
+
 	// Remove from clusters
 	for (const cluster of Object.values(clusters.value)) {
 		const index = cluster.websites.indexOf(websiteId);
@@ -571,6 +576,9 @@ export async function deleteWebsite(websiteId) {
 			// Delete empty clusters
 			if (cluster.websites.length === 0) {
 				delete clusters.value[cluster.id];
+				deletedNodeIds.push(cluster.id);
+			} else {
+				updatedClusterIds.push(cluster.id);
 			}
 		}
 	}
@@ -580,6 +588,38 @@ export async function deleteWebsite(websiteId) {
 	delete embeddings.value[websiteId];
 
 	await saveToIndexedDB();
+
+	// Live-push to a shared graph if relevant (no-op internally otherwise) -
+	// this is a separate entry point from confirmDeleteCluster/
+	// confirmRemoveWebsites in useClusterActions.js (deleting a single
+	// website from its own node context menu, via GraphNode.vue's
+	// deleteSelectedWebsite(), rather than the cluster's "Remove Websites"
+	// modal) - same missing-sync bug though: without this, the deletion only
+	// ever happened in this browser's own local IndexedDB, silently
+	// reappearing for every other collaborator (and on this browser's own
+	// next refresh) since the server's shared_graph_nodes rows were never
+	// touched. Dynamic import - useGraphEngine.js must never statically
+	// import from useSharing.js (see the identical pattern a few lines up in
+	// this file, e.g. handleNodeMouseOver's resolveAddedByName import).
+	const { pushNodeUpdateForAlbum, pushNodeDeleteForAlbum } = await import("./useSharing");
+	pushNodeDeleteForAlbum(albumId, deletedNodeIds);
+	if (updatedClusterIds.length > 0) {
+		pushNodeUpdateForAlbum(albumId, updatedClusterIds.map((id) => ({ id, type: "cluster", data: clusters.value[id] })));
+	}
+
+	// Re-render correctly for a remote/collaborator viewer too - this
+	// function previously never re-rendered at all on its own (relying on
+	// whatever the caller happened to do afterward), which for a remote
+	// viewer meant the caller's own plain refreshData() call read this
+	// browser's own empty/irrelevant IndexedDB instead of the in-memory
+	// shared-graph state, same class of bug already fixed for
+	// useClusterActions.js's mutation functions.
+	if (remoteGraphId.value) {
+		await refreshRemoteGraphView();
+	} else {
+		await refreshData();
+	}
+
 	console.log(`🗑️ Deleted website: ${websiteId}`);
 }
 
