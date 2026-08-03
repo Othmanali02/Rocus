@@ -4,55 +4,55 @@
 export const tutorialSteps = [
 	{
 		title: 'Welcome to Rocus',
-		description: 'Rocus automatically organizes your saved websites using AI. Let\'s walk through how it works.',
+		description: 'Rocus automatically organizes your saved websites into a living knowledge graph using AI. Let\'s walk through how it works - it only takes a minute.',
 		highlight: null,
 		action: null
 	},
 	{
-		title: 'AI Model Readiness',
-		description: 'This icon shows whether Rocus is ready to process websites. On Cloud mode, the default, it\'s ready right away. Switch to Local mode and Rocus downloads a small AI model that runs right in your browser. It\'s a one time download, about 30 to 60 seconds, then Rocus works fully offline. Green means you\'re good to go.',
+		title: 'AI Processing Status',
+		description: 'This icon shows whether Rocus is ready to process new websites. Cloud mode (the default) is ready instantly. Switch to Local mode and Rocus downloads a small AI model that runs entirely in your browser - a one-time, 30-60 second download, then it works fully offline. Green means you\'re good to go.',
 		highlight: 'model-status',
 		action: null
 	},
 	{
-		title: 'Browser Extension',
-		description: 'Install the Rocus extension to save websites. Click the extension icon, select an album (or quick save), and Rocus will automatically cluster similar content.',
+		title: 'Save Websites With the Extension',
+		description: 'The Rocus browser extension is how websites get into Rocus in the first place. Click its icon while browsing, pick an album (or just quick-save), and Rocus automatically clusters it with similar content.',
 		highlight: null,
-		action: null
+		action: 'checkExtension'
 	},
 	{
-		title: 'Albums',
-		description: 'Create albums to organize your clusters by topic, project, or any way you like. Click here to switch between albums or view all clusters at once.',
+		title: 'Organize With Albums',
+		description: 'Albums group your clusters by topic, project, or however you like to organize things. Click here to switch between albums or view everything at once.',
 		highlight: 'albums-dropdown',
 		action: null
 	},
 	{
-		title: 'Understanding Clusters',
-		description: 'Each circle (node) represents a topic of similar websites. Larger nodes contain more websites. The graph shows how different topics relate to each other.',
+		title: 'How Clusters Work',
+		description: 'Every circle on the graph is a cluster of similar websites - the bigger the circle, the more websites inside it. Related topics are drawn closer together, so the shape of the graph itself tells you something.',
 		highlight: 'demo-cluster',
 		action: 'showDemoCluster'
 	},
 	{
-		title: 'Exploring Clusters',
-		description: 'Click any cluster to "explode" it and see the individual websites inside. Try clicking the highlighted cluster now!',
+		title: 'Explore a Cluster',
+		description: 'Click any cluster to open it up and see the individual websites inside. Give the highlighted one a try now.',
 		highlight: 'demo-cluster',
 		action: 'explodeDemoCluster'
 	},
 	{
-		title: 'Customization',
-		description: 'Click the theme button to choose from 15+ beautiful color schemes. Your preferences are saved automatically for next time.',
+		title: 'Share and Collaborate',
+		description: 'Click the share icon on any album to get a link - anyone can view it instantly, no account needed. Invite people by email to let them add or edit content with you in real time, and see a colored dot on each item showing who added it.',
+		highlight: 'share-button',
+		action: null
+	},
+	{
+		title: 'Make It Yours',
+		description: 'Pick from 15+ color themes with the theme button - your choice is saved automatically. Use the search bar to instantly find any cluster or website, and right-click a cluster to rename it, add or remove websites, or discover related content.',
 		highlight: 'theme-button',
 		action: null
 	},
 	{
-		title: 'Search & Organize',
-		description: 'Use the search bar to find clusters and websites instantly. Right-click any cluster to rename, add websites, remove items, or discover similar content online.',
-		highlight: 'search-bar',
-		action: null
-	},
-	{
-		title: 'You\'re All Set!',
-		description: 'Start saving websites with the extension and watch Rocus organize them automatically. Your intelligent knowledge graph grows with you!',
+		title: 'You\'re All Set',
+		description: 'That\'s everything you need to know. Start saving websites with the extension and Rocus will keep organizing your knowledge graph as you go.',
 		highlight: null,
 		action: 'cleanup'
 	}
@@ -62,49 +62,49 @@ export const tutorialSteps = [
 export const tutorialStepsEmpty = [
 	{
 		title: 'Welcome to Rocus',
-		description: 'Rocus automatically organizes your saved websites using AI. Let\'s walk through how it works.',
+		description: 'Rocus automatically organizes your saved websites into a living knowledge graph using AI. Let\'s walk through how it works - it only takes a minute.',
 		highlight: null,
 		action: null
 	},
 	{
-		title: 'AI Model Readiness',
-		description: 'This icon shows whether Rocus is ready to process websites. On Cloud mode, the default, it\'s ready right away. Switch to Local mode and Rocus downloads a small AI model that runs right in your browser. It\'s a one time download, about 30 to 60 seconds, then Rocus works fully offline. Green means you\'re good to go.',
+		title: 'AI Processing Status',
+		description: 'This icon shows whether Rocus is ready to process new websites. Cloud mode (the default) is ready instantly. Switch to Local mode and Rocus downloads a small AI model that runs entirely in your browser - a one-time, 30-60 second download, then it works fully offline. Green means you\'re good to go.',
 		highlight: 'model-status',
 		action: null
 	},
 	{
-		title: 'Browser Extension',
-		description: 'Install the Rocus extension to start saving websites. Click the extension icon, select an album (or quick save), and Rocus will automatically cluster similar content.',
+		title: 'Save Websites With the Extension',
+		description: 'The Rocus browser extension is how websites get into Rocus in the first place. Click its icon while browsing, pick an album (or just quick-save), and Rocus automatically clusters it with similar content.',
 		highlight: null,
-		action: null
+		action: 'checkExtension'
 	},
 	{
-		title: 'Albums System',
-		description: 'Create albums to organize your clusters by topic, project, or any way you like. Click here to switch between albums or create new ones.',
+		title: 'Organize With Albums',
+		description: 'Albums group your clusters by topic, project, or however you like to organize things. Click here to switch between albums or create a new one.',
 		highlight: 'albums-dropdown',
 		action: null
 	},
 	{
-		title: 'Your Graph Will Grow',
-		description: 'Once you start saving websites, they\'ll appear here as interactive clusters. Similar websites are automatically grouped together, and you can see connections between topics.',
+		title: 'Your Graph Starts Here',
+		description: 'Once you save a few websites, they\'ll appear here as clusters - similar sites automatically grouped together, with related topics drawn closer to each other.',
 		highlight: 'graph-container',
 		action: null
 	},
 	{
-		title: 'Customization',
-		description: 'Click the theme button to choose from 15+ beautiful color schemes. Your preferences are saved automatically for next time.',
+		title: 'Share and Collaborate',
+		description: 'Once you have something worth sharing, click the share icon on any album to get a link - anyone can view it instantly, no account needed. Invite people by email to add or edit content with you in real time.',
+		highlight: null,
+		action: null
+	},
+	{
+		title: 'Make It Yours',
+		description: 'Pick from 15+ color themes with the theme button - your choice is saved automatically. Once you have content, use the search bar to instantly find any cluster or website, and right-click a cluster to rename it, add or remove websites, or discover related content.',
 		highlight: 'theme-button',
 		action: null
 	},
 	{
-		title: 'Search & Organize',
-		description: 'Use the search bar to find clusters and websites instantly. Right-click any cluster to rename, add websites, remove items, or discover similar content online.',
-		highlight: 'search-bar',
-		action: null
-	},
-	{
 		title: 'Get Started',
-		description: 'Install the browser extension and start saving websites. Watch as Rocus builds your intelligent knowledge graph automatically!',
+		description: 'Install the browser extension and save your first website - watch as Rocus builds your knowledge graph automatically.',
 		highlight: null,
 		action: null
 	}

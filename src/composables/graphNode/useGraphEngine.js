@@ -1,4 +1,4 @@
-import { ref, reactive, computed } from "vue";
+import { ref, reactive, computed, watch } from "vue";
 import * as d3 from "d3";
 import { db } from "./useDatabase";
 import { currentTheme } from "./useThemes";
@@ -174,6 +174,17 @@ export let rawSimilarities = {};
 export let simulation;
 export let svg, container, zoom;
 let websiteNodes = [];
+
+// Touch-target sizing lever for the mobile/touch pass - read by both this
+// file's D3 rendering code (exploded-node radius) and GraphNode.vue's
+// template (icon button padding, hint text) so a real mouse/desktop user
+// sees pixel-identical sizing to before this existed.
+export const isCoarsePointer = ref(false);
+if (typeof window !== "undefined" && window.matchMedia) {
+	const coarsePointerQuery = window.matchMedia("(pointer: coarse)");
+	isCoarsePointer.value = coarsePointerQuery.matches;
+	coarsePointerQuery.addEventListener("change", (e) => { isCoarsePointer.value = e.matches; });
+}
 
 // Sticky note dragging
 let isDraggingSticky = false;
@@ -893,6 +904,27 @@ export const remoteGraphFrozen = ref(false);
 // file; the reverse direction is never safe at module-eval time).
 export const activeShareGraphId = ref(null);
 
+// Whether the currently-viewed graph (owner's actively-shared album, or a
+// remote /shared/:graphId view) is shared with anyone at all - the single
+// condition that should gate anything that only makes sense once there's
+// more than one possible contributor (e.g. the "who added this" attribution
+// badge/tooltip in renderGraph() below). Exported so GraphNode.vue's
+// isCurrentGraphShared computed can defer to this instead of re-deriving the
+// same boolean a third time.
+export function isSharedGraphContext() {
+	return !!(remoteGraphId.value || activeShareGraphId.value);
+}
+
+// Attribution badges are a function of CURRENT share state, not of DOM entry
+// history - without this, unsharing a graph wouldn't clear badges already
+// appended to still-present nodes (they only ever went through the D3 join's
+// enter branch once), and re-sharing wouldn't retroactively add them back.
+// renderGraph() itself only reacts to graphData changes, so share-state
+// flips need their own trigger here.
+watch([remoteGraphId, activeShareGraphId], () => {
+	if (svg) renderGraph();
+});
+
 // Single source of truth for "this viewer should not be able to change
 // anything" - a view-only collaborator or an anonymous guest on a shared
 // graph. Local/single-player use (remoteGraphId null) and owner/edit
@@ -1281,8 +1313,11 @@ export function performExplosion(clusterNode) {
 			is_note: !!website.is_note,
 			note_text: website.note_text || null,
 			added_by: website.added_by || null,
-			size: 10,
-			baseSize: 10,
+			// Grown on touch devices - this is the primary "inspect a website"
+			// tap target for a shared-view guest, and 10 (20px diameter) was
+			// well under any usable touch-target size.
+			size: isCoarsePointer.value ? 16 : 10,
+			baseSize: isCoarsePointer.value ? 16 : 10,
 			type: "website",
 			parentCluster: clusterNode.id,
 			x: centerX, // Start at center
@@ -1381,21 +1416,38 @@ export function collapseNode() {
 // ==============================================
 // STICKY NOTE DRAGGING
 // ==============================================
+// e.touches?.[0] ?? e covers both mouse events (clientX/Y directly on the
+// event) and touch events (coordinates live on the first Touch in the list
+// instead) with the same code path, rather than duplicating this function
+// three times over.
+function pointFromEvent(e) {
+	return e.touches?.[0] ?? e;
+}
+
 export function startDraggingSticky(e) {
 	isDraggingSticky = true;
 	const stickyEl = e.currentTarget.parentElement;
 	const rect = stickyEl.getBoundingClientRect();
-	dragOffsetX = e.clientX - rect.left;
-	dragOffsetY = e.clientY - rect.top;
+	const point = pointFromEvent(e);
+	dragOffsetX = point.clientX - rect.left;
+	dragOffsetY = point.clientY - rect.top;
 	document.addEventListener("mousemove", handleStickyDrag);
 	document.addEventListener("mouseup", stopStickyDrag);
+	// passive: false so preventDefault() below can actually suppress the
+	// page scrolling underneath the drag - touch-action: none on the graph
+	// canvas covers the D3 zoom/pan surface, but the sticky note popup is a
+	// regular DOM element outside that surface.
+	document.addEventListener("touchmove", handleStickyDrag, { passive: false });
+	document.addEventListener("touchend", stopStickyDrag);
 }
 
 export function handleStickyDrag(e) {
 	if (!isDraggingSticky) return;
+	if (e.cancelable) e.preventDefault();
+	const point = pointFromEvent(e);
 	stickyNoteStyle.value = {
-		left: e.clientX - dragOffsetX + "px",
-		top: e.clientY - dragOffsetY + "px",
+		left: point.clientX - dragOffsetX + "px",
+		top: point.clientY - dragOffsetY + "px",
 	};
 }
 
@@ -1403,6 +1455,8 @@ export function stopStickyDrag() {
 	isDraggingSticky = false;
 	document.removeEventListener("mousemove", handleStickyDrag);
 	document.removeEventListener("mouseup", stopStickyDrag);
+	document.removeEventListener("touchmove", handleStickyDrag);
+	document.removeEventListener("touchend", stopStickyDrag);
 }
 
 // ==============================================
@@ -1571,15 +1625,6 @@ export function renderGraph() {
 	// top of the exact same circle every other node gets. The circle's own
 	// r/fill/stroke logic is unchanged; only the wrapper changed, so "same
 	// size and same color" for file nodes falls out for free.
-	// Attribution badges only matter once there's more than one possible
-	// contributor - a plain local album's added_by is always just the
-	// viewer themself, so the badge would be pure clutter there. Covers both
-	// a collaborator/guest on /shared/:graphId (remoteGraphId) and the
-	// owner's own /dashboard with an actively-shared album selected
-	// (activeShareGraphId) - both refs are declared in this same file
-	// specifically so code here can read them directly with no import.
-	const isSharedContext = !!(remoteGraphId.value || activeShareGraphId.value);
-
 	const nodes = nodeGroup
 		.selectAll(".node")
 		.data(graphData.nodes, (d) => d.id)
@@ -1597,19 +1642,6 @@ export function renderGraph() {
 					.attr("class", "node-note-icon")
 					.attr("d", NOTE_ICON_PATH)
 					.attr("pointer-events", "none");
-				// "Who added this" - a persistent satellite dot, opposite corner
-				// from .node-cursor-badge (renderRemoteCursors()) so the two never
-				// collide: this one is static per-node data, that one is a live,
-				// ephemeral presence ping.
-				if (isSharedContext) {
-					g.filter((d) => d.type === "website" && d.added_by)
-						.append("circle")
-						.attr("class", "node-attribution-badge")
-						.attr("r", 5)
-						.attr("stroke", "#fff")
-						.attr("stroke-width", 1.5)
-						.attr("pointer-events", "none");
-				}
 				return g;
 			},
 			(update) => update,
@@ -1652,11 +1684,41 @@ export function renderGraph() {
 		.attr("stroke-width", 0.8)
 		.attr("stroke-linejoin", "round");
 
-	nodes
-		.select(".node-attribution-badge")
-		.attr("cy", (d) => d.size * settings.nodeSize + 8)
-		.attr("cx", (d) => -(d.size * settings.nodeSize + 8))
-		.attr("fill", (d) => colorForIdentity(d.added_by));
+	// "Who added this" - a persistent satellite dot, opposite corner from
+	// .node-cursor-badge (renderRemoteCursors()) so the two never collide:
+	// this one is static per-node data, that one is a live, ephemeral
+	// presence ping. Attribution only matters once there's more than one
+	// possible contributor - a plain local album's added_by is always just
+	// the viewer themself, so the badge would be pure clutter there.
+	// Re-evaluated on every render (not just for newly-entering nodes, via
+	// this .each() rather than the D3 join's enter branch) so a graph being
+	// shared/unshared while already-rendered nodes exist immediately shows
+	// or clears their badges, instead of only affecting nodes that happen to
+	// re-enter the DOM afterward.
+	const sharedContext = isSharedGraphContext();
+	nodes.each(function (d) {
+		const shouldShow = sharedContext && d.type === "website" && !!d.added_by;
+		const g = d3.select(this);
+		let badge = g.select(".node-attribution-badge");
+		if (shouldShow && badge.empty()) {
+			badge = g
+				.append("circle")
+				.attr("class", "node-attribution-badge")
+				.attr("r", 5)
+				.attr("stroke", "#fff")
+				.attr("stroke-width", 1.5)
+				.attr("pointer-events", "none");
+		} else if (!shouldShow && !badge.empty()) {
+			badge.remove();
+			return;
+		}
+		if (shouldShow) {
+			badge
+				.attr("cy", d.size * settings.nodeSize + 8)
+				.attr("cx", -(d.size * settings.nodeSize + 8))
+				.attr("fill", colorForIdentity(d.added_by));
+		}
+	});
 
 	const labels = labelGroup
 		.selectAll(".node-label")
@@ -1756,9 +1818,12 @@ export function handleNodeMouseOver(event, d) {
 	// "Added by X" - appended asynchronously once resolved (same dynamic-
 	// import pattern as sendCursorUpdate below, to avoid the circular-import
 	// hazard this project has hit before). Skipped for older content with no
-	// added_by, and resolves to nothing for a guest viewer (never reveals
-	// identities to guests - see resolveAddedByName()'s own comment).
-	if (d.type === "website" && d.added_by) {
+	// added_by, resolves to nothing for a guest viewer (never reveals
+	// identities to guests - see resolveAddedByName()'s own comment), and
+	// gated on isSharedGraphContext() so it doesn't show on purely local,
+	// never-shared content (added_by is set unconditionally at creation
+	// time regardless of share status - this is the only place that mattered).
+	if (d.type === "website" && d.added_by && isSharedGraphContext()) {
 		import("./useSharing").then(({ resolveAddedByName }) => {
 			const name = resolveAddedByName(d.added_by);
 			if (name) tooltipEl.html(tooltipEl.html() + `<br>Added by ${name}`);

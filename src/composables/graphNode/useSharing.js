@@ -303,7 +303,6 @@ async function ensureShareableAlbumId() {
 		const dayClusters = Object.values(clusters.value).filter(
 			(c) => getClusterDayKey(c) === currentHistoryDay.value
 		);
-		if (dayClusters.length === 0) throw new Error("nothing_to_share");
 
 		const { album } = await createAlbum({ name: `Shared - ${currentHistoryDay.value}`, icon: iconOptions[0] });
 		for (const cluster of dayClusters) {
@@ -322,7 +321,6 @@ export async function shareCurrentGraph({ publicLinkEnabled = false, guestDownlo
 	try {
 		const albumId = await ensureShareableAlbumId();
 		const nodes = gatherAlbumNodes(albumId);
-		if (nodes.length === 0) throw new Error("nothing_to_share");
 
 		const sharedGraphIds = readSharedGraphIds();
 		const graphId = activeShareGraphId.value || sharedGraphIds[albumId] || generateId();
