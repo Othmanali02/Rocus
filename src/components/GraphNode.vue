@@ -39,11 +39,13 @@
 							class="flex items-center gap-1.5">
 							<div class="flex items-center" style="padding-left: 6px;">
 								<div v-for="(avatar, i) in sharedAvatars.slice(0, 3)" :key="avatar.label"
-									class="w-7 h-7 rounded-full border-2 flex items-center justify-center text-xs font-semibold overflow-hidden"
+									class="relative w-7 h-7 rounded-full border-2 flex items-center justify-center text-xs font-semibold overflow-hidden"
 									:style="{ borderColor: currentTheme.colors.background, backgroundColor: currentTheme.colors.primary, color: '#fff', marginLeft: '-6px', zIndex: 3 - i }">
 									<img v-if="avatar.pictureUrl && !failedAvatarUrls.has(avatar.pictureUrl)" :src="avatar.pictureUrl"
 										:alt="avatar.label" class="w-full h-full object-cover" @error="markAvatarFailed(avatar.pictureUrl)" />
 									<span v-else>{{ avatar.label.charAt(0).toUpperCase() }}</span>
+									<span v-if="avatar.online" class="absolute bottom-0 right-0 w-2 h-2 rounded-full bg-green-500"
+										:style="{ border: `1.5px solid ${currentTheme.colors.background}` }" :title="`${avatar.label} is online`"></span>
 								</div>
 								<div v-if="sharedAvatars.length > 3"
 									class="w-7 h-7 rounded-full border-2 flex items-center justify-center text-[10px] font-semibold"
@@ -66,11 +68,13 @@
 							</div>
 							<div class="p-4 space-y-3 max-h-96 overflow-y-auto text-xs">
 								<div v-for="avatar in sharedAvatars" :key="avatar.label" class="flex items-center gap-2">
-									<div class="w-6 h-6 rounded-full flex items-center justify-center font-semibold overflow-hidden"
+									<div class="relative w-6 h-6 rounded-full flex items-center justify-center font-semibold overflow-hidden"
 										:style="{ backgroundColor: currentTheme.colors.primary, color: '#fff' }">
 										<img v-if="avatar.pictureUrl && !failedAvatarUrls.has(avatar.pictureUrl)" :src="avatar.pictureUrl"
 											:alt="avatar.label" class="w-full h-full object-cover" @error="markAvatarFailed(avatar.pictureUrl)" />
 										<span v-else>{{ avatar.label.charAt(0).toUpperCase() }}</span>
+										<span v-if="avatar.online" class="absolute bottom-0 right-0 w-1.5 h-1.5 rounded-full bg-green-500"
+											:style="{ border: `1px solid ${currentTheme.colors.surface}` }" :title="`${avatar.label} is online`"></span>
 									</div>
 									<span :style="{ color: currentTheme.colors.text }">{{ avatar.label }}</span>
 								</div>
@@ -2919,6 +2923,8 @@ import {
 	shareMembers,
 	shareOwnerName,
 	shareOwnerPictureUrl,
+	shareOwnerIdentityKey,
+	onlineIdentityKeys,
 	sharePublicLinkEnabled,
 	sharePublicLinkAllowsDownloads,
 	shareBusy,
@@ -3052,11 +3058,19 @@ const sharedAvatars = computed(() => {
 	const selfEmail = store.user?.email || null;
 	const list = [];
 	if (remoteGraphId.value && remoteGraphRole.value !== 'owner' && (shareOwnerName.value || shareOwnerPictureUrl.value)) {
-		list.push({ label: shareOwnerName.value || 'Owner', pictureUrl: shareOwnerPictureUrl.value });
+		list.push({
+			label: shareOwnerName.value || 'Owner',
+			pictureUrl: shareOwnerPictureUrl.value,
+			online: onlineIdentityKeys.value.has(shareOwnerIdentityKey.value),
+		});
 	}
 	for (const m of shareMembers.value) {
 		if (m.invited_email && m.invited_email === selfEmail) continue;
-		list.push({ label: m.invited_email || '?', pictureUrl: m.picture_url || null });
+		list.push({
+			label: m.invited_email || '?',
+			pictureUrl: m.picture_url || null,
+			online: onlineIdentityKeys.value.has(m.identity_key),
+		});
 	}
 	return list;
 });
