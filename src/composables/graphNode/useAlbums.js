@@ -11,7 +11,7 @@ import {
 	renderGraph,
 	resetView,
 } from "./useGraphEngine";
-import { readSharedGraphIds, catchUpSharedGraphNodes } from "./useSharing";
+import { readSharedGraphIds, catchUpSharedGraphNodes, pushSharedGraphTitle, revokeSharedGraphForAlbum } from "./useSharing";
 
 // Album CRUD + the album switcher dropdown. Albums live in their own
 // IndexedDB store (independent of the websites/clusters/embeddings store
@@ -256,6 +256,11 @@ export async function saveAlbum() {
 			if (currentAlbum.value?.id === editingAlbum.value.id) {
 				currentAlbum.value = album;
 			}
+			// Live-push the new name to a shared graph if relevant (no-op
+			// internally otherwise) - without this, collaborators kept seeing
+			// the stale name from whenever the album was first shared, since
+			// nothing else ever updates shared_graphs.title after that.
+			pushSharedGraphTitle(album.id, album.name);
 		} else {
 			const { album } = await createAlbum(albumData);
 			// Navigate straight into the album you just created, matching how
@@ -272,9 +277,18 @@ export async function saveAlbum() {
 }
 
 export async function deleteAlbum(album) {
-	if (!(await rocusConfirm(`Are you sure you want to delete "${album.name}"?`, { title: 'Delete Album', confirmText: 'Delete', danger: true }))) return;
+	// An actively-shared album's confirm copy says so explicitly - deleting
+	// it also ends the share below, so collaborators/the public link losing
+	// access shouldn't be a silent side effect of what looks like a purely
+	// local action.
+	const isShared = !!readSharedGraphIds()[album.id];
+	const message = isShared
+		? `Are you sure you want to delete "${album.name}"? This album is currently shared - deleting it will also end the share for all collaborators.`
+		: `Are you sure you want to delete "${album.name}"?`;
+	if (!(await rocusConfirm(message, { title: 'Delete Album', confirmText: 'Delete', danger: true }))) return;
 
 	try {
+		if (isShared) await revokeSharedGraphForAlbum(album.id);
 		await deleteAlbumById(album.id);
 	} catch (error) {
 		console.error("Error deleting album:", error);

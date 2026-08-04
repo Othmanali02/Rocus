@@ -115,6 +115,46 @@ function rememberSharedGraphId(albumId, graphId) {
 	localStorage.setItem(SHARED_GRAPH_IDS_KEY, JSON.stringify(map));
 }
 
+// Pushes a renamed album's new name into the shared graph's own title, so
+// collaborators see it too instead of the stale name from whenever it was
+// first shared - no-op if this album was never shared. Fire-and-forget, same
+// contract as pushNodeUpdateForAlbum/pushNodeDeleteForAlbum below.
+export async function pushSharedGraphTitle(albumId, title) {
+	const graphId = readSharedGraphIds()[albumId];
+	if (!graphId) return;
+	try {
+		await fetch(`${API_BASE}/api/shared/${graphId}`, {
+			method: "PATCH",
+			credentials: "include",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ title }),
+		});
+	} catch (err) {
+		console.error("Failed to push updated album title to shared graph:", err);
+	}
+}
+
+// Permanently ends a share when the album backing it gets deleted locally -
+// without this, deleting an album left its shared_graphs row orphaned
+// server-side, so collaborators (and anyone with the public link) kept full
+// access to a "deleted" album's last-synced snapshot forever. Reuses the
+// exact server-side teardown the expiry sweep already performs (see
+// runExpirySweep in server.js) and the exact client-side "graph-deleted"
+// handling already built for it - just triggered on demand instead of after
+// the idle-expiry grace period.
+export async function revokeSharedGraphForAlbum(albumId) {
+	const graphId = readSharedGraphIds()[albumId];
+	if (!graphId) return;
+	try {
+		await fetch(`${API_BASE}/api/shared/${graphId}`, { method: "DELETE", credentials: "include" });
+	} catch (err) {
+		console.error("Failed to revoke shared graph before deleting album:", err);
+	}
+	const map = readSharedGraphIds();
+	delete map[albumId];
+	localStorage.setItem(SHARED_GRAPH_IDS_KEY, JSON.stringify(map));
+}
+
 // Per-graph opt-in for "should a browser-extension quick-add, while this
 // shared graph is open, route into it (instead of the collaborator's own
 // local history/album, which is what happens today)." Mirrors the
