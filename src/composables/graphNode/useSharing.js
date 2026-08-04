@@ -49,8 +49,19 @@ export const sharePublicLinkAllowsDownloads = ref(false);
 // mirror image of the owner's badge showing their collaborators.
 export const shareOwnerName = ref(null);
 export const shareOwnerPictureUrl = ref(null);
+// Raw identity_key of the owner, non-guest only (same gating as the two
+// refs above) - shareMembers only ever carries collaborator identity keys,
+// never the owner's, so this is needed separately to match the owner's own
+// entry against the "presence" WS broadcast's identityKeys array.
+export const shareOwnerIdentityKey = ref(null);
 export const shareBusy = ref(false);
 export const shareError = ref("");
+// Who's currently connected to this graph's WebSocket, by identity_key -
+// drives the online/offline dot on collaborator avatars. Reset to empty
+// whenever the socket disconnects (see disconnectSharedGraphSocket/
+// clearRemoteGraphState below) so a stale roster never lingers after leaving
+// a graph.
+export const onlineIdentityKeys = ref(new Set());
 
 // Resolves a raw added_by identity-key (e.g. "email:x@y.com", as embedded in
 // a website/note's own data at creation time) into a display name for the
@@ -529,6 +540,7 @@ export async function refreshShareMembers() {
 	sharePublicLinkAllowsDownloads.value = !!data.guestDownloadsEnabled;
 	shareOwnerName.value = data.ownerName || null;
 	shareOwnerPictureUrl.value = data.ownerPictureUrl || null;
+	shareOwnerIdentityKey.value = data.ownerIdentityKey || null;
 }
 
 export function closeSharePanel() {
@@ -674,6 +686,7 @@ export async function openSharedGraph(graphId) {
 		sharePublicLinkAllowsDownloads.value = !!payload.guestDownloadsEnabled;
 		shareOwnerName.value = payload.ownerName || null;
 		shareOwnerPictureUrl.value = payload.ownerPictureUrl || null;
+		shareOwnerIdentityKey.value = payload.ownerIdentityKey || null;
 
 		// Reset unconditionally BEFORE the owner-only branch below - matches
 		// the same pattern leaveSharedGraph()/syncLocalOwnerSocketForAlbum()
@@ -737,6 +750,26 @@ let reconnectTimer = null;
 let reconnectAttempts = 0;
 let intentionalDisconnect = false;
 
+// Client-side half of the heartbeat fix (see server.js's own comment on its
+// ping/pong sweep for the full failure mode this closes: a reverse proxy
+// silently killing an idle connection without ever delivering a close frame,
+// which the existing onclose-triggered reconnect logic above can never
+// detect on its own). Browsers don't expose raw WS ping/pong frames to JS,
+// so this tracks the last time ANY message arrived (including the server's
+// app-level "heartbeat" broadcast) and, if too much time passes while
+// readyState still claims OPEN, treats that as proof the connection is dead
+// and force-closes it - the existing onclose handler takes it from there.
+// A flat watchdog interval, not tied to connect/disconnect lifecycle,
+// mirroring the module's existing style of persistent top-level state - it's
+// a no-op whenever there's no live socket.
+const WATCHDOG_INTERVAL_MS = 15000;
+const STALE_CONNECTION_MS = 70000; // comfortably above the server's 25s heartbeat interval
+let lastMessageAt = Date.now();
+setInterval(() => {
+	if (!socket || socket.readyState !== WebSocket.OPEN) return;
+	if (Date.now() - lastMessageAt > STALE_CONNECTION_MS) socket.close();
+}, WATCHDOG_INTERVAL_MS);
+
 function connectSharedGraphSocket(graphId, mode = "remote") {
 	disconnectSharedGraphSocket();
 	intentionalDisconnect = false;
@@ -745,6 +778,21 @@ function connectSharedGraphSocket(graphId, mode = "remote") {
 
 	socket.onopen = () => {
 		reconnectAttempts = 0; // a successful (re)connection resets the retry budget
+		lastMessageAt = Date.now();
+
+		// Back-fills anything pushed while this socket was down - the ORIGINAL
+		// connect already gets a fresh full load from whatever called this
+		// (loadSharedGraphData/catchUpSharedGraphNodes, both above this
+		// function), but a RECONNECT previously just resumed listening for new
+		// broadcasts with no way to know what it missed while dead. Both of
+		// these are already-idempotent, already-proven functions - calling
+		// them again here is harmless on the very first connect too, just a
+		// redundant fetch.
+		if (mode === "local-owner") {
+			catchUpSharedGraphNodes(graphId);
+		} else {
+			refreshRemoteGraph(API_BASE);
+		}
 	};
 
 	socket.onmessage = (event) => {
@@ -754,6 +802,7 @@ function connectSharedGraphSocket(graphId, mode = "remote") {
 		} catch {
 			return;
 		}
+		lastMessageAt = Date.now();
 
 		switch (msg.type) {
 			case "nodes-updated":
@@ -817,6 +866,12 @@ function connectSharedGraphSocket(graphId, mode = "remote") {
 					remoteCursors.value = { ...remoteCursors.value, [msg.identityKey]: msg.nodeId };
 				}
 				break;
+			case "presence":
+				onlineIdentityKeys.value = new Set(msg.identityKeys || []);
+				break;
+			// "heartbeat" deliberately falls through to no case - the mere act
+			// of receiving it already updated lastMessageAt above, which is its
+			// entire purpose (see the watchdog's own comment).
 		}
 	};
 
@@ -854,6 +909,7 @@ export function disconnectSharedGraphSocket() {
 		socket = null;
 	}
 	remoteCursors.value = {};
+	onlineIdentityKeys.value = new Set();
 }
 
 // Order-independent structural equality - a plain JSON.stringify comparison
