@@ -135,17 +135,21 @@ export function dayKeyFromISO(isoString) {
 	return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-// A cluster belongs to exactly one day: whenever its first (earliest-
-// processed) website was added, mirroring how a cluster belongs to exactly
-// one album. Returns null if none of its websites have a processed_at yet.
+// A cluster belongs to exactly one day: whenever it was LAST added to (its
+// most-recently-processed website), mirroring how a cluster belongs to
+// exactly one album. Deliberately most-recent, not first - a cluster that
+// picks up a new website today (even an old cluster matched by topic) bumps
+// to "Today" in History rather than staying silently filed under whatever
+// day it was originally created on. Returns null if none of its websites
+// have a processed_at yet.
 export function getClusterDayKey(cluster) {
-	let earliest = null;
+	let latest = null;
 	for (const websiteId of cluster.websites || []) {
 		const site = websites.value[websiteId];
 		if (!site?.processed_at) continue;
-		if (!earliest || site.processed_at < earliest) earliest = site.processed_at;
+		if (!latest || site.processed_at > latest) latest = site.processed_at;
 	}
-	return earliest ? dayKeyFromISO(earliest) : null;
+	return latest ? dayKeyFromISO(latest) : null;
 }
 
 // ---- Graph/DOM refs & UI state -----------------------------------------
@@ -731,6 +735,17 @@ function linkClusterToNotesHub(topicClusterId, albumId) {
 	if (!topicCluster.notes_hub_links.includes(notesClusterId)) {
 		topicCluster.notes_hub_links.push(notesClusterId);
 	}
+	// Callers need this to push the Notes hub's own updated data to a shared
+	// graph too - renderGraph() only ever draws a notes-hub-link by reading
+	// notes_hub_links off the NOTES HUB cluster's own side (see the "Dashed
+	// hub connectors" block further down, gated on cluster.is_notes_cluster),
+	// never the topic cluster's side. A caller that pushes only the topic
+	// cluster after calling this (as processNote() used to) leaves the
+	// server's copy of the Notes hub cluster permanently missing the link -
+	// invisible to any other viewer from the start, and silently erased on
+	// this same browser too the next time a merge/catch-up overwrites the
+	// local Notes hub cluster with that incomplete server copy.
+	return notesClusterId;
 }
 
 // Notes go through the same embedding pipeline as websites, but never spawn
@@ -783,6 +798,14 @@ export function rankCandidateClusters(embedding, noteText, albumId = null) {
 // created lazily) at the moment the chip is clicked.
 export const NOTES_HUB_SENTINEL = '__notes_hub__';
 
+// Returns { clusterId, notesHubClusterId } rather than a bare id -
+// notesHubClusterId is set only when this call actually established a new
+// topic<->Notes-hub link (null when the note landed directly in the Notes
+// hub itself, since there's no separate hub cluster to also push in that
+// case). Callers must push notesHubClusterId's own cluster data to a shared
+// graph alongside clusterId's - pushing only clusterId leaves the link
+// invisible/erasable from the Notes hub side (see linkClusterToNotesHub's
+// own comment for the full failure mode).
 export function assignNoteToCluster(noteWebsiteId, embedding, albumId = null, noteText = '', forcedClusterId = null) {
 	if (forcedClusterId === NOTES_HUB_SENTINEL) {
 		const notesClusterId = findOrCreateNotesCluster(albumId);
@@ -790,7 +813,7 @@ export function assignNoteToCluster(noteWebsiteId, embedding, albumId = null, no
 			clusters.value[notesClusterId].websites.push(noteWebsiteId);
 		}
 		console.log(`🗒️ Note pinned to the Notes hub by user choice`);
-		return notesClusterId;
+		return { clusterId: notesClusterId, notesHubClusterId: null };
 	}
 
 	// User picked a suggestion in the modal - honor it directly rather than
@@ -800,11 +823,12 @@ export function assignNoteToCluster(noteWebsiteId, embedding, albumId = null, no
 		if (!cluster.websites.includes(noteWebsiteId)) {
 			cluster.websites.push(noteWebsiteId);
 		}
+		let notesHubClusterId = null;
 		if (!cluster.is_notes_cluster) {
-			linkClusterToNotesHub(forcedClusterId, albumId);
+			notesHubClusterId = linkClusterToNotesHub(forcedClusterId, albumId);
 		}
 		console.log(`🔗 Note pinned to cluster ${forcedClusterId} by user choice`);
-		return forcedClusterId;
+		return { clusterId: forcedClusterId, notesHubClusterId };
 	}
 
 	const [topCandidate] = rankCandidateClusters(embedding, noteText, albumId);
@@ -813,9 +837,9 @@ export function assignNoteToCluster(noteWebsiteId, embedding, albumId = null, no
 		if (!cluster.websites.includes(noteWebsiteId)) {
 			cluster.websites.push(noteWebsiteId);
 		}
-		linkClusterToNotesHub(topCandidate.clusterId, albumId);
+		const notesHubClusterId = linkClusterToNotesHub(topCandidate.clusterId, albumId);
 		console.log(`🔗 Note added to cluster ${topCandidate.clusterId}, linked to Notes hub`);
-		return topCandidate.clusterId;
+		return { clusterId: topCandidate.clusterId, notesHubClusterId };
 	}
 
 	const notesClusterId = findOrCreateNotesCluster(albumId);
@@ -823,7 +847,7 @@ export function assignNoteToCluster(noteWebsiteId, embedding, albumId = null, no
 		clusters.value[notesClusterId].websites.push(noteWebsiteId);
 	}
 	console.log(`🗒️ Note fell into the Notes hub ${notesClusterId} (no strict match)`);
-	return notesClusterId;
+	return { clusterId: notesClusterId, notesHubClusterId: null };
 }
 
 // ==============================================

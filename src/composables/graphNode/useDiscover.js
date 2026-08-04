@@ -119,6 +119,17 @@ export async function addSimilarLinksToCluster(clusterId) {
 
 	// Save to IndexedDB
 	await saveToIndexedDB();
+
+	// Live-push to a shared graph if relevant (no-op internally otherwise) -
+	// without this, similar-links suggestions only ever updated this
+	// browser's own local copy, silently never reaching any collaborator.
+	// Dynamic import - useGraphEngine.js statically imports from this file
+	// (handleDiscoverClick), so a static import here of useSharing.js (which
+	// itself statically imports from useGraphEngine.js) would close a cycle
+	// back to useGraphEngine.js mid-evaluation - the same hazard documented
+	// throughout useGraphEngine.js's own dynamic imports of useSharing.js.
+	const { pushNodeUpdateForAlbum } = await import("./useSharing");
+	pushNodeUpdateForAlbum(cluster.album_id, [{ id: clusterId, type: "cluster", data: cluster }]);
 }
 
 export async function searchSimilarWebsites(query) {

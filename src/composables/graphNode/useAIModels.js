@@ -607,15 +607,27 @@ export async function processNote(text, forcedClusterId = null) {
 
 		embeddings.value[websiteId] = wrapEmbedding(embedding);
 
-		const clusterId = assignNoteToCluster(websiteId, embedding, albumId, trimmed, forcedClusterId);
+		const { clusterId, notesHubClusterId } = assignNoteToCluster(websiteId, embedding, albumId, trimmed, forcedClusterId);
 		websites.value[websiteId].cluster_id = clusterId;
 
 		// Live-push to a shared graph if relevant - see the identical comment
-		// in processWebsite() above.
-		pushNodeUpdateForAlbum(albumId, [
+		// in processWebsite() above. Also pushes the Notes hub cluster's own
+		// updated data whenever this note just established a new hub link -
+		// renderGraph() only ever draws that connector by reading
+		// notes_hub_links off the NOTES HUB cluster's own side, never the
+		// topic cluster's side, so pushing just clusterId here left the
+		// server's copy of the Notes hub cluster permanently missing the
+		// link (invisible to any other viewer, and erased on this same
+		// browser too the next time a merge/catch-up overwrote the local
+		// Notes hub cluster with that incomplete server copy).
+		const nodesToPush = [
 			{ id: websiteId, type: "website", data: { ...websites.value[websiteId], embedding: embeddings.value[websiteId] } },
 			{ id: clusterId, type: "cluster", data: clusters.value[clusterId] },
-		]);
+		];
+		if (notesHubClusterId) {
+			nodesToPush.push({ id: notesHubClusterId, type: "cluster", data: clusters.value[notesHubClusterId] });
+		}
+		pushNodeUpdateForAlbum(albumId, nodesToPush);
 
 		await saveToIndexedDB();
 		removeProcessingPlaceholder(placeholderNode.id);
