@@ -17,6 +17,7 @@ import {
 	clusters,
 	effectiveAlbumId,
 	remoteGraphId,
+	refreshRemoteGraphView,
 	activeShareGraphId,
 } from "./useGraphEngine";
 import { addSimilarLinksToCluster } from "./useDiscover";
@@ -526,7 +527,14 @@ export async function processWebsite(data) {
 		// Save to IndexedDB
 		await saveToIndexedDB();
 
-		removeProcessingPlaceholder(placeholderNode.id);
+		// No separate removeProcessingPlaceholder() render here - the full
+		// refresh below rebuilds graphData from scratch purely from
+		// websites.value/clusters.value (the placeholder was never part of
+		// either), so it's discarded automatically. Calling it here too used
+		// to cause a visible double-render: this one showing the OLD graph
+		// (placeholder gone, new content not yet rebuilt), then the refresh
+		// immediately after showing the real result - two renders back to
+		// back, the second also resetting the simulation's physics.
 
 		showNewDataNotification.value = true;
 
@@ -538,7 +546,17 @@ export async function processWebsite(data) {
 			has_album: !!data.album
 		});
 
-		await refreshData();
+		// remoteGraphId-aware, matching every other mutation site in this
+		// codebase - refreshData() reads from THIS BROWSER's own local
+		// IndexedDB, which for a collaborator on /shared/:graphId is empty or
+		// full of unrelated local albums (loadSharedGraphData() never
+		// persists there). Calling it unconditionally risked a collaborator's
+		// own view going blank/wrong immediately after their own successful add.
+		if (remoteGraphId.value) {
+			await refreshRemoteGraphView();
+		} else {
+			await refreshData();
+		}
 
 		console.log(`✅ Processed: ${websiteId}`);
 		notifyExtensionProcessed(data, true);
@@ -630,7 +648,10 @@ export async function processNote(text, forcedClusterId = null) {
 		pushNodeUpdateForAlbum(albumId, nodesToPush);
 
 		await saveToIndexedDB();
-		removeProcessingPlaceholder(placeholderNode.id);
+		// No separate removeProcessingPlaceholder() render here - see the
+		// identical comment in processWebsite() above for why it's redundant
+		// with (and previously caused a double-render alongside) the refresh
+		// just below.
 
 		showNewDataNotification.value = true;
 		setTimeout(() => {
@@ -639,7 +660,13 @@ export async function processNote(text, forcedClusterId = null) {
 
 		trackEvent('note_saved', { has_album: !!albumId });
 
-		await refreshData();
+		// remoteGraphId-aware - see the identical comment in processWebsite()
+		// above for the collaborator-viewing-a-blank-refresh bug this avoids.
+		if (remoteGraphId.value) {
+			await refreshRemoteGraphView();
+		} else {
+			await refreshData();
+		}
 		console.log(`✅ Note processed: ${websiteId}`);
 	} catch (err) {
 		console.error("Error processing note:", err);
