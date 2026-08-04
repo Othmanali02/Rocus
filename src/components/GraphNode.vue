@@ -1889,7 +1889,7 @@
 							</h4>
 
 							<p class="text-xs mt-1 truncate text-[#4A90E2]">
-								{{ website.domain || new URL(website.url).hostname }}
+								{{ website.domain || hostnameFor(website.url) }}
 							</p>
 
 							<p class="text-sm mt-2 line-clamp-2" :style="{ color: currentTheme.colors.textSecondary }">
@@ -2765,6 +2765,24 @@ import {
 	closeDiscoverModal,
 	openExternalLink,
 } from '../composables/graphNode/useDiscover';
+
+// `URL` isn't in Vue's template-expression global allowlist, so calling
+// `new URL(...)` directly in a template throws "Property 'URL' was accessed
+// during render but is not defined on instance" - a real, unhandled render
+// error (not just a console warning) on every Discover-results render for a
+// Google-search result missing `domain` (the normal case - Serper API
+// results only ever carry `url`/`title`). Wrapping it in a plain script
+// function sidesteps the restriction entirely (script code isn't subject to
+// the template compiler's global-resolution rules) and guards against a
+// malformed url from an external API crashing this instead of just falling
+// back to showing the raw string.
+function hostnameFor(url) {
+	try {
+		return new URL(url).hostname;
+	} catch {
+		return url || '';
+	}
+}
 
 import {
 	tutorialActive,
