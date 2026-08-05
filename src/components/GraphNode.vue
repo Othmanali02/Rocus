@@ -2587,7 +2587,9 @@
 		<div class="max-w-md text-center px-6">
 			<div class="text-lg font-semibold mb-2" :style="{ color: currentTheme.colors.text }">Can't open this graph</div>
 			<p class="text-sm" :style="{ color: currentTheme.colors.textSecondary }">{{ sharedGraphLoadError }}</p>
-			<a href="/dashboard" class="inline-block mt-4 text-sm font-medium px-4 py-2 rounded-xl"
+			<a v-if="sharedGraphNeedsSignIn" :href="signInUrl()" class="inline-block mt-4 text-sm font-medium px-4 py-2 rounded-xl"
+				:style="{ backgroundColor: currentTheme.colors.primary, color: '#fff' }">Sign In</a>
+			<a v-else href="/dashboard" class="inline-block mt-4 text-sm font-medium px-4 py-2 rounded-xl"
 				:style="{ backgroundColor: currentTheme.colors.primary, color: '#fff' }">Go to your own Rocus</a>
 		</div>
 	</div>
@@ -2665,6 +2667,7 @@ import { useAnalytics } from '../composables/useAnalytics';
 import PremiumUpsell from './PremiumUpsell.vue';
 import RocusDialog from './RocusDialog.vue';
 import { rocusAlert, rocusConfirm } from '../composables/useRocusDialog';
+import { signInUrl } from '../composables/graphNode/usePremium';
 
 import { formatDate, withAlpha } from '../composables/graphNode/utils';
 
@@ -2957,6 +2960,7 @@ import {
 	joinSharedGraph,
 	forkSharedGraph,
 	sharedGraphLoadError,
+	sharedGraphNeedsSignIn,
 	showShareToast,
 	shareToastMessage,
 	shareToastType,
