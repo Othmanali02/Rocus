@@ -22,6 +22,9 @@ import { generateId, currentIdentityKey } from "./utils";
 import { API_BASE } from "../../components/constants/config";
 import { openPremiumModal, signInUrl } from "./usePremium";
 import { store } from "../../router/store";
+import { useAnalytics } from "../useAnalytics";
+
+const { trackEvent } = useAnalytics();
 
 // ---------------------------------------------------------------------------
 // Sharing/collaboration. The unit of sharing is a single graph, materialized
@@ -102,6 +105,11 @@ export function flashShareToast(message, type = "success") {
 // Set when a /shared/:graphId load fails (not found, expired, or no access) -
 // distinct from shareError, which is about the *sharing* UI, not viewing.
 export const sharedGraphLoadError = ref("");
+// True specifically when the load failed because the visitor isn't signed in
+// at all (server distinguishes this from "genuinely unavailable" - see
+// openSharedGraph()'s catch block) - drives showing a Sign In CTA instead of
+// just the generic "can't open this" message.
+export const sharedGraphNeedsSignIn = ref(false);
 
 const SHARED_GRAPH_IDS_KEY = "rocus-shared-graph-ids";
 
@@ -403,6 +411,7 @@ export async function shareCurrentGraph({ publicLinkEnabled = false, guestDownlo
 		sharePublicLinkAllowsDownloads.value = guestDownloadsEnabled;
 		isSharePanelOpen.value = true;
 		rememberSharedGraphId(albumId, graphId);
+		trackEvent('graph_shared', { public_link: publicLinkEnabled });
 
 		await refreshShareMembers();
 		// 'local-owner', not the default 'remote' mode - shareCurrentGraph() is
@@ -481,6 +490,7 @@ export async function inviteCollaborator(email, permissionLevel = "view") {
 	}
 
 	await refreshShareMembers();
+	trackEvent('collaborator_invited', { permission_level: permissionLevel });
 	return { success: true };
 }
 
@@ -493,6 +503,7 @@ export async function updateCollaboratorPermission(invitedEmail, { permissionLev
 		body: JSON.stringify({ permissionLevel, canInvite }),
 	});
 	await refreshShareMembers();
+	trackEvent('collaborator_permission_changed', { permission_level: permissionLevel, can_invite: canInvite });
 }
 
 export async function revokeCollaborator(invitedEmail) {
@@ -502,6 +513,7 @@ export async function revokeCollaborator(invitedEmail) {
 		credentials: "include",
 	});
 	await refreshShareMembers();
+	trackEvent('collaborator_revoked');
 }
 
 export async function togglePublicLink(enabled) {
@@ -513,6 +525,7 @@ export async function togglePublicLink(enabled) {
 		body: JSON.stringify({ enabled }),
 	});
 	sharePublicLinkEnabled.value = enabled;
+	trackEvent('public_link_toggled', { enabled });
 }
 
 // Separate from togglePublicLink() - this is specifically the "can a guest
@@ -528,6 +541,7 @@ export async function toggleGuestDownloads(enabled) {
 		body: JSON.stringify({ enabled: sharePublicLinkEnabled.value, guestDownloadsEnabled: enabled }),
 	});
 	sharePublicLinkAllowsDownloads.value = enabled;
+	trackEvent('guest_downloads_toggled', { enabled });
 }
 
 export async function refreshShareMembers() {
@@ -602,6 +616,7 @@ export const myActivelySharedAlbums = computed(() => {
 // onto the pending invited_email row.
 export async function joinSharedGraph(graphId) {
 	await fetch(`${API_BASE}/api/shared/${graphId}/join`, { method: "POST", credentials: "include" });
+	trackEvent('shared_graph_joined');
 }
 
 // Pushes newly-added nodes (a website/note just processed) up to a shared
@@ -679,6 +694,7 @@ export async function pushNodeDeleteForAlbum(albumId, nodeIds) {
 export async function openSharedGraph(graphId) {
 	disconnectSharedGraphSocket();
 	sharedGraphLoadError.value = "";
+	sharedGraphNeedsSignIn.value = false;
 	try {
 		const payload = await loadSharedGraphData(graphId, { API_BASE });
 		shareMembers.value = payload.members || [];
@@ -713,12 +729,17 @@ export async function openSharedGraph(graphId) {
 		}
 
 		if (!payload.frozen) connectSharedGraphSocket(graphId);
+		trackEvent('shared_graph_opened', { role: payload.role });
 		return payload;
 	} catch (err) {
+		sharedGraphNeedsSignIn.value = err?.message === "sign_in_required";
 		sharedGraphLoadError.value =
-			err?.message === "not_found"
-				? "This shared graph isn't available - the link may be wrong, access may have been revoked, or the owner may have turned off sharing."
-				: "Couldn't load this shared graph. Try again in a moment.";
+			err?.message === "sign_in_required"
+				? "Sign in to view this shared graph."
+				: err?.message === "not_found"
+					? "This shared graph isn't available - the link may be wrong, access may have been revoked, or the owner may have turned off sharing."
+					: "Couldn't load this shared graph. Try again in a moment.";
+		trackEvent('shared_graph_load_failed', { reason: err?.message || 'unknown' });
 		throw err;
 	}
 }
@@ -1168,6 +1189,7 @@ export async function forkSharedGraph() {
 	}
 	const album = await copyLoadedGraphIntoNewLocalAlbum("Forked shared graph");
 	leaveSharedGraph();
+	trackEvent('shared_graph_forked');
 	return album.id;
 }
 
