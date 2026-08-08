@@ -21,3 +21,13 @@ export function closePremiumModal() {
 export function signInUrl() {
 	return `${API_BASE}/api/auth/login`;
 }
+
+// Same Logto-hosted flow as signInUrl() - there's no separate sign-up app,
+// just a query param (?screen=signup, translated server-side into Logto's
+// own first_screen=register) that jumps straight to the registration screen
+// instead of Logto's default sign-in-first form. Used where the visitor is
+// very likely a brand-new person discovering Rocus (e.g. trying to share a
+// graph while signed out) rather than someone who forgot they have an account.
+export function signUpUrl() {
+	return `${API_BASE}/api/auth/login?screen=signup`;
+}

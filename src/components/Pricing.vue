@@ -1,7 +1,15 @@
 <script setup>
-import { ref, computed } from "vue";
+import { ref, computed, onMounted } from "vue";
 import { store } from "../router/store";
+import { useSeoMeta } from "../composables/useSeoMeta";
 import { API_BASE } from "./constants/config";
+
+onMounted(() => {
+	useSeoMeta({
+		title: "Rocus Pricing - Free & Premium Plans",
+		description: "Rocus is free forever - unlimited saves, the full knowledge graph, and local AI processing. Upgrade to Premium for faster Cloud AI Processing with no daily limits.",
+	});
+});
 
 const mobileMenuOpen = ref(false);
 const billingCycle = ref("monthly"); // 'monthly' | 'annual'

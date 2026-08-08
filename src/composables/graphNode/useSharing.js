@@ -20,7 +20,7 @@ import {
 import { createAlbum, iconOptions, albums } from "./useAlbums";
 import { generateId, currentIdentityKey } from "./utils";
 import { API_BASE } from "../../components/constants/config";
-import { openPremiumModal, signInUrl } from "./usePremium";
+import { openPremiumModal, signInUrl, signUpUrl } from "./usePremium";
 import { store } from "../../router/store";
 import { useAnalytics } from "../useAnalytics";
 
@@ -392,7 +392,15 @@ export async function shareCurrentGraph({ publicLinkEnabled = false, guestDownlo
 		});
 
 		if (res.status === 401) {
-			shareError.value = "Sign in to share a graph.";
+			// Previously just set shareError - but that message only ever
+			// renders inside the share panel dropdown (isSharePanelOpen),
+			// which nothing on this path ever opens (only the success path
+			// does, further below) - so it silently never appeared anywhere.
+			// A signed-out visitor trying to share is very likely brand new
+			// to Rocus, not someone who forgot they have an account -
+			// straight to sign-up, matching forkSharedGraph()'s identical
+			// redirect-on-signed-out pattern elsewhere in this file.
+			window.location.href = signUpUrl();
 			return null;
 		}
 		if (res.status === 403) {
