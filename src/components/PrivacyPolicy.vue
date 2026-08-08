@@ -212,6 +212,7 @@
 <script setup>
 import { ref, onMounted } from 'vue';
 import themesData from "./themes/themes"
+import { useSeoMeta } from "../composables/useSeoMeta";
 
 const currentTheme = ref({
     id: 'default-light',
@@ -243,6 +244,10 @@ function loadTheme() {
 }
 
 onMounted(() => {
+    useSeoMeta({
+        title: "Rocus Privacy Policy",
+        description: "How Rocus handles your data - local-first by default, open source, and transparent about what stays on your device versus what's processed in the cloud.",
+    });
     loadTheme();
 });
 

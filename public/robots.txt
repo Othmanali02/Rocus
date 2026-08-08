@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+Disallow: /dashboard
+Disallow: /shared/
+
+Sitemap: https://rocus.io/sitemap.xml

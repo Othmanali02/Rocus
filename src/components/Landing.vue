@@ -2,6 +2,7 @@
 import { ref, onMounted, onUnmounted, watch } from "vue";
 import { store } from "../router/store";
 import { useAnalytics } from '../composables/useAnalytics';
+import { useSeoMeta } from '../composables/useSeoMeta';
 import { API_BASE } from './constants/config';
 
 const { trackEvent, analyticsLoaded, analyticsConsent } = useAnalytics();
@@ -9,6 +10,32 @@ const { trackEvent, analyticsLoaded, analyticsConsent } = useAnalytics();
 const mobileMenuOpen = ref(false);
 const scrolled = ref(false);
 const isDarkMode = ref(false);
+
+// Simple contact form - spotted-a-bug/reach-out, sent to info@rocus.io via
+// the existing Resend-backed mailer (rocusnodejs/mailer.js).
+const contactForm = ref({ name: "", email: "", message: "" });
+const contactBusy = ref(false);
+const contactStatus = ref(""); // "" | "sent" | "error"
+
+async function submitContactForm() {
+	if (!contactForm.value.name.trim() || !contactForm.value.email.trim() || !contactForm.value.message.trim()) return;
+	contactBusy.value = true;
+	contactStatus.value = "";
+	try {
+		const res = await fetch(`${API_BASE}/api/contact`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(contactForm.value),
+		});
+		if (!res.ok) throw new Error("failed");
+		contactStatus.value = "sent";
+		contactForm.value = { name: "", email: "", message: "" };
+	} catch {
+		contactStatus.value = "error";
+	} finally {
+		contactBusy.value = false;
+	}
+}
 
 const props = defineProps({ user: Object });
 
@@ -62,6 +89,11 @@ const trackLandingPage = () => {
 };
 
 onMounted(() => {
+    useSeoMeta({
+        title: "Rocus - AI Knowledge Graph & Collaborative Bookmark Manager",
+        description: "Turn saved websites, notes, and files into a living, AI-organized knowledge graph. Collaborate in real time, browse your history by day, and stay private with local, in-browser AI.",
+    });
+
     window.addEventListener("scroll", handleScroll);
 
     console.log(store.user);
@@ -184,11 +216,11 @@ onUnmounted(() => {
                 <div class="text-center max-w-4xl mx-auto mb-16">
                     <div
                         class="inline-flex items-center space-x-2 mb-6 px-4 py-2 bg-[#4A90E2]/10 rounded-full border border-[#4A90E2]/20">
-                        <span class="text-[#4A90E2] font-bold text-sm">🔓 Free</span>
+                        <span class="text-[#4A90E2] font-bold text-sm">Free</span>
                         <span class="text-[#9A9A9A]">•</span>
-                        <span class="text-[#4A90E2] font-bold text-sm">📖 Open Source</span>
+                        <span class="text-[#4A90E2] font-bold text-sm">Open Source</span>
                         <span class="text-[#9A9A9A]">•</span>
-                        <span class="text-[#4A90E2] font-bold text-sm">💻 Decentralized</span>
+                        <span class="text-[#4A90E2] font-bold text-sm">Decentralized</span>
                     </div>
 
                     <h1 class="text-5xl sm:text-6xl lg:text-7xl font-bold mb-6 leading-tight">
@@ -313,6 +345,122 @@ onUnmounted(() => {
             </div>
         </section>
 
+        <section class="py-20 px-4 sm:px-6 lg:px-8 bg-[#f4f4f4]">
+            <div class="max-w-7xl mx-auto">
+                <div class="text-center mb-16">
+                    <h2 class="text-4xl sm:text-5xl font-bold mb-4 text-[#1A1A1A]">
+                        One Graph, <span class="text-[#4A90E2]">Every Feature You Need</span>
+                    </h2>
+                    <p class="text-xl text-[#9A9A9A] max-w-2xl mx-auto">
+                        From your first saved link to a fully collaborative research hub - Rocus
+                        grows with how you work.
+                    </p>
+                </div>
+
+                <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+                    <div
+                        class="group bg-white rounded-2xl p-8 hover:shadow-2xl transition-all hover:-translate-y-2 border-2 border-transparent hover:border-[#4A90E2]/30">
+                        <div
+                            class="w-16 h-16 bg-[#4A90E2] rounded-xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform shadow-lg shadow-[#4A90E2]/30">
+                            <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857m0 0a5.002 5.002 0 00-9.288 0M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                            </svg>
+                        </div>
+                        <h3 class="text-2xl font-bold mb-4 text-[#1A1A1A]">Real-Time Collaboration</h3>
+                        <p class="text-[#9A9A9A] leading-relaxed">
+                            Share any album with a live link. Invite collaborators, watch every
+                            change sync instantly, and see who's online - no more sending
+                            screenshots of your research.
+                        </p>
+                    </div>
+
+                    <div
+                        class="group bg-white rounded-2xl p-8 hover:shadow-2xl transition-all hover:-translate-y-2 border-2 border-transparent hover:border-[#4A90E2]/30">
+                        <div
+                            class="w-16 h-16 bg-[#4A90E2] rounded-xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform shadow-lg shadow-[#4A90E2]/30">
+                            <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                            </svg>
+                        </div>
+                        <h3 class="text-2xl font-bold mb-4 text-[#1A1A1A]">Notes That Cluster Themselves</h3>
+                        <p class="text-[#9A9A9A] leading-relaxed">
+                            Jot down a thought and Rocus automatically connects it to the right
+                            topic in your graph - or drops it in a shared Notes hub if nothing
+                            matches yet.
+                        </p>
+                    </div>
+
+                    <div
+                        class="group bg-white rounded-2xl p-8 hover:shadow-2xl transition-all hover:-translate-y-2 border-2 border-transparent hover:border-[#4A90E2]/30">
+                        <div
+                            class="w-16 h-16 bg-[#4A90E2] rounded-xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform shadow-lg shadow-[#4A90E2]/30">
+                            <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                        </div>
+                        <h3 class="text-2xl font-bold mb-4 text-[#1A1A1A]">Save Any File, Not Just Links</h3>
+                        <p class="text-[#9A9A9A] leading-relaxed">
+                            Upload PDFs and documents alongside your web saves. Rocus extracts
+                            and organizes them into the same knowledge graph - no manual sorting
+                            required.
+                        </p>
+                    </div>
+
+                    <div
+                        class="group bg-white rounded-2xl p-8 hover:shadow-2xl transition-all hover:-translate-y-2 border-2 border-transparent hover:border-[#4A90E2]/30">
+                        <div
+                            class="w-16 h-16 bg-[#4A90E2] rounded-xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform shadow-lg shadow-[#4A90E2]/30">
+                            <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M11 4a2 2 0 114 0v1a1 1 0 001 1h3a1 1 0 011 1v3a1 1 0 01-1 1h-1a2 2 0 100 4h1a1 1 0 011 1v3a1 1 0 01-1 1h-3a1 1 0 01-1-1v-1a2 2 0 10-4 0v1a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 00-1-1H4a2 2 0 110-4h1a1 1 0 001-1V7a1 1 0 011-1h3a1 1 0 001-1V4z" />
+                            </svg>
+                        </div>
+                        <h3 class="text-2xl font-bold mb-4 text-[#1A1A1A]">One-Click Browser Extension</h3>
+                        <p class="text-[#9A9A9A] leading-relaxed">
+                            Save any page in a single click from Chrome or Firefox. Pick an
+                            album, or let quick-add sort it into your graph automatically.
+                        </p>
+                    </div>
+
+                    <div
+                        class="group bg-white rounded-2xl p-8 hover:shadow-2xl transition-all hover:-translate-y-2 border-2 border-transparent hover:border-[#4A90E2]/30">
+                        <div
+                            class="w-16 h-16 bg-[#4A90E2] rounded-xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform shadow-lg shadow-[#4A90E2]/30">
+                            <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                            </svg>
+                        </div>
+                        <h3 class="text-2xl font-bold mb-4 text-[#1A1A1A]">Discover Similar Websites</h3>
+                        <p class="text-[#9A9A9A] leading-relaxed">
+                            One click surfaces related pages and resources you haven't found
+                            yet, powered by the connections already in your own graph.
+                        </p>
+                    </div>
+
+                    <div
+                        class="group bg-white rounded-2xl p-8 hover:shadow-2xl transition-all hover:-translate-y-2 border-2 border-transparent hover:border-[#4A90E2]/30">
+                        <div
+                            class="w-16 h-16 bg-[#4A90E2] rounded-xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform shadow-lg shadow-[#4A90E2]/30">
+                            <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M3 15a4 4 0 004 4h9a5 5 0 001.7-9.7 5 5 0 00-9.6-2.2A4 4 0 003 15z" />
+                            </svg>
+                        </div>
+                        <h3 class="text-2xl font-bold mb-4 text-[#1A1A1A]">Local or Cloud AI - Your Call</h3>
+                        <p class="text-[#9A9A9A] leading-relaxed">
+                            Run the AI entirely in your browser for full privacy, or switch to
+                            faster cloud processing when you need it. Either way, your graph
+                            stays yours.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
         <section id="about" class="py-20 px-4 sm:px-6 lg:px-8 bg-gradient-to-b from-white to-[#f4f4f4]">
             <div class="max-w-7xl mx-auto">
                 <div class="grid md:grid-cols-2 gap-12 items-center">
@@ -424,6 +572,34 @@ onUnmounted(() => {
                             d="M13 7l5 5m0 0l-5 5m5-5H6" />
                     </svg>
                 </button> -->
+            </div>
+        </section>
+
+        <section class="py-20 px-4 sm:px-6 lg:px-8 bg-[#f4f4f4]">
+            <div class="max-w-lg mx-auto text-center">
+                <h2 class="text-3xl font-bold text-[#1A1A1A] mb-2">Get in touch</h2>
+                <p class="text-[#9A9A9A] mb-8">Want to say hi? We read every message.</p>
+
+                <form @submit.prevent="submitContactForm" class="space-y-4 text-left">
+                    <input v-model="contactForm.name" type="text" required placeholder="Your name"
+                        class="w-full px-4 py-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-[#4A90E2]" />
+                    <input v-model="contactForm.email" type="email" required placeholder="you@example.com"
+                        class="w-full px-4 py-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-[#4A90E2]" />
+                    <textarea v-model="contactForm.message" required rows="4" placeholder="What's on your mind?"
+                        class="w-full px-4 py-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-[#4A90E2] resize-none"></textarea>
+
+                    <button type="submit" :disabled="contactBusy"
+                        class="w-full px-6 py-3 bg-[#4A90E2] text-white rounded-lg font-bold hover:bg-[#3a7bc8] transition-all disabled:opacity-60 disabled:cursor-not-allowed">
+                        {{ contactBusy ? "Sending…" : "Send message" }}
+                    </button>
+
+                    <p v-if="contactStatus === 'sent'" class="text-center text-sm text-emerald-600 font-medium">
+                        Thanks - we'll get back to you soon.
+                    </p>
+                    <p v-if="contactStatus === 'error'" class="text-center text-sm text-red-500 font-medium">
+                        Something went wrong - try again, or email info@rocus.io directly.
+                    </p>
+                </form>
             </div>
         </section>
 
