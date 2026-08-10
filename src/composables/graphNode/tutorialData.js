@@ -9,20 +9,20 @@ export const tutorialSteps = [
 		action: null
 	},
 	{
-		title: 'AI Processing Status',
-		description: 'This icon shows whether Rocus is ready to process new websites. Cloud mode (the default) is ready instantly. Switch to Local mode and Rocus downloads a small AI model that runs entirely in your browser - a one-time, 30-60 second download, then it works fully offline. Green means you\'re good to go.',
-		highlight: 'model-status',
+		title: 'AI Processing: Cloud or Local',
+		description: 'The gear icon opens Settings, where you can switch between Cloud AI (the default, ready instantly) and Local AI, which downloads a small model - roughly 300-700MB, so it can take a few minutes the first time - and then runs entirely in your browser, fully offline. The status icon next to it shows whether processing is ready; green means good to go.',
+		highlight: 'settings-gear',
 		action: null
 	},
 	{
 		title: 'Save Websites With the Extension',
-		description: 'The Rocus browser extension is how websites get into Rocus in the first place. Click its icon while browsing, pick an album (or just quick-save), and Rocus automatically clusters it with similar content.',
+		description: 'The Rocus browser extension is how websites get into Rocus in the first place. Click its icon while browsing, pick an album (or just quick-save), and Rocus automatically clusters it with similar content. You can also jot a quick note or upload a file directly - both get organized into the same graph.',
 		highlight: null,
 		action: 'checkExtension'
 	},
 	{
 		title: 'Organize With Albums',
-		description: 'Albums group your clusters by topic, project, or however you like to organize things. Click here to switch between albums or view everything at once.',
+		description: 'Albums group your clusters by topic, project, or however you like to organize things. Click here to switch between albums, browse your History by day, or view everything at once.',
 		highlight: 'albums-dropdown',
 		action: null
 	},
@@ -46,7 +46,7 @@ export const tutorialSteps = [
 	},
 	{
 		title: 'Make It Yours',
-		description: 'Pick from 15+ color themes with the theme button - your choice is saved automatically. Use the search bar to instantly find any cluster or website, and right-click a cluster to rename it, add or remove websites, or discover related content.',
+		description: 'Pick from 15+ color themes with the theme button - your choice is saved automatically. Use the search bar to instantly find any cluster or website, and right-click a cluster to rename it or add/remove websites. Explode any cluster to reveal a Discover node - one click surfaces similar sites you haven\'t found yet.',
 		highlight: 'theme-button',
 		action: null
 	},
@@ -67,20 +67,20 @@ export const tutorialStepsEmpty = [
 		action: null
 	},
 	{
-		title: 'AI Processing Status',
-		description: 'This icon shows whether Rocus is ready to process new websites. Cloud mode (the default) is ready instantly. Switch to Local mode and Rocus downloads a small AI model that runs entirely in your browser - a one-time, 30-60 second download, then it works fully offline. Green means you\'re good to go.',
-		highlight: 'model-status',
+		title: 'AI Processing: Cloud or Local',
+		description: 'The gear icon opens Settings, where you can switch between Cloud AI (the default, ready instantly) and Local AI, which downloads a small model - roughly 300-700MB, so it can take a few minutes the first time - and then runs entirely in your browser, fully offline. The status icon next to it shows whether processing is ready; green means good to go.',
+		highlight: 'settings-gear',
 		action: null
 	},
 	{
 		title: 'Save Websites With the Extension',
-		description: 'The Rocus browser extension is how websites get into Rocus in the first place. Click its icon while browsing, pick an album (or just quick-save), and Rocus automatically clusters it with similar content.',
+		description: 'The Rocus browser extension is how websites get into Rocus in the first place. Click its icon while browsing, pick an album (or just quick-save), and Rocus automatically clusters it with similar content. You can also jot a quick note or upload a file directly - both get organized into the same graph.',
 		highlight: null,
 		action: 'checkExtension'
 	},
 	{
 		title: 'Organize With Albums',
-		description: 'Albums group your clusters by topic, project, or however you like to organize things. Click here to switch between albums or create a new one.',
+		description: 'Albums group your clusters by topic, project, or however you like to organize things. Click here to switch between albums, browse your History by day, or create a new one.',
 		highlight: 'albums-dropdown',
 		action: null
 	},
@@ -98,7 +98,7 @@ export const tutorialStepsEmpty = [
 	},
 	{
 		title: 'Make It Yours',
-		description: 'Pick from 15+ color themes with the theme button - your choice is saved automatically. Once you have content, use the search bar to instantly find any cluster or website, and right-click a cluster to rename it, add or remove websites, or discover related content.',
+		description: 'Pick from 15+ color themes with the theme button - your choice is saved automatically. Once you have content, use the search bar to instantly find any cluster or website, right-click a cluster to rename it or add/remove websites, and explode any cluster to reveal a Discover node for finding similar sites.',
 		highlight: 'theme-button',
 		action: null
 	},

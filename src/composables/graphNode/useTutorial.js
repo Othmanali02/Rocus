@@ -1,6 +1,6 @@
 import { ref, computed } from "vue";
 import { tutorialSteps as tutorialStepsData, tutorialStepsEmpty } from "./tutorialData";
-import { graphData, container, explodeNode, collapseNode } from "./useGraphEngine";
+import { graphData, container, explodeNode, collapseNode, explodedNode, EXPLOSION_TWEEN_MS } from "./useGraphEngine";
 
 // Real, published extension IDs (Chrome Web Store / addons.mozilla.org - same
 // ones Landing.vue's installExtension() links to). Both extensions' manifests
@@ -132,6 +132,16 @@ export function finishTutorial() {
 		tutorialDemoCluster.value = null;
 	}
 
+	// Restore the full-length steps if startTutorialEmpty() swapped in the
+	// empty-state script. Done here (not left to a per-step 'cleanup' action)
+	// so it fires on every exit path - finish, skip, or the empty-state script
+	// ending naturally - none of which are guaranteed to pass through a step
+	// with that action.
+	if (window._originalTutorialSteps) {
+		tutorialSteps.splice(0, tutorialSteps.length, ...window._originalTutorialSteps);
+		delete window._originalTutorialSteps;
+	}
+
 	tutorialActive.value = false;
 	tutorialStep.value = 0;
 	tutorialHighlightRect.value = { top: 0, left: 0, width: 0, height: 0 };
@@ -169,6 +179,15 @@ export function updateTutorialHighlight() {
 				}
 				break;
 
+			case 'settings-gear':
+				// Settings modal gear icon - where the Local/Cloud AI toggle
+				// actually lives (distinct from the read-only model-status button).
+				element = Array.from(document.querySelectorAll('button')).find(btn => {
+					const svg = btn.querySelector('svg');
+					return svg && svg.innerHTML.includes('M10.325 4.317');
+				});
+				break;
+
 			case 'albums-dropdown':
 				element = document.querySelector('.flex-1.max-w-2xl .relative button') ||
 					document.querySelector('button[class*="w-full"]');
@@ -181,11 +200,24 @@ export function updateTutorialHighlight() {
 			case 'demo-cluster':
 				// Only try to highlight if we have clusters
 				if (tutorialDemoCluster.value && container) {
-					const node = container.select('.nodes')
+					const clusterId = tutorialDemoCluster.value.id;
+					// Once exploded, cover the parent AND every revealed website/
+					// discover node (tagged parentCluster === clusterId by
+					// performExplosion()) - not just the parent circle alone.
+					const isExploded = explodedNode.value?.id === clusterId;
+					const nodeEls = container.select('.nodes')
 						.selectAll('.node')
-						.filter(d => d.id === tutorialDemoCluster.value.id)
-						.node();
-					element = node;
+						.filter(d => d.id === clusterId || (isExploded && d.parentCluster === clusterId))
+						.nodes();
+
+					if (nodeEls.length > 0) {
+						const rects = nodeEls.map(el => el.getBoundingClientRect());
+						const top = Math.min(...rects.map(r => r.top));
+						const left = Math.min(...rects.map(r => r.left));
+						const right = Math.max(...rects.map(r => r.right));
+						const bottom = Math.max(...rects.map(r => r.bottom));
+						element = { getBoundingClientRect: () => ({ top, left, right, bottom, width: right - left, height: bottom - top }) };
+					}
 				}
 
 				// Fallback to graph container if no demo cluster
@@ -262,7 +294,16 @@ export function performTutorialAction() {
 	} else if (step.action === 'explodeDemoCluster') {
 		// Only explode if we have a demo cluster with websites
 		if (tutorialDemoCluster.value && tutorialDemoCluster.value.websites?.length > 0) {
-			explodeNode(tutorialDemoCluster.value);
+			// explodeNode() toggles - calling it again on the already-exploded
+			// same cluster would collapse it. Guard so revisiting this step
+			// (e.g. stepping back to 5 and forward again) doesn't undo the demo.
+			if (explodedNode.value?.id !== tutorialDemoCluster.value.id) {
+				explodeNode(tutorialDemoCluster.value);
+			}
+			// Recompute once the explosion's reveal tween has actually finished,
+			// so the highlight grows to cover the parent + all revealed nodes
+			// instead of staying frozen on the pre-explosion single-node rect.
+			setTimeout(updateTutorialHighlight, EXPLOSION_TWEEN_MS + 100);
 		} else {
 			// Can't demonstrate, skip to next step
 			console.log("No websites to explode, skipping demo");

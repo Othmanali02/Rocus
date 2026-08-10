@@ -457,7 +457,7 @@
 
 				<div class="flex items-center gap-3">
 					<button v-if="!isReadOnlySharedView" @click="toggleThemes" :class="[isCoarsePointer ? 'p-3.5' : 'p-2.5', 'rounded-xl transition-all']"
-						:style="{ backgroundColor: currentTheme.colors.surface }">
+						:style="{ backgroundColor: currentTheme.colors.surface }" title="Theme">
 						<svg class="w-5 h-5" :style="{ color: currentTheme.colors.textSecondary }" fill="none"
 							stroke="currentColor" viewBox="0 0 24 24">
 							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -467,7 +467,7 @@
 
 					<div v-if="!isReadOnlySharedView" class="relative uploads-panel-container">
 						<button @click.stop="toggleUploadsPanel" :class="[isCoarsePointer ? 'p-3.5' : 'p-2.5', 'rounded-xl transition-all']"
-							:style="{ backgroundColor: currentTheme.colors.surface }">
+							:style="{ backgroundColor: currentTheme.colors.surface }" title="My Files">
 							<svg class="w-5 h-5" :style="{ color: currentTheme.colors.textSecondary }" fill="none"
 								stroke="currentColor" viewBox="0 0 24 24">
 								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -618,7 +618,7 @@
 					</div>
 
 					<button v-if="!isReadOnlySharedView" @click="toggleSettings" :class="[isCoarsePointer ? 'p-3.5' : 'p-2.5', 'rounded-xl transition-all']"
-						:style="{ backgroundColor: currentTheme.colors.surface }">
+						:style="{ backgroundColor: currentTheme.colors.surface }" title="Settings">
 						<svg class="w-5 h-5" :style="{ color: currentTheme.colors.textSecondary }" fill="none"
 							stroke="currentColor" viewBox="0 0 24 24">
 							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -629,7 +629,7 @@
 					</button>
 
 					<button v-if="!isReadOnlySharedView" @click="toggleModelStatus" class="relative p-2.5 rounded-xl transition-all"
-						:style="{ backgroundColor: currentTheme.colors.surface }">
+						:style="{ backgroundColor: currentTheme.colors.surface }" title="AI Model Status">
 						<svg v-if="showModelLoadingIndicator" class="w-5 h-5 text-[#4A90E2] animate-spin" fill="none"
 							stroke="currentColor" viewBox="0 0 24 24">
 							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -654,14 +654,14 @@
 						</div>
 					</button>
 
-					<!-- <button @click="handleProfileClick" :class="[isCoarsePointer ? 'p-3.5' : 'p-2.5', 'rounded-xl transition-all']"
-						:style="{ backgroundColor: currentTheme.colors.surface }">
+					<button v-if="!isReadOnlySharedView" @click="handleProfileClick" :class="[isCoarsePointer ? 'p-3.5' : 'p-2.5', 'rounded-xl transition-all']"
+						:style="{ backgroundColor: currentTheme.colors.surface }" :title="store.user ? 'Sign out' : 'Sign in'">
 						<svg class="w-5 h-5" :style="{ color: currentTheme.colors.textSecondary }" fill="none"
 							stroke="currentColor" viewBox="0 0 24 24">
 							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
 								d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
 						</svg>
-					</button> -->
+					</button>
 				</div>
 			</div>
 		</div>
@@ -1107,6 +1107,7 @@
 
 		<div class="fixed bottom-8 right-8 z-[1000] flex flex-col gap-3">
 			<button @click="resetView" class="p-4 rounded-2xl shadow-lg hover:shadow-xl transition-all border group"
+				title="Reset view"
 				:style="{
 					backgroundColor: currentTheme.colors.background,
 					borderColor: currentTheme.colors.border
@@ -1119,6 +1120,7 @@
 				</svg>
 			</button>
 			<button @click="refreshData" class="p-4 rounded-2xl shadow-lg hover:shadow-xl transition-all border group"
+				title="Refresh data"
 				:style="{
 					backgroundColor: currentTheme.colors.background,
 					borderColor: currentTheme.colors.border
@@ -1131,7 +1133,7 @@
 				</svg>
 			</button>
 
-			<button v-if="explodedNode" @click="collapseNode"
+			<button v-if="explodedNode" @click="collapseNode" title="Collapse cluster"
 				class="p-4 bg-[#4A90E2] text-white rounded-2xl shadow-lg hover:shadow-xl hover:bg-[#357ABD] transition-all">
 				<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -1141,6 +1143,16 @@
 		<div id="graph-container" ref="graphContainer" @click="handleBackgroundClick(); handleGraphLeftClick($event)"
 			@contextmenu.prevent="handleGraphRightClick"
 			class="w-full h-full pt-20 cursor-grab active:cursor-grabbing"></div>
+
+		<!-- Persistent nudge once there's nothing on the canvas and the tutorial
+			 isn't up to explain that itself (dismissed/skipped/already seen). -->
+		<div v-if="graphIsEmpty && !tutorialActive && !isReadOnlySharedView"
+			class="fixed inset-0 flex items-center justify-center pointer-events-none z-10">
+			<div class="text-center max-w-sm px-6 pointer-events-none" :style="{ color: currentTheme.colors.textSecondary }">
+				<p class="text-lg font-medium mb-1" :style="{ color: currentTheme.colors.text }">No websites yet</p>
+				<p class="text-sm">Install the browser extension to start saving, or right-click anywhere here to add a note or file.</p>
+			</div>
+		</div>
 
 		<!-- "+" prompt after a right click on empty canvas (triple left-click opens the note creator directly) -->
 		<div v-if="showAddNotePrompt" class="fixed z-[1400] animate-fadeIn"
@@ -2666,8 +2678,9 @@ import {
 import { useAnalytics } from '../composables/useAnalytics';
 import PremiumUpsell from './PremiumUpsell.vue';
 import RocusDialog from './RocusDialog.vue';
-import { rocusAlert, rocusConfirm } from '../composables/useRocusDialog';
+import { rocusConfirm } from '../composables/useRocusDialog';
 import { signInUrl } from '../composables/graphNode/usePremium';
+import { API_BASE } from './constants/config';
 
 import { formatDate, withAlpha } from '../composables/graphNode/utils';
 
@@ -2873,6 +2886,7 @@ import {
 	websites,
 	settings,
 	graphData,
+	graphIsEmpty,
 	currentAlbum,
 	dropdownMode,
 	setDropdownMode,
@@ -3248,8 +3262,14 @@ function resetSettings() {
 	updateConnections();
 }
 
-function handleProfileClick() {
-	rocusAlert("Profile functionality would be implemented here");
+async function handleProfileClick() {
+	if (!store.user) {
+		window.location.href = signInUrl();
+		return;
+	}
+	if (await rocusConfirm(`Sign out of ${store.user.email || 'Rocus'}?`, { title: 'Sign Out', confirmText: 'Sign Out' })) {
+		window.location.href = `${API_BASE}/api/auth/logout`;
+	}
 }
 
 // ==============================================

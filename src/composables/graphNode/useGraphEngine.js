@@ -173,6 +173,11 @@ export const websiteContextNode = ref(null);
 // closure variables. Only this file ever reassigns them; every other
 // composable that needs them only reads them or calls methods on them.
 export let graphData;
+// Reactive mirror of `graphData.nodes.length === 0`, updated once per
+// renderGraph() call (the single choke point every graphData mutation flows
+// through) so Vue templates can show empty-state UI without needing graphData
+// itself - a plain reassigned `let`, not Vue-reactive - to be reactive.
+export const graphIsEmpty = ref(true);
 let rawClusters = [];
 export let rawSimilarities = {};
 export let simulation;
@@ -1330,6 +1335,11 @@ export function updateConnections() {
 	}
 }
 
+// Duration of the explosion reveal tween in performExplosion() below -
+// exported so useTutorial.js's post-explosion highlight recalculation can key
+// off the same number instead of duplicating a magic value.
+export const EXPLOSION_TWEEN_MS = 500;
+
 // ==============================================
 // NODE EXPLOSION / COLLAPSE
 // ==============================================
@@ -1358,7 +1368,7 @@ export function performExplosion(clusterNode) {
 	clusterNode.fx = centerX;
 	clusterNode.fy = centerY;
 
-	const radius = 80;
+	const radius = 95;
 	websiteNodes = [];
 	const totalNodes = clusterNode.websites.length + 1;
 	const angleStep = (2 * Math.PI) / totalNodes;
@@ -1378,18 +1388,25 @@ export function performExplosion(clusterNode) {
 			note_text: website.note_text || null,
 			added_by: website.added_by || null,
 			// Grown on touch devices - this is the primary "inspect a website"
-			// tap target for a shared-view guest, and 10 (20px diameter) was
-			// well under any usable touch-target size.
-			size: isCoarsePointer.value ? 16 : 10,
-			baseSize: isCoarsePointer.value ? 16 : 10,
+			// tap target for a shared-view guest. Bumped up from 10/16 - the
+			// exploded ring is a tight target to hit at the smaller size,
+			// especially on a trackpad/mouse.
+			size: isCoarsePointer.value ? 20 : 13,
+			baseSize: isCoarsePointer.value ? 20 : 13,
 			type: "website",
 			parentCluster: clusterNode.id,
 			x: centerX, // Start at center
 			y: centerY,
 			vx: 0, // ADD: reset velocity
 			vy: 0, // ADD: reset velocity
-			fx: centerX + Math.cos(angle) * radius,
-			fy: centerY + Math.sin(angle) * radius,
+			// Pinned at the parent for now, not the final ring position - the
+			// tween below eases fx/fy out to _targetFx/_targetFy so the (unchanged)
+			// tick handler's raw position paint is smooth instead of snapping
+			// straight to the final spot on frame 1.
+			fx: centerX,
+			fy: centerY,
+			_targetFx: centerX + Math.cos(angle) * radius,
+			_targetFy: centerY + Math.sin(angle) * radius,
 		};
 		websiteNodes.push(websiteNode);
 		graphData.nodes.push(websiteNode);
@@ -1405,16 +1422,18 @@ export function performExplosion(clusterNode) {
 	const discoverNode = {
 		id: `discover-${clusterNode.id}`,
 		title: "Discover Similar",
-		size: 14,
-		baseSize: 14,
+		size: 17,
+		baseSize: 17,
 		type: "discover",
 		parentCluster: clusterNode.id,
 		x: centerX,
 		y: centerY,
 		vx: 0, // ADD: reset velocity
 		vy: 0, // ADD: reset velocity
-		fx: centerX + Math.cos(discoverAngle) * radius,
-		fy: centerY + Math.sin(discoverAngle) * radius,
+		fx: centerX,
+		fy: centerY,
+		_targetFx: centerX + Math.cos(discoverAngle) * radius,
+		_targetFy: centerY + Math.sin(discoverAngle) * radius,
 	};
 	websiteNodes.push(discoverNode);
 	graphData.nodes.push(discoverNode);
@@ -1425,24 +1444,57 @@ export function performExplosion(clusterNode) {
 		type: "discover-link",
 	});
 
+	// Residual velocity from earlier explosions doesn't fully damp out before
+	// the next one restarts alpha - it compounds. Over several cycles the
+	// whole graph's OTHER (never-pinned) clusters measurably drift, eventually
+	// carrying them off the visible viewport - which looks exactly like the
+	// graph going unresponsive/"static," when really they've just wandered
+	// off-screen. Zeroing every node's velocity before each explosion's kick
+	// means each one starts from rest, so nothing can accumulate cycle over
+	// cycle.
+	graphData.nodes.forEach((node) => {
+		node.vx = 0;
+		node.vy = 0;
+	});
+
 	simulation.nodes(graphData.nodes);
 	simulation.force("link").links(graphData.links);
-	simulation.alpha(0.3).restart();
+	// A small kick, not 0.3 - the reveal itself is now driven entirely by the
+	// tween below (every ring node is fully pinned throughout), so this only
+	// needs to keep the tick loop alive long enough to paint it.
+	simulation.alpha(0.05).restart();
 
 	renderGraph();
 
-	// Release positions after animation
-	setTimeout(() => {
+	// Ease fx/fy from the parent's position out to each node's target ring
+	// spot. The tick handler is untouched - it always just paints whatever
+	// x/y currently is, so smoothly animating the underlying pinned position
+	// (instead of setting it once, final, up front) is what makes the paint
+	// loop's existing raw `.attr("transform", ...)` look smooth for free.
+	//
+	// Deliberately never released back to real physics once the tween lands -
+	// with charge repulsion (-200) from every other node in a real, populated
+	// graph and only a weak link constraint (strength 0.03) pulling back, an
+	// unpinned ring drifts far past its intended 80px radius as soon as
+	// anything (e.g. the alpha restart above, which re-energizes the WHOLE
+	// simulation, not just this cluster) nudges it. Staying pinned at the
+	// exact computed ring position for as long as the cluster is exploded
+	// keeps the spacing exactly where it's supposed to be, no matter how
+	// large the rest of the graph is. Same reasoning applies to the cluster's
+	// own fx/fy (locked further up) - both release together in collapseNode()
+	// instead, which already nulls the cluster's fx/fy and discards the
+	// website/discover nodes outright.
+	d3.timer((elapsed) => {
+		const t = Math.min(1, elapsed / EXPLOSION_TWEEN_MS);
+		const eased = d3.easeCubicOut(t);
 		websiteNodes.forEach((node) => {
-			const d3Node = graphData.nodes.find((n) => n.id === node.id);
-			if (d3Node) {
-				d3Node.fx = null;
-				d3Node.fy = null;
-			}
+			node.fx = centerX + (node._targetFx - centerX) * eased;
+			node.fy = centerY + (node._targetFy - centerY) * eased;
 		});
-		clusterNode.fx = null;
-		clusterNode.fy = null;
-	}, 500);
+		if (t >= 1) {
+			return true; // stops the timer
+		}
+	});
 }
 
 export function collapseNode() {
@@ -1650,6 +1702,8 @@ export function centerView() {
 }
 
 export function renderGraph() {
+	graphIsEmpty.value = graphData.nodes.length === 0;
+
 	container.selectAll(".links").data([null]).join("g").attr("class", "links");
 	container.selectAll(".nodes").data([null]).join("g").attr("class", "nodes");
 	container.selectAll(".labels").data([null]).join("g").attr("class", "labels");
@@ -1847,6 +1901,26 @@ export function drag(simulation) {
 
 	function dragended(event, d) {
 		if (!event.active) simulation.alphaTarget(0);
+
+		// Exploded ring node (has a stashed home slot from performExplosion) -
+		// ease back to that slot instead of releasing into real physics, where
+		// charge repulsion from the rest of a populated graph could fling it
+		// away instead of returning it home.
+		if (d._targetFx != null && d._targetFy != null) {
+			const startFx = d.fx;
+			const startFy = d.fy;
+			const targetFx = d._targetFx;
+			const targetFy = d._targetFy;
+			d3.timer((elapsed) => {
+				const t = Math.min(1, elapsed / EXPLOSION_TWEEN_MS);
+				const eased = d3.easeCubicOut(t);
+				d.fx = startFx + (targetFx - startFx) * eased;
+				d.fy = startFy + (targetFy - startFy) * eased;
+				if (t >= 1) return true;
+			});
+			return;
+		}
+
 		d.fx = null;
 		d.fy = null;
 	}
