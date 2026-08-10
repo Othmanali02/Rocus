@@ -202,7 +202,8 @@ onUnmounted(() => {
                         class="block w-full px-4 py-2 text-[#4A90E2] border-2 border-[#4A90E2] rounded-lg font-semibold text-center">
                         Sign In
                     </a>
-                    <a href="/dashboard" class="w-full px-4 py-2 bg-[#4A90E2] text-white rounded-lg font-semibold">
+                    <a @click="installExtension"
+                        class="block w-full px-4 py-2 cursor-pointer bg-[#4A90E2] text-white rounded-lg font-semibold text-center">
                         Install Extension
                     </a>
                 </div>
@@ -546,10 +547,10 @@ onUnmounted(() => {
                                     full control.
                                     <span class="underline">Fast, Safe, and Decentralized.</span>
                                 </p>
-                                <button
-                                    class="bg-white text-[#4A90E2] px-8 py-4 rounded-lg font-bold text-lg hover:bg-gray-100 transition-all shadow-lg">
+                                <a href="/dashboard"
+                                    class="inline-block bg-white text-[#4A90E2] px-8 py-4 rounded-lg font-bold text-lg hover:bg-gray-100 transition-all shadow-lg">
                                     Start Using Rocus
-                                </button>
+                                </a>
                             </div>
                         </div>
                     </div>

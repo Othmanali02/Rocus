@@ -1,13 +1,15 @@
 import { ref, computed } from 'vue';
 import { store } from '../../router/store';
 import { API_BASE } from '../../components/constants/config';
-import { signInUrl, openPremiumModal } from './usePremium';
+import { signUpUrl, openPremiumModal } from './usePremium';
 import { rocusAlert } from '../useRocusDialog';
 import { websites, clusters, addProcessingPlaceholder, removeProcessingPlaceholder, remoteGraphId, activeShareGraphId, effectiveAlbumId, isReadOnlySharedView } from './useGraphEngine';
 import { processWebsite } from './useAIModels';
 
 // Drag-and-drop file upload onto the graph canvas. Signed-in only, full
-// stop - dropping while signed out just redirects to sign-in (no attempt to
+// stop - dropping while signed out redirects to sign-up (a signed-out
+// visitor hitting this wall is very likely brand-new to Rocus, matching
+// useSharing.js's identical redirect-on-signed-out reasoning; no attempt to
 // hold onto the dropped file across that navigation); the user re-drops
 // after landing back on /dashboard.
 
@@ -51,7 +53,7 @@ export function handleDrop(event) {
 	if (files.length === 0) return;
 
 	if (!store.user) {
-		window.location.href = signInUrl();
+		window.location.href = signUpUrl();
 		return;
 	}
 
@@ -105,7 +107,7 @@ export async function uploadFile(file) {
 		}
 
 		if (response.status === 401) {
-			window.location.href = signInUrl();
+			window.location.href = signUpUrl();
 			return;
 		}
 
