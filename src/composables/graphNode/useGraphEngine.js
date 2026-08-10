@@ -1484,7 +1484,7 @@ export function performExplosion(clusterNode) {
 	// own fx/fy (locked further up) - both release together in collapseNode()
 	// instead, which already nulls the cluster's fx/fy and discards the
 	// website/discover nodes outright.
-	d3.timer((elapsed) => {
+	const revealTimer = d3.timer((elapsed) => {
 		const t = Math.min(1, elapsed / EXPLOSION_TWEEN_MS);
 		const eased = d3.easeCubicOut(t);
 		websiteNodes.forEach((node) => {
@@ -1492,7 +1492,11 @@ export function performExplosion(clusterNode) {
 			node.fy = centerY + (node._targetFy - centerY) * eased;
 		});
 		if (t >= 1) {
-			return true; // stops the timer
+			// d3.timer ignores the callback's return value - returning true
+			// here does nothing. Only timer.stop() actually stops it; without
+			// this, the timer runs forever, still writing into the shared
+			// websiteNodes variable on every future explosion.
+			revealTimer.stop();
 		}
 	});
 }
@@ -1911,12 +1915,14 @@ export function drag(simulation) {
 			const startFy = d.fy;
 			const targetFx = d._targetFx;
 			const targetFy = d._targetFy;
-			d3.timer((elapsed) => {
+			const returnTimer = d3.timer((elapsed) => {
 				const t = Math.min(1, elapsed / EXPLOSION_TWEEN_MS);
 				const eased = d3.easeCubicOut(t);
 				d.fx = startFx + (targetFx - startFx) * eased;
 				d.fy = startFy + (targetFy - startFy) * eased;
-				if (t >= 1) return true;
+				// d3.timer ignores the callback's return value - only
+				// timer.stop() actually stops it (see performExplosion()).
+				if (t >= 1) returnTimer.stop();
 			});
 			return;
 		}
