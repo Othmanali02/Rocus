@@ -1586,6 +1586,38 @@ export function stopStickyDrag() {
 // /shared/:graphId. Dynamic import (rather than a static one) avoids turning
 // the existing useGraphEngine <-> useAlbums-style circular-import convention
 // into a three-way cycle for this one, optional, rarely-taken path.
+// d3.forceCenter recenters by averaging every node's x/y and shifting all of
+// them by the difference - a raw position shift each tick, not damped by
+// velocityDecay like every other force. Website/discover ring nodes are
+// transient satellites that briefly cluster tightly around whichever node
+// exploded them; counting them in that average skews the centroid toward
+// that node, and forceCenter yanks every other (free) node the same amount
+// the opposite way to compensate. Negligible in a populated graph, but with
+// only a couple of clusters the ring can outnumber everything else, so the
+// shove compounds every explosion into a runaway drift. Recentering off only
+// the "real" nodes removes that entirely.
+function forceCenterExcludingRing(cx, cy) {
+	let nodes;
+	function force() {
+		let sx = 0, sy = 0, n = 0;
+		for (const node of nodes) {
+			if (node.type === "website" || node.type === "discover") continue;
+			sx += node.x;
+			sy += node.y;
+			n++;
+		}
+		if (!n) return;
+		sx = sx / n - cx;
+		sy = sy / n - cy;
+		for (const node of nodes) {
+			node.x -= sx;
+			node.y -= sy;
+		}
+	}
+	force.initialize = (_nodes) => { nodes = _nodes; };
+	return force;
+}
+
 export async function initializeGraph(sharedGraphId = null) {
 	const width = graphContainer.value.clientWidth;
 	const height = graphContainer.value.clientHeight;
@@ -1625,8 +1657,17 @@ export async function initializeGraph(sharedGraphId = null) {
 				.distance((d) => (d.type === "website-link" ? 80 : 200))
 				.strength(0.03)
 		)
-		.force("charge", d3.forceManyBody().strength(-200))
-		.force("center", d3.forceCenter(width / 2, height / 2))
+		// Website/discover ring nodes are always fx/fy-pinned for their entire
+		// lifecycle (see performExplosion/dragended/collapseNode) - real physics
+		// never moves them, so they don't need to push on anything else either.
+		// Without this, every explosion briefly stacks a whole cluster's worth of
+		// them on the same coordinate as the cluster, and d3-force's charge
+		// force sums coincident nodes' strengths into one combined spike (see
+		// node_modules/d3-force/src/manyBody.js accumulate()) - flinging nearby
+		// clusters away. Scoped by type so normal cluster-to-cluster spacing is
+		// untouched.
+		.force("charge", d3.forceManyBody().strength((d) => (d.type === "website" || d.type === "discover") ? 0 : -200))
+		.force("center", forceCenterExcludingRing(width / 2, height / 2))
 		.force(
 			"collision",
 			d3.forceCollide().radius((d) => d.size * settings.nodeSize + 15)
