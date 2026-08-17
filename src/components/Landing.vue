@@ -640,6 +640,12 @@ onUnmounted(() => {
                             <li>
                                 <a href="/privacy" class="hover:text-white transition-colors">Privacy Policy</a>
                             </li>
+                            <li>
+                                <a href="/terms" class="hover:text-white transition-colors">Terms of Service</a>
+                            </li>
+                            <li>
+                                <a href="/refund-policy" class="hover:text-white transition-colors">Refund Policy</a>
+                            </li>
 
                         </ul>
                     </div>
