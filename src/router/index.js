@@ -3,6 +3,8 @@ import GraphNode from "@/components/GraphNode.vue";
 import Landing from "../components/Landing.vue";
 import Redirect from "../components/Redirect.vue";
 import PrivacyPolicy from "@/components/PrivacyPolicy.vue";
+import TermsOfService from "@/components/TermsOfService.vue";
+import RefundPolicy from "@/components/RefundPolicy.vue";
 import Pricing from "@/components/Pricing.vue";
 
 // The dashboard itself is free/open to everyone (no sign-in wall) - signing
@@ -19,6 +21,16 @@ const router = createRouter({
 			path: "/privacy",
 			name: "PrivacyPolicy",
 			component: PrivacyPolicy,
+		},
+		{
+			path: "/terms",
+			name: "TermsOfService",
+			component: TermsOfService,
+		},
+		{
+			path: "/refund-policy",
+			name: "RefundPolicy",
+			component: RefundPolicy,
 		},
 		{
 			path: "/pricing",

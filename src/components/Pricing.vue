@@ -223,8 +223,25 @@ const signInUrl = `${API_BASE}/api/auth/login`;
 
         <footer class="bg-[#1A1A1A] text-white py-12 px-4 sm:px-6 lg:px-8">
             <div class="max-w-7xl mx-auto">
-                <div class="flex items-center space-x-3 mb-4">
-                    <img src="./images/RocusWhite.png" alt="Rocus" class="h-10" />
+                <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-8 mb-8">
+                    <div class="flex items-center space-x-3">
+                        <img src="./images/RocusWhite.png" alt="Rocus" class="h-10" />
+                    </div>
+
+                    <div>
+                        <h4 class="font-bold mb-4 text-[#4A90E2]">Legal</h4>
+                        <ul class="space-y-2 text-[#9A9A9A]">
+                            <li>
+                                <a href="/privacy" class="hover:text-white transition-colors">Privacy Policy</a>
+                            </li>
+                            <li>
+                                <a href="/terms" class="hover:text-white transition-colors">Terms of Service</a>
+                            </li>
+                            <li>
+                                <a href="/refund-policy" class="hover:text-white transition-colors">Refund Policy</a>
+                            </li>
+                        </ul>
+                    </div>
                 </div>
                 <div class="border-t border-[#9A9A9A] border-opacity-20 pt-8 text-center text-[#9A9A9A]">
                     <p>© 2025 Rocus. Open source software licensed under MIT.</p>
