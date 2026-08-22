@@ -1,11 +1,12 @@
 <script setup>
-import { ref, onMounted, onUnmounted, watch } from "vue";
+import { ref, onMounted, onUnmounted } from "vue";
 import { store } from "../router/store";
 import { useAnalytics } from '../composables/useAnalytics';
 import { useSeoMeta } from '../composables/useSeoMeta';
 import { API_BASE } from './constants/config';
+import HeroGraphAnimation from './HeroGraphAnimation.vue';
 
-const { trackEvent, analyticsLoaded, analyticsConsent } = useAnalytics();
+const { loadUmamiUnconditional, trackEventUnconditional } = useAnalytics();
 
 const mobileMenuOpen = ref(false);
 const scrolled = ref(false);
@@ -39,6 +40,138 @@ async function submitContactForm() {
 
 const props = defineProps({ user: Object });
 
+// Hero headline A/B variants -------------------------------------------------
+// A random variant is picked fresh on every page load (below), so which one
+// shows changes almost every visit. ?v=3 forces a specific variant (0-based)
+// instead, for QA/demoing a particular one without relying on chance.
+const heroVariants = [
+    {
+        headline: ["You find it. You lose it.", "Never again."],
+        subheadline: "Rocus quietly organizes everything you save, so the thing you found three weeks ago is one search away.",
+    },
+    {
+        headline: ["Stop re-Googling", "things you already found."],
+        subheadline: "Every page, note, and file you save becomes instantly searchable — organized automatically, kept private on your device.",
+    },
+    {
+        headline: ["Your bookmarks are where", "good research goes to die."],
+        subheadline: "Rocus turns the pile you never revisit into a living, searchable map of everything you know.",
+    },
+    {
+        headline: ["Never lose", "a source again."],
+        subheadline: "Save it once and Rocus files it into a searchable knowledge graph for you — no folders, no tagging, no digging.",
+    },
+    {
+        headline: ["The end of", "“where the hell did I see that?”"],
+        subheadline: "Rocus remembers every page and file you save and resurfaces it the moment you need it.",
+    },
+    {
+        headline: ["Everything you've ever saved,", "finally findable."],
+        subheadline: "Rocus organizes your links, notes, and files into one searchable graph — automatically, and entirely on your device.",
+    },
+    {
+        headline: ["You saved it.", "Rocus knows exactly where."],
+        subheadline: "Your research organizes itself into a searchable map while you read — private by default, powerful when you want it.",
+    },
+    {
+        headline: ["Your research, organized", "while you're still reading."],
+        subheadline: "Rocus clusters every page and note you save in real time, so your knowledge builds itself as you work.",
+    },
+    {
+        headline: ["Turn everything you save into", "a memory you can search."],
+        subheadline: "Links, PDFs, notes — Rocus weaves them into one private, searchable knowledge graph you actually come back to.",
+    },
+    {
+        headline: ["Remember everything", "you find online."],
+        subheadline: "Rocus saves, organizes, and resurfaces every page and file — automatically, privately, in one searchable map.",
+    },
+];
+
+function pickHeroVariantIndex() {
+    // URLSearchParams.get() returns null (not undefined) when ?v is absent,
+    // and Number(null) is 0, not NaN - checking for null explicitly first
+    // avoids every param-less visit silently "forcing" variant 0.
+    const raw = new URLSearchParams(window.location.search).get('v');
+    if (raw !== null) {
+        const forced = Number(raw);
+        if (Number.isInteger(forced) && forced >= 0 && forced < heroVariants.length) {
+            return forced; // manual override for QA/demos, e.g. ?v=4
+        }
+    }
+    return Math.floor(Math.random() * heroVariants.length); // fresh pick each visit
+}
+
+const HERO_VARIANT_INDEX = pickHeroVariantIndex();
+const heroVariant = heroVariants[HERO_VARIANT_INDEX] ?? heroVariants[0];
+
+// Headlines vary a lot in length across variants ("Never lose" vs "Turn
+// everything you save into"), and the two lines are hard-split with a <br/>
+// so each one has to fit on a single physical line at desktop/laptop widths
+// or the "2 line" hero breaks. Guessing a font-size from character counts is
+// unreliable (real glyph widths vary by letter/font), so this measures the
+// actual rendered text with Canvas 2D (same font/weight the h1 uses) and
+// picks the largest size, up to the original 72px design ceiling, that
+// still fits both lines - shrinking only the variants that need it. Below
+// 1024px the inline override is cleared entirely; mobile/tablet just wraps
+// normally via the existing responsive Tailwind classes.
+const heroH1 = ref(null);
+const HERO_FONT_MAX_PX = 92;
+const HERO_FONT_MIN_PX = 36;
+let heroFitCanvasCtx = null;
+
+function fitHeroHeadline() {
+    const el = heroH1.value;
+    if (!el) return;
+
+    if (window.innerWidth < 1024) {
+        el.style.fontSize = "";
+        return;
+    }
+
+    const containerWidth = el.clientWidth;
+    if (!containerWidth) return;
+
+    if (!heroFitCanvasCtx) {
+        heroFitCanvasCtx = document.createElement("canvas").getContext("2d");
+    }
+    if (!heroFitCanvasCtx) return; // unsupported - leave Tailwind's static sizing in place
+
+    const computedStyle = window.getComputedStyle(el);
+    heroFitCanvasCtx.font = `${computedStyle.fontWeight} ${HERO_FONT_MAX_PX}px ${computedStyle.fontFamily}`;
+    const longestLineWidth = Math.max(
+        heroFitCanvasCtx.measureText(heroVariant.headline[0]).width,
+        heroFitCanvasCtx.measureText(heroVariant.headline[1]).width
+    );
+
+    let fontSize = HERO_FONT_MAX_PX;
+    if (longestLineWidth > containerWidth) {
+        // Text width scales linearly with font-size for a fixed font/weight,
+        // so this solves for the exact fit in one step instead of guessing -
+        // 0.97 leaves a small safety margin for sub-pixel/kerning rounding.
+        fontSize = Math.max(HERO_FONT_MIN_PX, Math.floor(HERO_FONT_MAX_PX * (containerWidth / longestLineWidth) * 0.97));
+    }
+    el.style.fontSize = `${fontSize}px`;
+}
+
+let heroFitResizeTimer = null;
+const handleHeroFitResize = () => {
+    clearTimeout(heroFitResizeTimer);
+    heroFitResizeTimer = setTimeout(fitHeroHeadline, 100);
+};
+
+onMounted(() => {
+    requestAnimationFrame(fitHeroHeadline); // wait a frame so layout/width is settled
+    if (document.fonts?.ready) {
+        document.fonts.ready.then(fitHeroHeadline); // re-measure once the real webfont has swapped in
+    }
+    window.addEventListener("resize", handleHeroFitResize);
+});
+
+onUnmounted(() => {
+    window.removeEventListener("resize", handleHeroFitResize);
+    clearTimeout(heroFitResizeTimer);
+});
+
 let maxScrollDepth = 0;
 const milestonesTracked = new Set();
 
@@ -51,14 +184,14 @@ const handleScroll = () => {
 
     [25, 50, 75, 100].forEach((milestone) => {
         if (scrollPercent >= milestone && !milestonesTracked.has(milestone)) {
-            trackEvent('scroll-depth', { depth: milestone + '%' });
+            trackEventUnconditional('scroll-depth', { depth: milestone + '%' });
             milestonesTracked.add(milestone);
         }
     });
 };
 
 const installExtension = () => {
-    trackEvent('install-extension-clicked', { source: 'landing-page' });
+    trackEventUnconditional('install-extension-clicked', { source: 'landing-page', variant: HERO_VARIANT_INDEX });
 
     const isFirefox = navigator.userAgent.toLowerCase().includes('firefox');
 
@@ -69,16 +202,19 @@ const installExtension = () => {
     window.open(url, "_blank");
 };
 
-// Track landing page view and time on page
+// Track landing page view and time on page - basic anonymous visit stats
+// (page view, referrer, time on page), unconditional for every visitor. See
+// the "Landing Page Visit Analytics" section in PrivacyPolicy.vue: this is
+// distinct from the in-app usage tracking the Settings "Help Improve Rocus"
+// toggle gates, which remains fully opt-in.
 const trackLandingPage = () => {
-    if (!analyticsLoaded.value || !analyticsConsent.value) return;
-
-    trackEvent('landing-page-view', { referrer: document.referrer || 'direct' });
+    trackEventUnconditional('landing-page-view', { referrer: document.referrer || 'direct' });
+    trackEventUnconditional('hero-variant-shown', { variant: HERO_VARIANT_INDEX, headline: heroVariant.headline.join(' ') });
 
     const startTime = Date.now();
     const trackTimeOnPage = () => {
         const seconds = Math.round((Date.now() - startTime) / 1000);
-        trackEvent('time-on-landing-page', { seconds });
+        trackEventUnconditional('time-on-landing-page', { seconds });
     };
 
     window.addEventListener('beforeunload', trackTimeOnPage);
@@ -98,17 +234,8 @@ onMounted(() => {
 
     console.log(store.user);
 
-    // Wait until analytics is loaded before tracking
-    if (analyticsLoaded.value && analyticsConsent.value) {
-        trackLandingPage();
-    } else {
-        const unwatch = watch([analyticsLoaded, analyticsConsent], ([loaded, consent]) => {
-            if (loaded && consent) {
-                trackLandingPage();
-                unwatch(); // stop watching
-            }
-        });
-    }
+    loadUmamiUnconditional();
+    trackLandingPage();
 });
 
 onUnmounted(() => {
@@ -210,66 +337,50 @@ onUnmounted(() => {
             </div>
         </nav>
 
-        <section class="pt-32 pb-20 px-4 sm:px-6 lg:px-8 relative overflow-hidden">
+        <section class="pt-32 pb-20 px-4 sm:px-6 lg:px-8 relative overflow-hidden lg:min-h-screen lg:flex lg:items-center">
             <div class="absolute inset-0 bg-gradient-to-br from-[#4A90E2]/5 via-transparent to-[#4A90E2]/10"></div>
 
-            <div class="max-w-7xl mx-auto relative">
-                <div class="text-center max-w-4xl mx-auto mb-16">
-                    <div
-                        class="inline-flex items-center space-x-2 mb-6 px-4 py-2 bg-[#4A90E2]/10 rounded-full border border-[#4A90E2]/20">
-                        <span class="text-[#4A90E2] font-bold text-sm">Free</span>
-                        <span class="text-[#9A9A9A]">•</span>
-                        <span class="text-[#4A90E2] font-bold text-sm">Open Source</span>
-                        <span class="text-[#9A9A9A]">•</span>
-                        <span class="text-[#4A90E2] font-bold text-sm">Decentralized</span>
+            <div class="w-full max-w-[1600px] mx-auto relative">
+                <div class="grid lg:grid-cols-[1fr_1.15fr] gap-12 xl:gap-16 items-center">
+                    <div class="text-center lg:text-left">
+                        <div
+                            class="inline-flex items-center space-x-2 mb-6 px-4 py-2 bg-[#4A90E2]/10 rounded-full border border-[#4A90E2]/20">
+                            <span class="text-[#4A90E2] font-bold text-sm">Free</span>
+                            <span class="text-[#9A9A9A]">•</span>
+                            <span class="text-[#4A90E2] font-bold text-sm">Open Source</span>
+                            <span class="text-[#9A9A9A]">•</span>
+                            <span class="text-[#4A90E2] font-bold text-sm">Private by default</span>
+                        </div>
+
+                        <h1 ref="heroH1" class="text-5xl sm:text-6xl lg:text-7xl font-bold mb-6 leading-tight">
+                            {{ heroVariant.headline[0] }}<br />
+                            <span class="bg-gradient-to-r from-[#4A90E2] to-[#6AB4F5] bg-clip-text text-transparent">
+                                {{ heroVariant.headline[1] }}
+                            </span>
+                        </h1>
+
+                        <p class="text-xl sm:text-2xl lg:text-3xl text-[#1A1A1A] mb-10 leading-relaxed">
+                            {{ heroVariant.subheadline }}
+                        </p>
+
+                        <div class="flex justify-center lg:justify-start">
+                            <a href="/dashboard"
+                                @click="trackEventUnconditional('launch-app-clicked', { source: 'landing-page', variant: HERO_VARIANT_INDEX })"
+                                class="group px-8 py-4 lg:px-10 lg:py-5 bg-[#4A90E2] text-white rounded-lg text-lg lg:text-xl font-bold hover:bg-[#3A7BC8] transition-all shadow-xl shadow-[#4A90E2]/30 hover:shadow-2xl hover:shadow-[#4A90E2]/40 flex items-center justify-center space-x-2">
+                                <span>Try Rocus</span>
+                                <svg class="w-5 h-5 lg:w-6 lg:h-6 group-hover:translate-x-1 transition-transform" fill="none"
+                                    stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                                </svg>
+                            </a>
+                        </div>
                     </div>
 
-                    <h1 class="text-5xl sm:text-6xl lg:text-7xl font-bold mb-6 leading-tight">
-                        Re-imagining<br />
-                        <span class="bg-gradient-to-r from-[#4A90E2] to-[#6AB4F5] bg-clip-text text-transparent">
-                            Bookmarks and History
-                        </span>
-                    </h1>
-
-                    <p class="text-xl sm:text-2xl text-[#1A1A1A] mb-10 leading-relaxed">
-                        Turn scattered links and searches into a
-                        <span class="text-[#4A90E2] font-semibold">living map of knowledge</span>, instantly revealing
-                        relationships that traditional bookmarks
-                        can't show.
-                    </p>
-
-                    <div class="flex flex-col sm:flex-row gap-4 justify-center">
-                        <a href="/dashboard"
-                            class="group px-8 py-4 bg-[#4A90E2] text-white rounded-lg text-lg font-bold hover:bg-[#3A7BC8] transition-all shadow-xl shadow-[#4A90E2]/30 hover:shadow-2xl hover:shadow-[#4A90E2]/40 flex items-center justify-center space-x-2">
-                            <span>Launch App</span>
-                            <svg class="w-5 h-5 group-hover:translate-x-1 transition-transform" fill="none"
-                                stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                            </svg>
-                        </a>
-                        <a href="https://github.com/Othmanali02/Rocus" target="_blank"
-                            class="px-8 py-4 bg-white text-[#4A90E2] rounded-lg text-lg font-bold hover:bg-gray-50 transition-all border-2 border-[#4A90E2] flex items-center justify-center space-x-2">
-                            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                                <path
-                                    d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z" />
-                            </svg>
-                            <span>View on GitHub</span>
-                        </a>
+                    <div class="relative">
+                        <div class="absolute -inset-10 bg-[#4A90E2]/20 blur-3xl rounded-full -z-10"></div>
+                        <HeroGraphAnimation />
                     </div>
-                </div>
-
-                <div class="relative max-w-5xl mx-auto">
-                    <img src="./images/demo.png" alt="Rocus Demo" class="w-full rounded-2xl shadow-2xl" />
-                    <!-- <div
-                        class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-lg animate-bounce">
-                        <svg class="w-8 h-8 text-[#4A90E2]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.868v4.264a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                    </div> -->
                 </div>
             </div>
         </section>
@@ -547,10 +658,20 @@ onUnmounted(() => {
                                     full control.
                                     <span class="underline">Fast, Safe, and Decentralized.</span>
                                 </p>
-                                <a href="/dashboard"
-                                    class="inline-block bg-white text-[#4A90E2] px-8 py-4 rounded-lg font-bold text-lg hover:bg-gray-100 transition-all shadow-lg">
-                                    Start Using Rocus
-                                </a>
+                                <div class="flex flex-col sm:flex-row gap-4">
+                                    <a href="/dashboard"
+                                        class="inline-block bg-white text-[#4A90E2] px-8 py-4 rounded-lg font-bold text-lg hover:bg-gray-100 transition-all shadow-lg text-center">
+                                        Start Using Rocus
+                                    </a>
+                                    <a href="https://github.com/Othmanali02/Rocus" target="_blank"
+                                        class="inline-flex items-center justify-center space-x-2 border-2 border-white text-white px-8 py-4 rounded-lg font-bold text-lg hover:bg-white/10 transition-all">
+                                        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                                            <path
+                                                d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z" />
+                                        </svg>
+                                        <span>View on GitHub</span>
+                                    </a>
+                                </div>
                             </div>
                         </div>
                     </div>
