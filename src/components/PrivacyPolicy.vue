@@ -62,14 +62,39 @@
                     </div>
                 </section>
 
+                <!-- Landing Page Visit Analytics -->
+                <section class="mb-8">
+                    <h2 class="text-2xl font-bold mb-4" :style="{ color: currentTheme.colors.text }">
+                        Landing Page Visit Analytics
+                    </h2>
+                    <div :style="{ color: currentTheme.colors.textSecondary }">
+                        <p class="mb-4">Our public marketing pages (rocus.io and pages like it - not the app itself)
+                            automatically collect basic, anonymous visit statistics via Umami for every visitor, so we
+                            know how many people find Rocus and where they came from. This runs regardless of the
+                            in-app "Help Improve Rocus" setting described below - it's separate, and it's limited to:
+                        </p>
+                        <div class="p-4 rounded-xl" :style="{ backgroundColor: currentTheme.colors.background }">
+                            <ul class="list-disc ml-6 space-y-1">
+                                <li>That a page was viewed, and which one</li>
+                                <li>Referrer / traffic source (e.g., "came from Google" or "came from Twitter")</li>
+                                <li>Browser type and screen size</li>
+                                <li>Country-level location - derived from IP, not stored</li>
+                            </ul>
+                        </div>
+                        <p class="mt-4">No cookies, no personal identifiers, and nothing tied back to an individual
+                            visitor - the same privacy-first Umami setup described in the rest of this page.</p>
+                    </div>
+                </section>
+
                 <!-- What We Collect -->
                 <section class="mb-8">
                     <h2 class="text-2xl font-bold mb-4" :style="{ color: currentTheme.colors.text }">
-                        What We Collect (If You Consent)
+                        In-App Usage Analytics (If You Consent)
                     </h2>
                     <div :style="{ color: currentTheme.colors.textSecondary }">
-                        <p class="mb-4">With your explicit consent, we collect anonymous analytics via Umami
-                            (privacy-first, open-source analytics):</p>
+                        <p class="mb-4">Inside the app itself, deeper usage analytics are opt-in only, toggled via
+                            Settings → "Help Improve Rocus" and off by default. With your explicit consent, we collect
+                            anonymous analytics via Umami (privacy-first, open-source analytics):</p>
 
                         <div class="p-4 rounded-xl mb-4" :style="{ backgroundColor: currentTheme.colors.background }">
                             <strong :style="{ color: currentTheme.colors.text }">What We Collect:</strong>
@@ -148,7 +173,8 @@
                     <div :style="{ color: currentTheme.colors.textSecondary }">
                         <ul class="space-y-3">
                             <li><strong :style="{ color: currentTheme.colors.text }">Opt Out Anytime:</strong> Go to
-                                Settings → Toggle "Help Improve Rocus"</li>
+                                Settings → Toggle "Help Improve Rocus" to stop in-app usage analytics. (Basic landing
+                                page visit stats, described above, aren't covered by this toggle.)</li>
                             <li><strong :style="{ color: currentTheme.colors.text }">Do Not Track:</strong> We respect
                                 the DNT browser header</li>
                             <li><strong :style="{ color: currentTheme.colors.text }">Export Your Data:</strong> Settings

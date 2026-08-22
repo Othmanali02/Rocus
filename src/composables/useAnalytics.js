@@ -101,6 +101,54 @@ export function useAnalytics() {
 		}
 	};
 
+	// Public marketing pages (landing, pricing) aren't in-app usage - they're
+	// basic, cookieless visit stats (page views/referrer/country/browser,
+	// same as Umami's own data-auto-track) rather than the opt-in in-app
+	// behavior tracking analyticsConsent gates. loadUmami()/trackEvent() are
+	// left untouched so the Settings "Help Improve Rocus" toggle keeps
+	// controlling in-app tracking exactly as before.
+	const loadUmamiUnconditional = () => {
+		if (analyticsLoaded.value) return;
+
+		const websiteId = import.meta.env.VITE_UMAMI_WEBSITE_ID;
+		const src = import.meta.env.VITE_UMAMI_SRC;
+
+		if (!websiteId || !src) {
+			console.warn("Umami not configured");
+			return;
+		}
+
+		const script = document.createElement("script");
+		script.async = true;
+		script.defer = true;
+		script.src = src;
+		script.setAttribute("data-website-id", websiteId);
+		script.setAttribute("data-domains", "rocus.io");
+		script.setAttribute("data-auto-track", "true");
+		script.setAttribute("data-cache", "true");
+
+		script.onload = () => {
+			analyticsLoaded.value = true;
+		};
+
+		script.onerror = (error) => {
+			console.error("Failed to load Umami:", error);
+		};
+
+		document.head.appendChild(script);
+	};
+
+	// script.onload just means the umami script executed, not that
+	// window.umami has finished initializing yet - mirrors loadUmami()'s own
+	// poll so a track() call fired right after mount isn't dropped.
+	const trackEventUnconditional = (eventName, eventData = {}, attempt = 0) => {
+		if (window.umami) {
+			window.umami.track(eventName, eventData);
+		} else if (attempt < 20) {
+			setTimeout(() => trackEventUnconditional(eventName, eventData, attempt + 1), 100);
+		}
+	};
+
 	// Bootstrap: a returning user who already consented in a past session
 	// should have analytics actually running from the start, not just show
 	// the toggle as "on" - previously this only ever happened as a side
@@ -118,5 +166,7 @@ export function useAnalytics() {
 		analyticsLoaded,
 		setConsent,
 		trackEvent,
+		loadUmamiUnconditional,
+		trackEventUnconditional,
 	};
 }
