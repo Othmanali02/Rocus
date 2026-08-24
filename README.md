@@ -4,6 +4,8 @@
 
 **Rocus** is an intelligent, AI-powered knowledge graph that automatically organizes your saved websites using local machine learning models. Built with Vue.js, D3.js, and WebGPU-accelerated AI, Rocus runs entirely in your browser—no servers, no cloud, complete privacy.
 
+Rocus Extension Github Repo: https://github.com/Othmanali02/rocus-extension
+
 ---
 
 ## Features
