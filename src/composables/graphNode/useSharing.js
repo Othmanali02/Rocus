@@ -23,6 +23,7 @@ import { API_BASE } from "../../components/constants/config";
 import { openPremiumModal, signInUrl, signUpUrl } from "./usePremium";
 import { store } from "../../router/store";
 import { useAnalytics } from "../useAnalytics";
+import { currentTheme } from "./useThemes";
 
 const { trackEvent } = useAnalytics();
 
@@ -388,7 +389,14 @@ export async function shareCurrentGraph({ publicLinkEnabled = false, guestDownlo
 			method: "POST",
 			credentials: "include",
 			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ graphId, nodes, publicLinkEnabled, guestDownloadsEnabled, title: albums.value[albumId]?.name || null }),
+			body: JSON.stringify({
+				graphId, nodes, publicLinkEnabled, guestDownloadsEnabled,
+				title: albums.value[albumId]?.name || null,
+				// Lets a shared-graph visitor (and the bot-facing og-image preview)
+				// render in the owner's own theme instead of whichever theme they
+				// happen to have set locally - see GraphNode.vue's onMounted.
+				theme: { id: currentTheme.value?.id || null, isDark: currentTheme.value?.isDark === true },
+			}),
 		});
 
 		if (res.status === 401) {
