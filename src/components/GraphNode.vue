@@ -1144,6 +1144,14 @@
 			@contextmenu.prevent="handleGraphRightClick"
 			class="w-full h-full pt-20 cursor-grab active:cursor-grabbing"></div>
 
+		<!-- Rocus branding on a read-only shared view only - the owner's own
+			 dashboard never shows this. Sits below the header (matches its own
+			 pt-20 clearance on graph-container above) so it doesn't collide with
+			 the "Shared (view only)" pill already living in the header's
+			 top-right icon cluster for guests. -->
+		<img v-if="isReadOnlySharedView" :src="rocusIconUrl" alt="Rocus"
+			class="fixed top-20 right-4 w-9 h-9 rounded-lg shadow-lg pointer-events-none select-none z-20" />
+
 		<!-- Persistent nudge once there's nothing on the canvas and the tutorial
 			 isn't up to explain that itself (dismissed/skipped/already seen). -->
 		<div v-if="graphIsEmpty && !tutorialActive && !isReadOnlySharedView"
@@ -2676,6 +2684,8 @@ import {
 	onUnmounted,
 } from "vue";
 import { useAnalytics } from '../composables/useAnalytics';
+import { useSeoMeta } from '../composables/useSeoMeta';
+import rocusIconUrl from './images/RocusIcon.png';
 import PremiumUpsell from './PremiumUpsell.vue';
 import RocusDialog from './RocusDialog.vue';
 import { rocusConfirm } from '../composables/useRocusDialog';
@@ -2711,6 +2721,7 @@ import {
 	closeThemes,
 	previewTheme,
 	applyTheme,
+	applyThemeColors,
 	loadThemePreference,
 	toggleDarkMode,
 	updateTheme,
@@ -2951,7 +2962,7 @@ import {
 
 import { useRoute } from 'vue-router';
 import { store } from '../router/store';
-import { remoteGraphId, remoteGraphRole, remoteGraphFrozen, activeShareGraphId, isSharedGraphContext, isCoarsePointer } from '../composables/graphNode/useGraphEngine';
+import { remoteGraphId, remoteGraphRole, remoteGraphFrozen, remoteGraphTheme, activeShareGraphId, isSharedGraphContext, isCoarsePointer } from '../composables/graphNode/useGraphEngine';
 import {
 	isSharePanelOpen,
 	activeShareUrl,
@@ -3287,10 +3298,17 @@ onMounted(async () => {
 		console.log("Component mounted, initializing...");
 
 		await initDB();
-		loadThemePreference();
 		console.log("✅ IndexedDB ready");
 
 		const sharedGraphId = route.params.graphId || null;
+
+		// A shared-graph visitor should see the OWNER's theme (once the payload
+		// carries one - see remoteGraphTheme), not their own dashboard
+		// preference - loading it here first would just cause a visible flash
+		// before the owner's theme takes over below.
+		if (!sharedGraphId) {
+			loadThemePreference();
+		}
 
 		if (sharedGraphId) {
 			// Resolve a pending invite (no-op/silently ignored if this visitor has
@@ -3305,6 +3323,24 @@ onMounted(async () => {
 			// freshly-installed Rocus with no explanation.
 			try {
 				await initializeGraph(sharedGraphId);
+				// Apply the owner's theme, not the viewer's own - applyThemeColors()
+				// only repaints (unlike applyTheme(), which also persists to
+				// localStorage and would clobber the viewer's own dashboard
+				// preference just from looking at someone else's graph).
+				if (remoteGraphTheme.value?.id) {
+					const ownerTheme = themes.find(t => t.id === remoteGraphTheme.value.id);
+					if (ownerTheme) {
+						currentTheme.value = ownerTheme;
+						isDarkMode.value = ownerTheme.isDark;
+						applyThemeColors(ownerTheme);
+					}
+				} else {
+					loadThemePreference();
+				}
+				useSeoMeta({
+					title: `${shareOwnerName.value ? shareOwnerName.value + "'s " : ""}Knowledge Graph · Rocus`,
+					description: "A knowledge graph shared on Rocus - saved pages, notes, and files, auto-organized by topic.",
+				});
 			} catch (err) {
 				console.error("Failed to load shared graph:", err);
 			}

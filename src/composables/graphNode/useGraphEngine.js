@@ -962,6 +962,10 @@ export function processApiData(clustersData, similarities) {
 export const remoteGraphId = ref(null);
 export const remoteGraphRole = ref(null); // 'owner' | 'edit' | 'view' | 'guest' | null
 export const remoteGraphFrozen = ref(false);
+// { id, isDark } when the shared-graph payload carries the owner's theme,
+// null when it doesn't (backend hasn't added this field yet) - GraphNode.vue
+// falls back to the viewer's own local theme preference in that case.
+export const remoteGraphTheme = ref(null);
 
 // The owner's own /dashboard equivalent of remoteGraphId: set (by
 // useSharing.js) whenever the currently-selected local album is actively
@@ -1079,6 +1083,7 @@ export async function loadSharedGraphData(graphId, { API_BASE, credentials = "in
 		remoteGraphId.value = graphId;
 		remoteGraphRole.value = payload.role;
 		remoteGraphFrozen.value = !!payload.frozen;
+		remoteGraphTheme.value = payload.theme?.id ? payload.theme : null;
 
 		// A shared graph's clusters carry the ORIGINAL owner's album_id, which is
 		// meaningless on a collaborator's own device - clearing the local
@@ -1121,6 +1126,7 @@ export function clearRemoteGraphState() {
 	remoteGraphId.value = null;
 	remoteGraphRole.value = null;
 	remoteGraphFrozen.value = false;
+	remoteGraphTheme.value = null;
 }
 
 export async function loadData() {
