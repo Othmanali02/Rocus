@@ -5,6 +5,37 @@ import { onMounted } from "vue";
 import axios from "axios";
 import { store } from "./router/store";
 import { API_BASE } from "./components/constants/config";
+import { ensureHydrated } from "./composables/graphNode/useGraphEngine";
+import { setupMessageListener } from "./composables/graphNode/useAIModels";
+import { checkReturnTriggers } from "./composables/graphNode/useReturnTriggers";
+
+// The browser extension reuses whatever rocus.io tab is already open,
+// regardless of route (findRocusTab() in rocus-extension matches any
+// rocus.io/* tab) - so the message listener that turns its postMessage into
+// a saved website needs to be live for the tab's entire lifetime, not just
+// while GraphNode.vue (the /dashboard or /shared/:graphId route) happens to
+// be mounted.
+//
+// Registered here at top-level script-setup, NOT inside onMounted: this is
+// the root component (only ever instantiated once per tab), and
+// setupMessageListener() is just a synchronous window.addEventListener call
+// with no async prerequisite of its own - attaching it immediately, before
+// anything else even starts loading, closes a real (if narrow) window where
+// GraphNode.vue's own onMounted (a child, which Vue mounts before this
+// parent's onMounted runs) could otherwise finish rendering /dashboard
+// before any listener existed to catch a fast quick-save.
+//
+// The actual danger isn't here anymore, though - it's centralized inside
+// saveToIndexedDB() itself (useGraphEngine.js), which now awaits
+// ensureHydrated() as its own first line before touching any IndexedDB
+// store. That's what actually prevents the data-loss failure mode (a save
+// running against an unhydrated in-memory snapshot), regardless of exactly
+// when a message arrives relative to any of this - kicking off
+// ensureHydrated() here too is just a head start, not the safety mechanism.
+setupMessageListener();
+ensureHydrated()
+	.then(() => checkReturnTriggers())
+	.catch((err) => console.error("Hydration failed:", err));
 
 // Silent check only - failure just means "not signed in", never blocks or
 // redirects (the app is free/open; signing in only unlocks Premium features).

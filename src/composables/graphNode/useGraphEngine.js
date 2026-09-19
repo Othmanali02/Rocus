@@ -1,6 +1,6 @@
 import { ref, reactive, computed, watch } from "vue";
 import * as d3 from "d3";
-import { db } from "./useDatabase";
+import { db, initDB } from "./useDatabase";
 import { currentTheme } from "./useThemes";
 import { searchTerm } from "./useSearch";
 import { handleDiscoverClick } from "./useDiscover";
@@ -438,7 +438,37 @@ export async function fetchWebsiteDetails(websiteId) {
 	}
 }
 
+// Centralized, memoized hydration guarantee - saveToIndexedDB() awaits this
+// itself (see below) rather than trusting every caller/route to have called
+// initDB()/loadFromIndexedDB() in the right order first. That "trust the
+// caller" approach is exactly what caused a real data-loss incident (a
+// browser-extension message handler reachable from every route, not just
+// /dashboard, saved against an empty in-memory snapshot and wiped the real
+// IndexedDB stores). Centralizing it here means no future call site, route,
+// or mount-order timing change can ever reintroduce that failure mode -
+// the dangerous function itself refuses to run until this resolves, once,
+// no matter who's calling it or from where.
+// Clears its own cache on failure (mirrors ensureModelsLoaded() in
+// useAIModels.js) so a transient IndexedDB error doesn't permanently wedge
+// every future save behind one cached rejection - the next caller (App.vue's
+// own fire-and-forget kick-off, or saveToIndexedDB() itself) gets a fresh
+// attempt instead.
+let hydrationPromise = null;
+export function ensureHydrated() {
+	if (!hydrationPromise) {
+		hydrationPromise = (async () => {
+			await initDB();
+			await loadFromIndexedDB();
+		})().catch((err) => {
+			hydrationPromise = null;
+			throw err;
+		});
+	}
+	return hydrationPromise;
+}
+
 export async function saveToIndexedDB() {
+	await ensureHydrated();
 	if (!db) return;
 
 	try {
@@ -529,39 +559,49 @@ export async function saveToIndexedDB() {
 export async function loadFromIndexedDB() {
 	if (!db) return;
 
+	// Each read is awaited (previously fired-and-forgotten via bare onsuccess
+	// callbacks, with the function's own returned promise resolving before
+	// any of them actually populated websites.value/clusters.value/
+	// embeddings.value) - callers depend on this data being in memory the
+	// instant this promise resolves. saveToIndexedDB() clears the real
+	// stores and rewrites them purely from these same refs, so an unawaited
+	// read racing a save is a silent full-data-loss risk, not just a display
+	// glitch, now that a save can be triggered from any route (App.vue's
+	// message listener), not only after GraphNode.vue's own slower mount
+	// sequence happened to always win that race by luck.
 	try {
-		// Load websites
 		const websiteTx = db.transaction("websites", "readonly");
 		const websiteStore = websiteTx.objectStore("websites");
-		const websiteRequest = websiteStore.getAll();
+		const websiteResult = await new Promise((resolve, reject) => {
+			const request = websiteStore.getAll();
+			request.onsuccess = () => resolve(request.result);
+			request.onerror = () => reject(request.error);
+		});
+		for (const website of websiteResult) {
+			websites.value[website.id] = website;
+		}
 
-		websiteRequest.onsuccess = () => {
-			for (const website of websiteRequest.result) {
-				websites.value[website.id] = website;
-			}
-		};
-
-		// Load clusters
 		const clusterTx = db.transaction("clusters", "readonly");
 		const clusterStore = clusterTx.objectStore("clusters");
-		const clusterRequest = clusterStore.getAll();
+		const clusterResult = await new Promise((resolve, reject) => {
+			const request = clusterStore.getAll();
+			request.onsuccess = () => resolve(request.result);
+			request.onerror = () => reject(request.error);
+		});
+		for (const cluster of clusterResult) {
+			clusters.value[cluster.id] = cluster;
+		}
 
-		clusterRequest.onsuccess = () => {
-			for (const cluster of clusterRequest.result) {
-				clusters.value[cluster.id] = cluster;
-			}
-		};
-
-		// Load embeddings
 		const embeddingTx = db.transaction("embeddings", "readonly");
 		const embeddingStore = embeddingTx.objectStore("embeddings");
-		const embeddingRequest = embeddingStore.getAll();
-
-		embeddingRequest.onsuccess = () => {
-			for (const item of embeddingRequest.result) {
-				embeddings.value[item.id] = normalizeEmbeddingRecord(item.embedding);
-			}
-		};
+		const embeddingResult = await new Promise((resolve, reject) => {
+			const request = embeddingStore.getAll();
+			request.onsuccess = () => resolve(request.result);
+			request.onerror = () => reject(request.error);
+		});
+		for (const item of embeddingResult) {
+			embeddings.value[item.id] = normalizeEmbeddingRecord(item.embedding);
+		}
 
 		console.log("✅ Loaded data from IndexedDB");
 	} catch (err) {
@@ -2298,6 +2338,76 @@ export function updateNodeSizes() {
 
 export function resetView() {
 	centerView();
+}
+
+// Same auto-zoom-to-node approach useSearch.js's performSearch() already uses
+// for its first search match - reuses the same svg/zoom singletons rather
+// than inventing a second camera-pan mechanism.
+export function panToCluster(clusterId) {
+	if (!svg || !zoom || !graphContainer.value) return;
+	const node = graphData?.nodes?.find((n) => n.id === clusterId);
+	if (!node) return;
+
+	const width = graphContainer.value.clientWidth;
+	const height = graphContainer.value.clientHeight;
+
+	svg.transition()
+		.duration(1000)
+		.call(
+			zoom.transform,
+			d3.zoomIdentity
+				.translate(width / 2, height / 2)
+				.scale(1.2)
+				.translate(-node.x, -node.y)
+		);
+}
+
+// A temporary "this one just grew" pulse - reuses the exact pulse-processing
+// keyframe .node.processing already gets (see GraphNode.vue's <style>) rather
+// than inventing a new visual language for "something here changed."
+export function pulseClusterNode(clusterId) {
+	if (!container) return;
+	const selection = container
+		.select(".nodes")
+		.selectAll(".node")
+		.filter((d) => d.id === clusterId);
+	selection.classed("just-grown", true);
+	setTimeout(() => selection.classed("just-grown", false), 4000);
+}
+
+// Orchestrates a /dashboard?cluster=<id> deep link (see the return-triggers
+// extension relay): make sure the target cluster is actually visible under
+// whatever album/history-day filter is currently active, then pan the camera
+// to it and pulse it. Silently no-ops if the cluster doesn't exist locally
+// (wrong browser/profile, or deleted since the link was generated) - nothing
+// sensible to do in that case.
+export async function focusDeepLinkedCluster(clusterId) {
+	if (!clusterId || !clusters.value[clusterId]) return;
+
+	// The default "All Clusters, All History" view (both filters null)
+	// already contains every cluster regardless of its own album_id -
+	// fetchClusters() only excludes a cluster when a specific album/day IS
+	// selected. So a filter reset is only needed if some other album/day was
+	// already active (e.g. an already-open dashboard tab got reused rather
+	// than a fresh navigation, where these already default to null).
+	if (currentAlbum.value !== null || currentHistoryDay.value !== null) {
+		currentAlbum.value = null;
+		currentHistoryDay.value = null;
+		await loadData();
+		if (simulation) {
+			simulation.nodes(graphData.nodes);
+			simulation.force("link").links(graphData.links);
+			simulation.alpha(1).restart();
+			renderGraph();
+		}
+	}
+
+	// Give the simulation a beat to settle before reading node.x/y - same
+	// convention selectAlbum()/useHistory.js already use after a data reload.
+	setTimeout(() => {
+		panToCluster(clusterId);
+		pulseClusterNode(clusterId);
+	}, 1000);
 }
 
 export function toggleConnections() {

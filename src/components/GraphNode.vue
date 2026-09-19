@@ -850,7 +850,7 @@
 
 				<!-- Actions -->
 				<div class="mt-6 space-y-3">
-					<button v-if="error" @click="loadModels"
+					<button v-if="error" @click="ensureModelsLoaded"
 						class="w-full px-6 py-3 rounded-xl font-medium transition-all" :style="{
 							backgroundColor: currentTheme.colors.primary,
 							color: '#ffffff'
@@ -2681,7 +2681,6 @@ import {
 	onMounted,
 	onBeforeUnmount,
 	watch,
-	onUnmounted,
 } from "vue";
 import { useAnalytics } from '../composables/useAnalytics';
 import { useSeoMeta } from '../composables/useSeoMeta';
@@ -2778,9 +2777,8 @@ import {
 	isProcessing,
 	showNewDataNotification,
 	queueProgress,
-	loadModels,
+	ensureModelsLoaded,
 	clearModelCache,
-	setupMessageListener,
 	processingMode,
 	setProcessingMode,
 } from '../composables/graphNode/useAIModels';
@@ -2907,6 +2905,7 @@ import {
 	initializeGraph,
 	isReadOnlySharedView,
 	resetView,
+	focusDeepLinkedCluster,
 	toggleConnections,
 	handleBackgroundClick,
 	closeStickyNote,
@@ -3286,7 +3285,6 @@ async function handleProfileClick() {
 // ==============================================
 // LIFECYCLE
 // ==============================================
-let messageListener = null;
 
 onMounted(async () => {
 	try {
@@ -3345,11 +3343,12 @@ onMounted(async () => {
 				console.error("Failed to load shared graph:", err);
 			}
 			window.addEventListener("resize", handleResize);
-			messageListener = setupMessageListener();
-			// Compatibility check and the first-run tutorial are both
-			// local-single-player concerns - irrelevant for a quick shared-graph
-			// view (guest or collaborator), so skipped entirely in this branch.
-			// loadModels() is what loads the embedding pipeline
+			// The message listener itself is now attached once, for the tab's
+			// whole lifetime, in App.vue - not here. Compatibility check and the
+			// first-run tutorial are both local-single-player concerns -
+			// irrelevant for a quick shared-graph view (guest or collaborator),
+			// so skipped entirely in this branch.
+			// ensureModelsLoaded() loads the embedding pipeline
 			// processWebsite()/processNote() require before they'll do anything
 			// ("Embedding model not loaded") - an edit collaborator needs that
 			// immediately, not just after the local dashboard happens to load it
@@ -3358,14 +3357,25 @@ onMounted(async () => {
 			// download/init cost on them - isReadOnlySharedView is already
 			// resolved by now since initializeGraph() above was awaited.
 			if (!isReadOnlySharedView.value) {
-				loadModels().catch(err => {
+				ensureModelsLoaded().catch(err => {
 					console.error("Model loading failed (non-fatal):", err);
 				});
 			}
 		} else {
 			await loadFromIndexedDB();
 
-			initializeGraph();
+			// /dashboard?cluster=<id> - the return-triggers extension relay's
+			// deep link (see useReturnTriggers.js). initializeGraph() itself is
+			// deliberately not awaited below (unblocks rendering), so this is a
+			// separate .then() on the same promise rather than inserted
+			// sequentially - doesn't change the existing fire-and-forget timing
+			// for anything else in this branch.
+			const clusterToFocus = route.query.cluster || null;
+			if (clusterToFocus) {
+				initializeGraph().then(() => focusDeepLinkedCluster(clusterToFocus));
+			} else {
+				initializeGraph();
+			}
 			window.addEventListener("resize", handleResize);
 
 			// Covers "already had a shared album selected" if album selection is
@@ -3379,9 +3389,6 @@ onMounted(async () => {
 			// tab until they happened to click into it once, even though the
 			// server already has everything needed to populate it immediately.
 			fetchMySharedGraphs();
-
-			messageListener = setupMessageListener();
-			console.log("✅ Message listener ready");
 
 			const tutorialCompleted = localStorage.getItem('rocus-tutorial-completed');
 			// A returning, experienced account has no local memory of that on a
@@ -3437,7 +3444,7 @@ onMounted(async () => {
 				maybeStartTutorial();
 			}
 
-			loadModels().catch(err => {
+			ensureModelsLoaded().catch(err => {
 				console.error("Model loading failed (non-fatal):", err);
 			});
 		}
@@ -3456,12 +3463,6 @@ onBeforeUnmount(() => {
 	// navigation (which destroys the whole JS context, socket included) -
 	// cheap insurance the moment any SPA-style exit is ever introduced.
 	disconnectSharedGraphSocket();
-});
-
-onUnmounted(() => {
-	if (messageListener) {
-		window.removeEventListener("message", messageListener);
-	}
 });
 
 // Close dropdowns when clicking outside
@@ -3791,6 +3792,28 @@ watch(tutorialActive, (isActive) => {
 	50% {
 		opacity: 0.35;
 		filter: drop-shadow(0 4px 20px rgba(245, 158, 11, 0.3));
+	}
+}
+
+/* Same pulse idiom as .node.processing above (opacity + drop-shadow), in
+   Rocus blue rather than the "processing" amber - this marks a return-
+   trigger's deep-linked cluster ("this one just grew"), a positive
+   highlight, not a loading/busy state, so it gets its own color. */
+:global(.node.just-grown) {
+	animation: pulse-just-grown 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse-just-grown {
+
+	0%,
+	100% {
+		opacity: 1;
+		filter: drop-shadow(0 2px 12px rgba(74, 144, 226, 0.8));
+	}
+
+	50% {
+		opacity: 0.5;
+		filter: drop-shadow(0 4px 22px rgba(74, 144, 226, 0.4));
 	}
 }
 </style>
