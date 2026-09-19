@@ -7,8 +7,8 @@ import { graphData, container, explodeNode, collapseNode, explodedNode, EXPLOSIO
 // declare rocus.io (+ localhost:5173 for dev) in externally_connectable, which
 // is what lets an ordinary web page - not another extension - reach them via
 // chrome.runtime.sendMessage/browser.runtime.sendMessage at all.
-const CHROME_EXTENSION_ID = "ekhebfoaaokmbhieckfkpapfkiicpbma";
-const FIREFOX_EXTENSION_ID = "rocus@rocus.io";
+export const CHROME_EXTENSION_ID = "ekhebfoaaokmbhieckfkpapfkiicpbma";
+export const FIREFOX_EXTENSION_ID = "rocus@rocus.io";
 
 // null = still checking, true/false = resolved. Read by the "Browser
 // Extension" tutorial step to show install-needed messaging only when the

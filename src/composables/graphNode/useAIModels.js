@@ -4,7 +4,7 @@ import { CreateMLCEngine } from "@mlc-ai/web-llm";
 import { useAnalytics } from "../useAnalytics";
 import { rocusAlert, rocusConfirm } from "../useRocusDialog";
 import { promptConsent } from "./useAnalyticsBanner";
-import { albums } from "./useAlbums";
+import { albums, fetchAlbums } from "./useAlbums";
 import {
 	websites,
 	embeddings,
@@ -19,6 +19,7 @@ import {
 	remoteGraphId,
 	refreshRemoteGraphView,
 	activeShareGraphId,
+	ensureHydrated,
 } from "./useGraphEngine";
 import { addSimilarLinksToCluster } from "./useDiscover";
 import { generateId, wrapEmbedding, EMBEDDING_MODEL_ID, cleanAiLabel, toTitleCase, currentIdentityKey } from "./utils";
@@ -732,6 +733,13 @@ export function setupMessageListener() {
 			// answer arrives asynchronously after this synchronous handler
 			// returns. See maybeShowQuickAddRoutingPrompt() in useSharing.js.
 			maybeShowQuickAddRoutingPrompt();
+			// Kicks off model loading the instant a message arrives, on
+			// whatever page happens to be open - this listener is no longer
+			// only ever attached while GraphNode.vue (which used to be the
+			// only thing eagerly calling loadModels() at mount) is mounted.
+			// processWebsite()'s own waitFor(embeddingReadyPromise) below
+			// just waits for whatever kicked this off, unchanged.
+			ensureModelsLoaded().catch(() => {});
 			processingQueue.value.push(msg.data);
 			processQueue();
 		}
@@ -740,15 +748,24 @@ export function setupMessageListener() {
 		if (msg.type === "REQUEST_ALBUMS") {
 			console.log("📥 Extension requested albums");
 
-			// respond back with albums
-			window.postMessage(
-				{
-					source: "page-summarizer-extension",
-					type: "ALBUMS_RESPONSE",
-					albums: JSON.parse(JSON.stringify(albums.value)) ?? []
-				},
-				"*"
-			);
+			// albums.value is only ever populated by fetchAlbums(), which used
+			// to run solely as part of GraphNode.vue's own mount flow - this
+			// listener now lives in App.vue and fires on every route, so
+			// without fetching fresh here first, any non-dashboard tab would
+			// silently hand the extension an empty album list forever, with
+			// no indication it's "never loaded" rather than "genuinely none."
+			(async () => {
+				await ensureHydrated();
+				await fetchAlbums();
+				window.postMessage(
+					{
+						source: "page-summarizer-extension",
+						type: "ALBUMS_RESPONSE",
+						albums: JSON.parse(JSON.stringify(albums.value)) ?? []
+					},
+					"*"
+				);
+			})();
 		}
 	};
 
@@ -996,4 +1013,22 @@ export async function loadModels() {
 		showModelStatus.value = true;
 		return;
 	}
+}
+
+// Idempotent wrapper around loadModels() - needed now that model loading can
+// be triggered from more than one place (App.vue's always-on message
+// listener AND GraphNode.vue's own mount), so a second caller must reuse the
+// first call's in-flight/resolved promise instead of re-downloading the
+// pipeline. Clears its own cache on failure so a genuine retry (the manual
+// "retry loading models" button, or the next incoming save) tries again
+// fresh instead of being stuck forever on a cached rejection.
+let modelsLoadPromise = null;
+export function ensureModelsLoaded() {
+	if (!modelsLoadPromise) {
+		modelsLoadPromise = loadModels().catch((err) => {
+			modelsLoadPromise = null;
+			throw err;
+		});
+	}
+	return modelsLoadPromise;
 }

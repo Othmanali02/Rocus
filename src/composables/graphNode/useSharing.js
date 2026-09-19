@@ -7,6 +7,7 @@ import {
 	currentHistoryDay,
 	getClusterDayKey,
 	saveToIndexedDB,
+	loadFromIndexedDB,
 	remoteGraphId,
 	remoteGraphRole,
 	remoteGraphFrozen,
@@ -1164,9 +1165,25 @@ export function sendCursorUpdate(nodeId) {
 // local Album in this browser's own IndexedDB - the shared building block
 // behind both the expiry/revoke freeze and the guest "fork" CTA.
 async function copyLoadedGraphIntoNewLocalAlbum(name) {
+	// clusters.value/websites.value/embeddings.value currently hold ONLY the
+	// just-loaded remote graph's nodes - loadSharedGraphData() replaces them
+	// wholesale (not merges) so the canvas renders the remote graph alone,
+	// not mixed with local data. saveToIndexedDB() below clears and rewrites
+	// the REAL local IndexedDB stores from these same refs, so without
+	// merging the browser's actual local library back in first, this would
+	// silently wipe it down to just this one frozen copy - a real,
+	// deterministic (not timing-dependent) data-loss bug, not a hypothetical
+	// one. Capture which cluster IDs belong to the remote graph BEFORE
+	// merging, so only those get re-tagged into the new album below, not the
+	// user's whole pre-existing library that loadFromIndexedDB() merges back
+	// in (it merges by key, never resets first - safe to call here).
+	const remoteClusterIds = Object.keys(clusters.value);
+	await loadFromIndexedDB();
 	const { album } = await createAlbum({ name, icon: iconOptions[0] });
-	for (const cluster of Object.values(clusters.value)) {
-		clusters.value[cluster.id] = { ...cluster, album_id: album.id };
+	for (const id of remoteClusterIds) {
+		if (clusters.value[id]) {
+			clusters.value[id] = { ...clusters.value[id], album_id: album.id };
+		}
 	}
 	await saveToIndexedDB();
 	return album;
