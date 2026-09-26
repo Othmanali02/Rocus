@@ -281,6 +281,18 @@ export class QuotaExceededError extends Error {
 	}
 }
 
+// Thrown when the backend's site-wide cloud capacity cap is hit (distinct
+// from the per-user QuotaExceededError above) - same no-retry, no-silent-
+// fallback treatment, but surfaced to the user as "temporarily at capacity,
+// try local mode" rather than "you're out of free saves for today."
+export class CloudCapacityError extends Error {
+	constructor(message, details) {
+		super(message);
+		this.name = 'CloudCapacityError';
+		this.details = details;
+	}
+}
+
 async function callHaikuSummarizeOnce(metadata, contentChunk) {
 	const response = await fetch(HAIKU_SUMMARIZE_URL, {
 		method: 'POST',
@@ -298,6 +310,9 @@ async function callHaikuSummarizeOnce(metadata, contentChunk) {
 		const errorData = await response.json().catch(() => ({}));
 		if (errorData.code === 'COMMERCIAL_QUOTA_EXCEEDED') {
 			throw new QuotaExceededError(errorData.message || 'Commercial quota exceeded', errorData);
+		}
+		if (errorData.code === 'CLOUD_AT_CAPACITY') {
+			throw new CloudCapacityError(errorData.message || 'Cloud processing is temporarily at capacity', errorData);
 		}
 		if (response.status === 429) {
 			throw new Error('Rate limit exceeded. Please try again in 15 minutes.');
@@ -329,7 +344,7 @@ export async function generateSummaryTopicQueryViaHaiku(metadata, content) {
 				query: data.search_query || `${metadata.title || ''} ${metadata.domain || ''}`.trim(),
 			};
 		} catch (err) {
-			if (err instanceof QuotaExceededError) throw err; // propagate: no retry, no silent fallback
+			if (err instanceof QuotaExceededError || err instanceof CloudCapacityError) throw err; // propagate: no retry, no silent fallback
 			console.error(`Haiku summarize attempt ${attempt + 1} failed:`, err);
 		}
 	}
@@ -568,6 +583,8 @@ export async function processWebsite(data) {
 		notifyExtensionProcessed(data, false);
 		if (err instanceof QuotaExceededError) {
 			openPremiumModal();
+		} else if (err instanceof CloudCapacityError) {
+			openPremiumModal('server_capacity');
 		}
 	}
 }
@@ -908,7 +925,7 @@ function buildModelErrorMessage(err) {
 			'✅ What to try:\n' +
 			'1. Update GPU drivers from manufacturer site\n' +
 			'2. Check chrome://gpu shows "WebGPU: Hardware accelerated"\n' +
-			'3. Try different browser (Edge, Firefox Nightly)\n\n' +
+			'3. Try Chrome or Edge (WebGPU isn\'t stable in Firefox yet - a CPU fallback is in progress)\n\n' +
 			'Very old hardware (2015 or older) is a hit or miss.';
 	} else if (err.message.includes('Failed to fetch') || err.message.includes('Network')) {
 		errorMessage +=

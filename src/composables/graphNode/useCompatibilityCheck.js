@@ -23,14 +23,25 @@ export async function checkSystemCompatibility() {
 	};
 
 	let allPassed = true;
+	// Firefox stable ships with no navigator.gpu at all (Nightly has an early,
+	// unstable flag-gated implementation) - the generic Chrome-flag fix text
+	// below is actively wrong there, so it gets its own honest message
+	// instead of implying a quick settings toggle will fix it.
+	const isFirefox = navigator.userAgent.toLowerCase().includes('firefox');
 
 	try {
 		if (!navigator.gpu) {
-			compatibilityResults.value.webgpu = {
-				status: 'error',
-				message: 'WebGPU not supported. Your browser/device doesn\'t support WebGPU.',
-				fix: 'Try Chrome/Edge 113+, or enable chrome://flags/#enable-unsafe-webgpu'
-			};
+			compatibilityResults.value.webgpu = isFirefox
+				? {
+					status: 'error',
+					message: 'WebGPU isn\'t stable in Firefox yet.',
+					fix: 'A CPU fallback for Firefox is in progress. For now, use Chrome or Edge for local mode, or use cloud processing instead.'
+				}
+				: {
+					status: 'error',
+					message: 'WebGPU not supported. Your browser/device doesn\'t support WebGPU.',
+					fix: 'Try Chrome/Edge 113+, or enable chrome://flags/#enable-unsafe-webgpu'
+				};
 			allPassed = false;
 		} else {
 			const adapter = await navigator.gpu.requestAdapter();

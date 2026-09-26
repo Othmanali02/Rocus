@@ -1,45 +1,52 @@
 <script setup>
 import { computed } from 'vue';
-import { useRouter } from 'vue-router';
 import { currentTheme } from '../composables/graphNode/useThemes';
-import { isPremium, showPremiumModal, premiumModalReason, openPremiumModal, closePremiumModal } from '../composables/graphNode/usePremium';
+import { showPremiumModal, premiumModalReason, closePremiumModal } from '../composables/graphNode/usePremium';
 import { setProcessingMode } from '../composables/graphNode/useAIModels';
+import WaitlistEmailCapture from './WaitlistEmailCapture.vue';
 
-const router = useRouter();
-
-// "Use the free and local mode" and the AI-processing footer note only make
-// sense for the default (Cloud AI Processing) trigger - a sharing-limit
-// trigger has nothing to do with the local model, so both are hidden then.
+// Pricing/premium wording is scoped out for now (payments aren't live) -
+// this modal still fires for the same four triggers (quota exhausted,
+// server-wide cloud capacity, sharing seat cap, sharing graph cap), just
+// without ever pointing anywhere to pay. The two sharing-limit triggers no
+// longer have any action to offer beyond dismissing (no upgrade path exists
+// right now), so they're plain, closeable notices.
 const copy = computed(() => {
 	if (premiumModalReason.value === 'share_seat_cap') {
 		return {
-			body: "Upgrade to Rocus Premium to invite more people to your workspace - free accounts can invite 1 collaborator per shared graph.",
+			body: "Free accounts can invite 1 collaborator per shared graph.",
 			showStayLocal: false,
+			showWaitlist: false,
 			footerNote: null,
 		};
 	}
 	if (premiumModalReason.value === 'share_graph_cap') {
 		return {
-			body: "Upgrade to Rocus Premium to share more graphs - free accounts can share up to 3 graphs at a time.",
+			body: "Free accounts can share up to 3 graphs at a time.",
 			showStayLocal: false,
+			showWaitlist: false,
+			footerNote: null,
+		};
+	}
+	if (premiumModalReason.value === 'server_capacity') {
+		return {
+			body: "Cloud processing is temporarily at capacity - try local mode instead.",
+			showStayLocal: true,
+			showWaitlist: false,
 			footerNote: null,
 		};
 	}
 	return {
-		body: "Unlock Cloud AI Processing - Rocus summarizes and organizes every page using Claude instead of the local model, for faster and richer results.",
+		body: "Unlock unlimited AI processing - Rocus summarizes and organizes every page using Claude instead of the local model, for faster and richer results.",
 		showStayLocal: true,
-		footerNote: "Rocus itself stays free and open - Premium just unlocks Cloud AI Processing.",
+		showWaitlist: true,
+		footerNote: "Rocus itself stays free and open.",
 	};
 });
 
 function handleStayLocal() {
 	setProcessingMode('local');
 	closePremiumModal();
-}
-
-function goToPricing() {
-	closePremiumModal();
-	router.push('/pricing');
 }
 </script>
 
@@ -57,7 +64,7 @@ function goToPricing() {
 			borderColor: currentTheme.colors.border
 		}">
 			<div class="flex justify-between items-start mb-4">
-				<h3 class="text-2xl font-bold" :style="{ color: currentTheme.colors.text }">Rocus Premium</h3>
+				<h3 class="text-2xl font-bold" :style="{ color: currentTheme.colors.text }">Heads up</h3>
 				<button @click="closePremiumModal" class="p-2 rounded-xl transition-all">
 					<svg class="w-5 h-5" :style="{ color: currentTheme.colors.textSecondary }" fill="none"
 						stroke="currentColor" viewBox="0 0 24 24">
@@ -70,19 +77,15 @@ function goToPricing() {
 				{{ copy.body }}
 			</p>
 
-			<button @click="goToPricing"
-				class="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-lg text-white font-semibold transition-all"
-				style="background-color: #4A90E2;">
-				See Premium Pricing
-			</button>
-
 			<button
 				v-if="copy.showStayLocal"
 				@click="handleStayLocal"
-				class="w-full mt-3 flex items-center justify-center gap-2 px-5 py-3 rounded-lg font-semibold transition-all border"
-				:style="{ color: currentTheme.colors.text, borderColor: currentTheme.colors.border }">
+				class="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-lg font-semibold text-white transition-all"
+				style="background-color: #4A90E2;">
 				Use the free and local mode
 			</button>
+
+			<WaitlistEmailCapture v-if="copy.showWaitlist" class="mt-4" />
 
 			<p v-if="copy.footerNote" class="text-xs mt-4 text-center" :style="{ color: currentTheme.colors.textSecondary }">
 				{{ copy.footerNote }}
