@@ -50,9 +50,7 @@
                             </li>
                             <li><strong :style="{ color: currentTheme.colors.text }">Premium</strong> - a paid
                                 subscription that adds faster Cloud AI processing (powered by Claude) with no daily
-                                limits. See <a href="/pricing" class="underline"
-                                    :style="{ color: currentTheme.colors.primary }">Pricing</a> for current
-                                rates.</li>
+                                limits.</li>
                         </ul>
                         <p>We may add, change, or remove features over time. We'll try not to make things worse for
                             you without warning.</p>

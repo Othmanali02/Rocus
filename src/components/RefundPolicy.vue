@@ -34,9 +34,7 @@
                         <p>Rocus's core product - unlimited saves, the full knowledge graph, local in-browser AI - is
                             free forever, so there's nothing to refund there. This policy covers the paid
                             <strong :style="{ color: currentTheme.colors.text }">Premium</strong> subscription only
-                            (Cloud AI processing, billed monthly or annually - see
-                            <a href="/pricing" class="underline"
-                                :style="{ color: currentTheme.colors.primary }">Pricing</a>).</p>
+                            (Cloud AI processing, billed monthly or annually).</p>
                     </div>
                 </section>
 

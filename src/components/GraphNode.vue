@@ -2,6 +2,7 @@
 	<div class="w-screen h-screen relative overflow-hidden font-sans transition-all duration-300"
 		:style="{ backgroundColor: currentTheme.colors.background }"
 		@dragenter="handleDragEnter" @dragover="handleDragOver" @dragleave="handleDragLeave" @drop.prevent="handleDrop">
+		<FirstRunChoice v-if="showFirstRunChoice" @choose="handleFirstRunChoice" />
 		<div v-if="showDropOverlay" class="fixed inset-0 z-[1500] flex items-center justify-center pointer-events-none animate-fadeIn"
 			:style="{ backgroundColor: 'rgba(0,0,0,0.35)' }">
 			<div class="flex flex-col items-center gap-4">
@@ -1005,6 +1006,8 @@
 						</button>
 						<input ref="importFileInput" type="file" accept=".rocus" style="display: none"
 							@change="handleImport" />
+
+						<WaitlistEmailCapture />
 					</div>
 
 					<div class="h-px" :style="{ backgroundColor: currentTheme.colors.border }"></div>
@@ -2686,6 +2689,8 @@ import { useAnalytics } from '../composables/useAnalytics';
 import { useSeoMeta } from '../composables/useSeoMeta';
 import rocusIconUrl from './images/RocusIcon.png';
 import PremiumUpsell from './PremiumUpsell.vue';
+import WaitlistEmailCapture from './WaitlistEmailCapture.vue';
+import FirstRunChoice from './FirstRunChoice.vue';
 import RocusDialog from './RocusDialog.vue';
 import { rocusConfirm } from '../composables/useRocusDialog';
 import { signInUrl } from '../composables/graphNode/usePremium';
@@ -3283,6 +3288,67 @@ async function handleProfileClick() {
 }
 
 // ==============================================
+// FIRST-RUN CHOICE (local vs cloud processing)
+// ==============================================
+// processingMode's own localStorage key (rocus-processing-mode) doubles as
+// the "has this tab ever been asked?" signal - unset means never chosen,
+// same check useAIModels.js itself uses to decide the silent 'commercial'
+// default. Shown before the tutorial/compatibility-check flow below, which
+// gets deferred (see proceedWithOnboarding()) until a choice is made so it
+// never renders stacked underneath this overlay.
+const showFirstRunChoice = ref(localStorage.getItem('rocus-processing-mode') === null);
+
+// The tutorial-start + What's-New sequencing that used to run unconditionally
+// at the end of onMounted's local branch - pulled into its own function so it
+// can also be called from handleFirstRunChoice() once a first-run visitor
+// actually makes a choice, not just from onMounted directly.
+function proceedWithOnboarding() {
+	const tutorialCompleted = localStorage.getItem('rocus-tutorial-completed');
+	// A returning, experienced account has no local memory of that on a
+	// fresh device/browser (empty localStorage) - fall back to server-
+	// backed signals so they don't see the first-run tutorial again.
+	const isExperiencedUser = !!(
+		store.user?.hasPriorUsage ||
+		activelyOwnedSharedGraphIds.value.size > 0 ||
+		sharedWithMeGraphs.value.length > 0
+	);
+
+	checkShowWhatsNew();
+
+	const maybeStartTutorial = () => {
+		if (!tutorialCompleted && !isExperiencedUser) {
+			setTimeout(() => {
+				if (graphData?.nodes?.length > 0) {
+					startTutorial();
+				} else {
+					startTutorialEmpty();
+				}
+			}, 2000);
+		}
+	};
+
+	if (showWhatsNew.value) {
+		const unwatchWhatsNew = watch(showWhatsNew, (isShowing) => {
+			if (!isShowing) {
+				unwatchWhatsNew();
+				maybeStartTutorial();
+			}
+		});
+	} else {
+		maybeStartTutorial();
+	}
+}
+
+async function handleFirstRunChoice(mode) {
+	setProcessingMode(mode);
+	showFirstRunChoice.value = false;
+	if (processingMode.value === 'local') {
+		await runCompatibilityCheckIfNeeded();
+	}
+	proceedWithOnboarding();
+}
+
+// ==============================================
 // LIFECYCLE
 // ==============================================
 
@@ -3390,58 +3456,22 @@ onMounted(async () => {
 			// server already has everything needed to populate it immediately.
 			fetchMySharedGraphs();
 
-			const tutorialCompleted = localStorage.getItem('rocus-tutorial-completed');
-			// A returning, experienced account has no local memory of that on a
-			// fresh device/browser (empty localStorage) - fall back to server-
-			// backed signals so they don't see the first-run tutorial again.
-			// hasPriorUsage comes from quota_usage.first_seen_date (server.js);
-			// the shared-graph checks reuse fetchMySharedGraphs() above, which
-			// (being fire-and-forget, not awaited) will very likely have
-			// already resolved by the time this fires, same as store.user.
-			const isExperiencedUser = !!(
-				store.user?.hasPriorUsage ||
-				activelyOwnedSharedGraphIds.value.size > 0 ||
-				sharedWithMeGraphs.value.length > 0
-			);
-
 			// Only run the WebGPU/memory/IndexedDB readiness check for users
 			// actually in local mode - irrelevant for commercial (cloud) mode,
-			// which is the default and never touches the local model.
+			// which is the default and never touches the local model. Only
+			// true here if a choice was already made in an earlier session
+			// (processingMode still defaults to 'commercial' while
+			// showFirstRunChoice is up) - handleFirstRunChoice() runs this
+			// same check itself once a first-run visitor actually picks local.
 			if (processingMode.value === 'local') {
 				await runCompatibilityCheckIfNeeded();
 			}
 
-			// "What's New" is gated per-version (see checkShowWhatsNew - anyone
-			// who hasn't dismissed the CURRENT version's entry sees it, new
-			// account or returning), independent of the tutorial's own
-			// new-account gating just below. If it's about to show, the
-			// tutorial waits for it to be dismissed first rather than stacking
-			// two modals on top of each other.
-			checkShowWhatsNew();
-
-			// Tutorial start no longer depends on the compatibility check - it's
-			// gated purely on whether the user has seen it before.
-			const maybeStartTutorial = () => {
-				if (!tutorialCompleted && !isExperiencedUser) {
-					setTimeout(() => {
-						if (graphData?.nodes?.length > 0) {
-							startTutorial();
-						} else {
-							startTutorialEmpty();
-						}
-					}, 2000);
-				}
-			};
-
-			if (showWhatsNew.value) {
-				const unwatchWhatsNew = watch(showWhatsNew, (isShowing) => {
-					if (!isShowing) {
-						unwatchWhatsNew();
-						maybeStartTutorial();
-					}
-				});
-			} else {
-				maybeStartTutorial();
+			// Deferred until a choice has been made (handleFirstRunChoice()
+			// calls this itself once it fires) so the tutorial/What's-New
+			// overlays never render stacked underneath the first-run screen.
+			if (!showFirstRunChoice.value) {
+				proceedWithOnboarding();
 			}
 
 			ensureModelsLoaded().catch(err => {
