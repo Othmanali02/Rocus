@@ -261,6 +261,8 @@ Contributions are welcome! Please:
 
 This project is licensed under the GNU Affero General Public License v3.0 (AGPL-3.0) - see the [LICENSE](LICENSE) file for details.
 
+Rocus was released under the MIT License until 27 September 2026 and is licensed under AGPL-3.0 thereafter.
+
 ---
 
 ## Acknowledgments
