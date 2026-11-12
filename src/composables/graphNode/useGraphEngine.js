@@ -1,0 +1,2447 @@
+/*
+ * Copyright (C) 2025-2026 Othman Ali
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as
+ * published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public
+ * License along with this program. If not, see
+ * <https://www.gnu.org/licenses/>.
+ */
+
+import { ref, reactive, computed, watch } from "vue";
+import * as d3 from "d3";
+import { db, initDB } from "./useDatabase";
+import { currentTheme } from "./useThemes";
+import { searchTerm } from "./useSearch";
+import { handleDiscoverClick } from "./useDiscover";
+import { fetchAlbums, showAlbumsDropdown } from "./useAlbums";
+import { showAddNotePrompt, showAddTypeMenu } from "./useNotes";
+import { useAnalytics } from "../useAnalytics";
+import {
+	generateId,
+	cosineSimilarity,
+	averageEmbeddings,
+	topicsMatch,
+	normalizeEmbeddingRecord,
+} from "./utils";
+
+// Core data model + the D3 force-graph rendering engine. This is the one
+// genuinely-central module of the page: nearly every other composable reads
+// from it (clusters/websites/embeddings/graph state) and a few of them
+// (useThemes, useSearch, useDiscover, useAlbums) are read back by it in turn
+// - those pairs are intentional, safe circular imports (every cross-reference here
+// happens inside a function body, never during module evaluation, so load
+// order never matters).
+
+const { trackEvent } = useAnalytics();
+
+const SIMILARITY_THRESHOLD = 0.65;
+const LOOSE_SIMILARITY_THRESHOLD = 0.45;
+
+// Notes embed their own short, raw, informal text - websites/files embed a
+// rich Claude-generated summary paragraph. That register/length mismatch
+// means cosine similarity between the two runs lower than you'd intuitively
+// expect even for genuinely related content, so notes get their own, more
+// lenient threshold rather than reusing the website-to-website one above.
+// There's no paired "loose" threshold here - see rankCandidateClusters:
+// the lexical (topicsMatch) tier is a fully independent signal now, not
+// gated by any minimum embedding similarity.
+const NOTE_SIMILARITY_THRESHOLD = 0.5;
+
+// A minimal folded-document glyph for uploaded-file website nodes, drawn in
+// a small local coordinate space centered on the node's own (0,0) origin -
+// scaled by settings.nodeSize alongside the circle behind it, never by raw
+// pixel size, so it stays proportional if the user adjusts node size. Vector,
+// not the raster RocusFileIcon*.png assets used elsewhere (those are fixed-
+// color PNGs meant for flat <img> tags, not per-theme recoloring inside the
+// D3 canvas).
+// Same construction as FILE_ICON_PATH, deliberately flipped (fold at the
+// bottom-right instead of top-right) so notes read as a distinct silhouette
+// from files at a glance, not just a different color.
+const NOTE_ICON_PATH =
+	"M -4 -4 L 4 -4 L 4 2.5 L 1.5 5 L -4 5 Z " + // sticky-note body (bottom-right corner cut for the fold)
+	"M 1.5 2.5 L 1.5 5 L 4 2.5 Z " + // folded corner
+	"M -2 -1.5 H 2 " + // text line 1
+	"M -2 1 H 1";
+
+const FILE_ICON_PATH =
+	"M -4 -5 L 1.5 -5 L 4 -2.5 L 4 5 L -4 5 Z " + // document body (top-right corner cut for the fold)
+	"M 1.5 -5 L 1.5 -2.5 L 4 -2.5 Z " + // folded corner
+	"M -2 0.5 H 2 " + // text line 1
+	"M -2 3 H 2"; // text line 2
+
+// "Who added this" attribution badge color - a deterministic hash of the raw
+// added_by identity-key string into an HSL hue (fixed saturation/lightness,
+// only the hue varies), so the same person always gets the same color on
+// every viewer's screen with no server round-trip or cross-client sync
+// needed (it's a pure function of the string itself). A hue rotation over
+// 360 degrees collides far less often between two arbitrary identity
+// strings than a small fixed palette would (an earlier version using an
+// 8-color palette put two real test identities on the exact same color).
+function colorForIdentity(identityKey) {
+	let hash = 0;
+	for (let i = 0; i < identityKey.length; i++) hash = (hash * 31 + identityKey.charCodeAt(i)) | 0;
+	const hue = Math.abs(hash) % 360;
+	return `hsl(${hue}, 65%, 55%)`;
+}
+
+// ---- Core reactive data -----------------------------------------------
+export const clusters = ref({});
+export const websites = ref({});
+export const embeddings = ref({}); // Store embeddings separately for cosine similarity
+export const settings = reactive({
+	nodeSize: 1.0,
+	animationSpeed: 1.0,
+	similarityThreshold: 0.5,
+});
+export const currentAlbum = ref(null);
+
+// History is the second, day-based view of the same switcher dropdown
+// Albums lives in (see useAlbums.js / useHistory.js). A cluster's "day" is
+// derived from its earliest website's processed_at - not stored on the
+// cluster itself - so it's computed on the fly via getClusterDayKey below.
+// Switching between the two modes always resets both filters back to "All
+// Clusters" (see setDropdownMode) so they never combine into a confusing
+// intersection.
+const DROPDOWN_MODE_KEY = "rocus-dropdown-mode";
+const storedDropdownMode = localStorage.getItem(DROPDOWN_MODE_KEY);
+export const dropdownMode = ref(
+	storedDropdownMode === "history" || storedDropdownMode === "shared" ? storedDropdownMode : "albums"
+);
+export const currentHistoryDay = ref(null);
+
+// 'shared' is a third tab (Albums | Shared | History) but NOT a content
+// filter like the other two - it's just a picker view offering two lists
+// ("Shared" albums you own, "Shared with me" from others) to navigate from.
+// Switching to/from it deliberately does NOT reset currentAlbum/
+// currentHistoryDay or reload graph data - the view underneath stays
+// exactly as it was until the user actually clicks something inside it.
+export function setDropdownMode(mode) {
+	if (mode !== "albums" && mode !== "history" && mode !== "shared") return;
+	if (dropdownMode.value === mode) return;
+
+	dropdownMode.value = mode;
+	localStorage.setItem(DROPDOWN_MODE_KEY, mode);
+
+	if (mode !== "albums" && mode !== "history") return;
+
+	currentAlbum.value = null;
+	currentHistoryDay.value = null;
+
+	loadData().then(() => {
+		if (simulation) {
+			simulation.nodes(graphData.nodes);
+			simulation.force("link").links(graphData.links);
+			simulation.alpha(1).restart();
+			renderGraph();
+		}
+	});
+}
+
+// Local calendar day (not UTC) - "the day the user created this" should
+// match what their own clock said at the time, not a server-side cutoff.
+export function dayKeyFromISO(isoString) {
+	const d = new Date(isoString);
+	return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+// A cluster belongs to exactly one day: whenever it was LAST added to (its
+// most-recently-processed website), mirroring how a cluster belongs to
+// exactly one album. Deliberately most-recent, not first - a cluster that
+// picks up a new website today (even an old cluster matched by topic) bumps
+// to "Today" in History rather than staying silently filed under whatever
+// day it was originally created on. Returns null if none of its websites
+// have a processed_at yet.
+export function getClusterDayKey(cluster) {
+	let latest = null;
+	for (const websiteId of cluster.websites || []) {
+		const site = websites.value[websiteId];
+		if (!site?.processed_at) continue;
+		if (!latest || site.processed_at > latest) latest = site.processed_at;
+	}
+	return latest ? dayKeyFromISO(latest) : null;
+}
+
+// ---- Graph/DOM refs & UI state -----------------------------------------
+export const graphContainer = ref(null);
+export const tooltip = ref(null);
+export const isLoading = ref(false);
+export const explodedNode = ref(null);
+export const selectedWebsite = ref(null);
+export const stickyNoteStyle = ref({});
+export const websiteDetails = ref(null);
+export let showConnections = ref(true);
+
+export const contextCluster = ref(null);
+export const showContextMenu = ref(false);
+export const contextMenuStyle = ref({});
+export const showWebsiteContextMenu = ref(false);
+export const websiteContextNode = ref(null);
+
+// ---- Non-reactive D3/engine state --------------------------------------
+// Plain (non-ref) module bindings, exactly like the original component's
+// closure variables. Only this file ever reassigns them; every other
+// composable that needs them only reads them or calls methods on them.
+export let graphData;
+// Reactive mirror of `graphData.nodes.length === 0`, updated once per
+// renderGraph() call (the single choke point every graphData mutation flows
+// through) so Vue templates can show empty-state UI without needing graphData
+// itself - a plain reassigned `let`, not Vue-reactive - to be reactive.
+export const graphIsEmpty = ref(true);
+let rawClusters = [];
+export let rawSimilarities = {};
+export let simulation;
+export let svg, container, zoom;
+let websiteNodes = [];
+
+// Touch-target sizing lever for the mobile/touch pass - read by both this
+// file's D3 rendering code (exploded-node radius) and GraphNode.vue's
+// template (icon button padding, hint text) so a real mouse/desktop user
+// sees pixel-identical sizing to before this existed.
+export const isCoarsePointer = ref(false);
+if (typeof window !== "undefined" && window.matchMedia) {
+	const coarsePointerQuery = window.matchMedia("(pointer: coarse)");
+	isCoarsePointer.value = coarsePointerQuery.matches;
+	coarsePointerQuery.addEventListener("change", (e) => { isCoarsePointer.value = e.matches; });
+}
+
+// Sticky note dragging
+let isDraggingSticky = false;
+let dragOffsetX = 0;
+let dragOffsetY = 0;
+
+// ==============================================
+// DATA FETCH / PERSISTENCE
+// ==============================================
+export async function fetchClusters() {
+	try {
+		if (!db) return [];
+
+		const tx = db.transaction("clusters", "readonly");
+		const store = tx.objectStore("clusters");
+		const request = store.getAll();
+
+		const selectedAlbumId = currentAlbum.value ? currentAlbum.value.id : null;
+		const selectedDayKey = currentHistoryDay.value;
+		console.log("Fetching clusters for album ID:", selectedAlbumId, "day:", selectedDayKey);
+
+
+		return new Promise((resolve, reject) => {
+			request.onsuccess = () => {
+
+				const clustersArray = request.result
+
+					.filter(cluster => {
+						if (selectedAlbumId !== null && cluster.album_id !== selectedAlbumId) {
+							return false;
+						}
+						if (selectedDayKey !== null && getClusterDayKey(cluster) !== selectedDayKey) {
+							return false;
+						}
+						return true; //returns all the clusters if no album/day filter matches
+					})
+					.map(cluster => {
+						const websitesList = cluster.websites
+							.map(id => websites.value[id])
+							.filter(Boolean)
+							.map(website => ({
+								id: website.id,
+								title: website.title,
+								url: website.url,
+								domain: website.domain,
+								processed_at: website.processed_at,
+								is_file: !!website.is_file,
+								file_id: website.file_id || null,
+								is_note: !!website.is_note,
+								note_text: website.note_text || null,
+								added_by: website.added_by || null
+							}));
+
+						return {
+							cluster_id: cluster.id,
+							topic: cluster.topic,
+							website_count: websitesList.length,
+							websites: websitesList,
+							similar_links: cluster.similar_links || {},
+							is_notes_cluster: !!cluster.is_notes_cluster,
+							notes_hub_links: cluster.notes_hub_links || []
+						};
+					});
+
+				resolve(clustersArray);
+			};
+
+			request.onerror = () => reject(request.error);
+		});
+
+
+	} catch (error) {
+		console.error("❌ Error fetching clusters:", error);
+		return [];
+	}
+}
+
+export async function fetchSimilarities() {
+	try {
+		if (!db) return {};
+
+		const similarities = {};
+
+		// Get the active album/day filter
+		const activeAlbumId = currentAlbum.value ? currentAlbum.value.id : null;
+		const activeDayKey = currentHistoryDay.value;
+
+		// Only calculate similarities for clusters in the current album/day view
+		let clusterIds = Object.keys(clusters.value);
+		if (activeAlbumId !== null) {
+			clusterIds = clusterIds.filter(id => clusters.value[id].album_id === activeAlbumId);
+		}
+		if (activeDayKey !== null) {
+			clusterIds = clusterIds.filter(id => getClusterDayKey(clusters.value[id]) === activeDayKey);
+		}
+
+		// FIRST: Preserve manual connections
+		for (const sourceClusterId of clusterIds) {
+			const sourceCluster = clusters.value[sourceClusterId];
+			if (!sourceCluster) continue;
+
+			similarities[sourceClusterId] = {};
+
+			// Add manual connections with similarity of 1.0
+			if (sourceCluster.manual_connections && sourceCluster.manual_connections.length > 0) {
+				for (const targetId of sourceCluster.manual_connections) {
+					if (clusterIds.includes(targetId)) {
+						similarities[sourceClusterId][targetId] = 1.0;
+					}
+				}
+			}
+		}
+
+		// THEN: Calculate embedding-based similarities
+		for (const sourceClusterId of clusterIds) {
+			const sourceCluster = clusters.value[sourceClusterId];
+			if (!sourceCluster || !sourceCluster.websites.length) continue;
+			// The Notes hub's member embeddings are semantically unrelated to
+			// each other (a grab-bag of orphan notes) - its average embedding
+			// would produce meaningless accidental links to unrelated topics.
+			// Its only connections are the deliberate dashed hub-links added
+			// in processApiData().
+			if (sourceCluster.is_notes_cluster) continue;
+
+			const sourceWebsiteIds = sourceCluster.websites;
+			const sourceEmbeddings = sourceWebsiteIds
+				.map((id) => embeddings.value[id]?.v)
+				.filter(Boolean);
+
+			if (sourceEmbeddings.length === 0) continue;
+
+			const sourceAvgEmbedding = averageEmbeddings(sourceEmbeddings);
+
+			for (const targetClusterId of clusterIds) {
+				if (sourceClusterId === targetClusterId) continue;
+
+				// Skip if manual connection already exists
+				if (similarities[sourceClusterId][targetClusterId]) continue;
+
+				const targetCluster = clusters.value[targetClusterId];
+				if (!targetCluster || !targetCluster.websites.length) continue;
+				if (targetCluster.is_notes_cluster) continue;
+
+				const targetWebsiteIds = targetCluster.websites;
+				const targetEmbeddings = targetWebsiteIds
+					.map((id) => embeddings.value[id]?.v)
+					.filter(Boolean);
+
+				if (targetEmbeddings.length === 0) continue;
+
+				const targetAvgEmbedding = averageEmbeddings(targetEmbeddings);
+				const similarity = cosineSimilarity(sourceAvgEmbedding, targetAvgEmbedding);
+
+				if (similarity >= settings.similarityThreshold) {
+					similarities[sourceClusterId][targetClusterId] = similarity;
+				}
+			}
+		}
+
+		return similarities;
+	} catch (error) {
+		console.error("❌ Error calculating similarities:", error);
+		return {};
+	}
+}
+
+export async function fetchWebsiteDetails(websiteId) {
+	try {
+		console.log("Fetching website details for:", websiteId);
+
+		// Prefer the in-memory ref - it's already fully populated with every
+		// field this function returns, regardless of whether it got there via
+		// loadFromIndexedDB() (local/dashboard mode) or loadSharedGraphData()
+		// (shared-view mode, from the server). The IndexedDB read below only
+		// ever succeeds for local mode - a guest/collaborator's browser has no
+		// local record for someone else's website at all, which is why
+		// descriptions/summaries never rendered in the shared view. This is
+		// also a strict improvement for local mode: skips a redundant async
+		// IndexedDB round-trip on the common path.
+		const inMemory = websites.value[websiteId];
+		if (inMemory) {
+			return {
+				website: {
+					id: inMemory.id,
+					url: inMemory.url,
+					title: inMemory.title,
+					domain: inMemory.domain,
+					ai_summary: inMemory.ai_summary,
+					topic: inMemory.topic,
+					search_query: inMemory.search_query,
+					processed_at: inMemory.processed_at,
+					metadata: inMemory.metadata,
+				},
+			};
+		}
+
+		if (!db) return null;
+
+		const tx = db.transaction("websites", "readonly");
+
+		const store = tx.objectStore("websites");
+
+		return new Promise((resolve, reject) => {
+			const request = store.get(websiteId);
+
+			request.onsuccess = () => {
+				const website = request.result;
+
+				if (website) {
+					resolve({
+						website: {
+							id: website.id,
+
+							url: website.url,
+
+							title: website.title,
+
+							domain: website.domain,
+
+							ai_summary: website.ai_summary,
+
+							topic: website.topic,
+
+							search_query: website.search_query,
+
+							processed_at: website.processed_at,
+
+							metadata: website.metadata,
+						},
+					});
+				} else {
+					resolve(null);
+				}
+			};
+
+			request.onerror = () => reject(request.error);
+		});
+	} catch (error) {
+		console.error("❌ Error fetching website details:", error);
+
+		return null;
+	}
+}
+
+// Centralized, memoized hydration guarantee - saveToIndexedDB() awaits this
+// itself (see below) rather than trusting every caller/route to have called
+// initDB()/loadFromIndexedDB() in the right order first. That "trust the
+// caller" approach is exactly what caused a real data-loss incident (a
+// browser-extension message handler reachable from every route, not just
+// /dashboard, saved against an empty in-memory snapshot and wiped the real
+// IndexedDB stores). Centralizing it here means no future call site, route,
+// or mount-order timing change can ever reintroduce that failure mode -
+// the dangerous function itself refuses to run until this resolves, once,
+// no matter who's calling it or from where.
+// Clears its own cache on failure (mirrors ensureModelsLoaded() in
+// useAIModels.js) so a transient IndexedDB error doesn't permanently wedge
+// every future save behind one cached rejection - the next caller (App.vue's
+// own fire-and-forget kick-off, or saveToIndexedDB() itself) gets a fresh
+// attempt instead.
+let hydrationPromise = null;
+export function ensureHydrated() {
+	if (!hydrationPromise) {
+		hydrationPromise = (async () => {
+			await initDB();
+			await loadFromIndexedDB();
+		})().catch((err) => {
+			hydrationPromise = null;
+			throw err;
+		});
+	}
+	return hydrationPromise;
+}
+
+export async function saveToIndexedDB() {
+	await ensureHydrated();
+	if (!db) return;
+
+	try {
+		const tx = db.transaction(
+			["websites", "clusters", "embeddings"],
+			"readwrite"
+		);
+
+		const websiteStore = tx.objectStore("websites");
+		await new Promise((resolve, reject) => {
+			const r = websiteStore.clear();
+			r.onsuccess = resolve;
+			r.onerror = () => reject(r.error);
+		});
+
+		for (const website of Object.values(websites.value)) {
+			try {
+				// Convert to plain object by JSON serialization or manual copy
+				const plainWebsite = JSON.parse(JSON.stringify(website));
+
+				await new Promise((resolve, reject) => {
+					const r = websiteStore.put(plainWebsite);
+					r.onsuccess = resolve;
+					r.onerror = () => reject(r.error);
+				});
+			} catch (err) {
+				console.error("❌ WEBSITE FAILED:", website, err);
+			}
+		}
+
+		const clusterStore = tx.objectStore("clusters");
+		await new Promise((resolve, reject) => {
+			const r = clusterStore.clear();
+			r.onsuccess = resolve;
+			r.onerror = () => reject(r.error);
+		});
+
+		for (const cluster of Object.values(clusters.value)) {
+			try {
+				// Convert to plain object
+				const plainCluster = JSON.parse(JSON.stringify(cluster));
+
+				await new Promise((resolve, reject) => {
+					const r = clusterStore.put(plainCluster);
+					r.onsuccess = resolve;
+					r.onerror = () => reject(r.error);
+				});
+			} catch (err) {
+				console.error("❌ CLUSTER FAILED:", cluster, err);
+			}
+		}
+
+		const embeddingStore = tx.objectStore("embeddings");
+		await new Promise((resolve, reject) => {
+			const r = embeddingStore.clear();
+			r.onsuccess = resolve;
+			r.onerror = () => reject(r.error);
+		});
+
+		for (const [id, embedding] of Object.entries(embeddings.value)) {
+			try {
+				const plainEmbedding = {
+					id,
+					embedding: JSON.parse(JSON.stringify(embedding)),
+				};
+				await new Promise((resolve, reject) => {
+					const r = embeddingStore.put(plainEmbedding);
+					r.onsuccess = resolve;
+					r.onerror = () => reject(r.error);
+				});
+			} catch (err) {
+				console.error(`❌ EMBEDDING FAILED [${id}]`, embedding, err);
+			}
+		}
+
+		await new Promise((resolve, reject) => {
+			tx.oncomplete = resolve;
+			tx.onerror = () => reject(tx.error);
+			tx.onabort = () => reject(tx.error || new Error("Transaction aborted"));
+		});
+
+		console.log("✨ IndexedDB Save Complete");
+	} catch (err) {
+		console.error("🔥 FATAL IndexedDB SAVE ERROR:", err);
+	}
+}
+
+export async function loadFromIndexedDB() {
+	if (!db) return;
+
+	// Each read is awaited (previously fired-and-forgotten via bare onsuccess
+	// callbacks, with the function's own returned promise resolving before
+	// any of them actually populated websites.value/clusters.value/
+	// embeddings.value) - callers depend on this data being in memory the
+	// instant this promise resolves. saveToIndexedDB() clears the real
+	// stores and rewrites them purely from these same refs, so an unawaited
+	// read racing a save is a silent full-data-loss risk, not just a display
+	// glitch, now that a save can be triggered from any route (App.vue's
+	// message listener), not only after GraphNode.vue's own slower mount
+	// sequence happened to always win that race by luck.
+	try {
+		const websiteTx = db.transaction("websites", "readonly");
+		const websiteStore = websiteTx.objectStore("websites");
+		const websiteResult = await new Promise((resolve, reject) => {
+			const request = websiteStore.getAll();
+			request.onsuccess = () => resolve(request.result);
+			request.onerror = () => reject(request.error);
+		});
+		for (const website of websiteResult) {
+			websites.value[website.id] = website;
+		}
+
+		const clusterTx = db.transaction("clusters", "readonly");
+		const clusterStore = clusterTx.objectStore("clusters");
+		const clusterResult = await new Promise((resolve, reject) => {
+			const request = clusterStore.getAll();
+			request.onsuccess = () => resolve(request.result);
+			request.onerror = () => reject(request.error);
+		});
+		for (const cluster of clusterResult) {
+			clusters.value[cluster.id] = cluster;
+		}
+
+		const embeddingTx = db.transaction("embeddings", "readonly");
+		const embeddingStore = embeddingTx.objectStore("embeddings");
+		const embeddingResult = await new Promise((resolve, reject) => {
+			const request = embeddingStore.getAll();
+			request.onsuccess = () => resolve(request.result);
+			request.onerror = () => reject(request.error);
+		});
+		for (const item of embeddingResult) {
+			embeddings.value[item.id] = normalizeEmbeddingRecord(item.embedding);
+		}
+
+		console.log("✅ Loaded data from IndexedDB");
+	} catch (err) {
+		console.error("Error loading from IndexedDB:", err);
+	}
+}
+
+export async function deleteWebsite(websiteId) {
+	if (isReadOnlySharedView.value) return;
+
+	const albumId = websites.value[websiteId]?.album_id ?? null;
+	const deletedNodeIds = [websiteId];
+	const updatedClusterIds = [];
+
+	// Remove from clusters
+	for (const cluster of Object.values(clusters.value)) {
+		const index = cluster.websites.indexOf(websiteId);
+		if (index > -1) {
+			cluster.websites.splice(index, 1);
+
+			// Delete empty clusters
+			if (cluster.websites.length === 0) {
+				delete clusters.value[cluster.id];
+				deletedNodeIds.push(cluster.id);
+			} else {
+				updatedClusterIds.push(cluster.id);
+			}
+		}
+	}
+
+	// Remove website and embedding
+	delete websites.value[websiteId];
+	delete embeddings.value[websiteId];
+
+	await saveToIndexedDB();
+
+	// Live-push to a shared graph if relevant (no-op internally otherwise) -
+	// this is a separate entry point from confirmDeleteCluster/
+	// confirmRemoveWebsites in useClusterActions.js (deleting a single
+	// website from its own node context menu, via GraphNode.vue's
+	// deleteSelectedWebsite(), rather than the cluster's "Remove Websites"
+	// modal) - same missing-sync bug though: without this, the deletion only
+	// ever happened in this browser's own local IndexedDB, silently
+	// reappearing for every other collaborator (and on this browser's own
+	// next refresh) since the server's shared_graph_nodes rows were never
+	// touched. Dynamic import - useGraphEngine.js must never statically
+	// import from useSharing.js (see the identical pattern a few lines up in
+	// this file, e.g. handleNodeMouseOver's resolveAddedByName import).
+	const { pushNodeUpdateForAlbum, pushNodeDeleteForAlbum } = await import("./useSharing");
+	pushNodeDeleteForAlbum(albumId, deletedNodeIds);
+	if (updatedClusterIds.length > 0) {
+		pushNodeUpdateForAlbum(albumId, updatedClusterIds.map((id) => ({ id, type: "cluster", data: clusters.value[id] })));
+	}
+
+	// Re-render correctly for a remote/collaborator viewer too - this
+	// function previously never re-rendered at all on its own (relying on
+	// whatever the caller happened to do afterward), which for a remote
+	// viewer meant the caller's own plain refreshData() call read this
+	// browser's own empty/irrelevant IndexedDB instead of the in-memory
+	// shared-graph state, same class of bug already fixed for
+	// useClusterActions.js's mutation functions.
+	if (remoteGraphId.value) {
+		await refreshRemoteGraphView();
+	} else {
+		await refreshData();
+	}
+
+	console.log(`🗑️ Deleted website: ${websiteId}`);
+}
+
+// ==============================================
+// CLUSTERING
+// ==============================================
+export function findSimilarWebsites(targetEmbedding, excludeId = null, albumId = null) {
+	const similarities = [];
+
+	for (const [websiteId, embedding] of Object.entries(embeddings.value)) {
+		if (excludeId && websiteId === excludeId) continue;
+
+		const website = websites.value[websiteId];
+		if (!website || website.album_id !== albumId) continue;
+
+		const similarity = cosineSimilarity(targetEmbedding, embedding.v);
+		similarities.push({ websiteId, similarity });
+	}
+
+	return similarities.sort((a, b) => b.similarity - a.similarity);
+}
+
+export function assignToCluster(websiteId, topic, embedding, searchQuery, albumId = null) {
+	const similarWebsites = findSimilarWebsites(embedding, websiteId, albumId);
+
+	for (const { websiteId: similarId, similarity } of similarWebsites) {
+		for (const [clusterId, cluster] of Object.entries(clusters.value)) {
+			if (cluster.album_id !== albumId) continue;
+
+			if (cluster.websites.includes(similarId)) {
+				const clusterTopic = cluster.topic;
+
+				if (similarity >= SIMILARITY_THRESHOLD) {
+					if (!cluster.websites.includes(websiteId)) {
+						cluster.websites.push(websiteId);
+					}
+					console.log(`🔗 Added to cluster ${clusterId} in album ${albumId || 'All Clusters'}`);
+
+					return clusterId;
+				}
+
+				if (
+					similarity >= LOOSE_SIMILARITY_THRESHOLD &&
+					topicsMatch(topic, clusterTopic)
+				) {
+					if (!cluster.websites.includes(websiteId)) {
+						cluster.websites.push(websiteId);
+					}
+					console.log(`🔗 Added to cluster ${clusterId} (loose + topic)`);
+					return clusterId;
+				}
+			}
+		}
+	}
+
+	const newClusterId = generateId();
+	clusters.value[newClusterId] = {
+		id: newClusterId,
+		topic: topic,
+		websites: [websiteId],
+		similar_links: {},
+		manual_connections: [],
+		album_id: albumId,
+	};
+
+	console.log(`🆕 Created new cluster: ${newClusterId} in album ${albumId || 'All Clusters'}`);
+	return newClusterId;
+}
+
+// Finds (or lazily creates) the one shared per-album "Notes" cluster - a
+// permanent catch-all bucket for notes that don't semantically match any
+// real topic, and the hub every topic-with-a-linked-note gets a dashed
+// connector to. Never matched into via similarity (see assignNoteToCluster),
+// only ever reached directly here.
+function findOrCreateNotesCluster(albumId) {
+	const existing = Object.values(clusters.value).find(
+		(c) => c.album_id === albumId && c.is_notes_cluster
+	);
+	if (existing) return existing.id;
+
+	const id = generateId();
+	clusters.value[id] = {
+		id,
+		topic: "Notes",
+		websites: [],
+		similar_links: {},
+		manual_connections: [],
+		album_id: albumId,
+		is_notes_cluster: true,
+		notes_hub_links: [],
+	};
+	console.log(`🆕 Created Notes hub cluster: ${id} in album ${albumId || 'All Clusters'}`);
+	return id;
+}
+
+// Records the dashed connector between a topic cluster and the Notes hub -
+// bidirectional and deduped, mirroring the existing manual_connections
+// convention. A no-op on repeat calls once the pair is already linked, so
+// multiple notes landing in the same topic cluster just re-confirm one link.
+function linkClusterToNotesHub(topicClusterId, albumId) {
+	const notesClusterId = findOrCreateNotesCluster(albumId);
+	const notesCluster = clusters.value[notesClusterId];
+	const topicCluster = clusters.value[topicClusterId];
+
+	if (!notesCluster.notes_hub_links.includes(topicClusterId)) {
+		notesCluster.notes_hub_links.push(topicClusterId);
+	}
+	if (!topicCluster.notes_hub_links) topicCluster.notes_hub_links = [];
+	if (!topicCluster.notes_hub_links.includes(notesClusterId)) {
+		topicCluster.notes_hub_links.push(notesClusterId);
+	}
+	// Callers need this to push the Notes hub's own updated data to a shared
+	// graph too - renderGraph() only ever draws a notes-hub-link by reading
+	// notes_hub_links off the NOTES HUB cluster's own side (see the "Dashed
+	// hub connectors" block further down, gated on cluster.is_notes_cluster),
+	// never the topic cluster's side. A caller that pushes only the topic
+	// cluster after calling this (as processNote() used to) leaves the
+	// server's copy of the Notes hub cluster permanently missing the link -
+	// invisible to any other viewer from the start, and silently erased on
+	// this same browser too the next time a merge/catch-up overwrites the
+	// local Notes hub cluster with that incomplete server copy.
+	return notesClusterId;
+}
+
+// Notes go through the same embedding pipeline as websites, but never spawn
+// their own singleton cluster the way assignToCluster does - a note either
+// joins a real topic cluster it strictly matches (only SIMILARITY_THRESHOLD,
+// no loose+topic-match tier, since notes have no Claude-derived topic to
+// loosely match on), or falls into the shared Notes hub.
+// Read-only: ranks every real topic cluster (never the Notes hub itself) in
+// the given album against a note's embedding + raw text, for both the
+// actual assignment below AND the live suggestion dropdown in the note
+// modal - the preview and the real save must use the exact same logic, or
+// the preview would lie about what's actually going to happen.
+//
+// Tier 1: cluster-centroid cosine similarity clears the (lenient, note-
+// specific) strict bar on its own. Tier 2: topicsMatch(noteText, cluster.topic)
+// - lexical/keyword overlap - qualifies independently, with NO minimum
+// embedding similarity required. A short note compared against a cluster
+// centroid built from full paragraph summaries can embed low even when the
+// topic word match is exact and unambiguous (e.g. "warehousing" vs a
+// "Warehouse" topic) - gating a real keyword match behind a semantic-
+// similarity floor was punishing exactly the case this whole feature exists
+// for. Tier 1 still outranks tier 2 when both exist.
+export function rankCandidateClusters(embedding, noteText, albumId = null) {
+	const candidates = [];
+
+	for (const cluster of Object.values(clusters.value)) {
+		if (cluster.album_id !== albumId) continue;
+		if (cluster.is_notes_cluster) continue;
+
+		const memberEmbeddings = cluster.websites
+			.map((id) => embeddings.value[id]?.v)
+			.filter(Boolean);
+		if (memberEmbeddings.length === 0) continue;
+
+		const centroid = averageEmbeddings(memberEmbeddings);
+		const similarity = cosineSimilarity(embedding, centroid);
+
+		if (similarity >= NOTE_SIMILARITY_THRESHOLD) {
+			candidates.push({ clusterId: cluster.id, topic: cluster.topic, score: similarity, tier: 1 });
+		} else if (topicsMatch(noteText, cluster.topic)) {
+			candidates.push({ clusterId: cluster.id, topic: cluster.topic, score: similarity, tier: 2 });
+		}
+	}
+
+	return candidates.sort((a, b) => a.tier - b.tier || b.score - a.score).slice(0, 3);
+}
+
+// Sentinel for "the user explicitly picked the Notes hub" in the modal -
+// distinct from a real cluster id, since the hub may not exist yet (it's
+// created lazily) at the moment the chip is clicked.
+export const NOTES_HUB_SENTINEL = '__notes_hub__';
+
+// Returns { clusterId, notesHubClusterId } rather than a bare id -
+// notesHubClusterId is set only when this call actually established a new
+// topic<->Notes-hub link (null when the note landed directly in the Notes
+// hub itself, since there's no separate hub cluster to also push in that
+// case). Callers must push notesHubClusterId's own cluster data to a shared
+// graph alongside clusterId's - pushing only clusterId leaves the link
+// invisible/erasable from the Notes hub side (see linkClusterToNotesHub's
+// own comment for the full failure mode).
+export function assignNoteToCluster(noteWebsiteId, embedding, albumId = null, noteText = '', forcedClusterId = null) {
+	if (forcedClusterId === NOTES_HUB_SENTINEL) {
+		const notesClusterId = findOrCreateNotesCluster(albumId);
+		if (!clusters.value[notesClusterId].websites.includes(noteWebsiteId)) {
+			clusters.value[notesClusterId].websites.push(noteWebsiteId);
+		}
+		console.log(`🗒️ Note pinned to the Notes hub by user choice`);
+		return { clusterId: notesClusterId, notesHubClusterId: null };
+	}
+
+	// User picked a suggestion in the modal - honor it directly rather than
+	// re-running the ranking.
+	if (forcedClusterId && clusters.value[forcedClusterId]) {
+		const cluster = clusters.value[forcedClusterId];
+		if (!cluster.websites.includes(noteWebsiteId)) {
+			cluster.websites.push(noteWebsiteId);
+		}
+		let notesHubClusterId = null;
+		if (!cluster.is_notes_cluster) {
+			notesHubClusterId = linkClusterToNotesHub(forcedClusterId, albumId);
+		}
+		console.log(`🔗 Note pinned to cluster ${forcedClusterId} by user choice`);
+		return { clusterId: forcedClusterId, notesHubClusterId };
+	}
+
+	const [topCandidate] = rankCandidateClusters(embedding, noteText, albumId);
+	if (topCandidate) {
+		const cluster = clusters.value[topCandidate.clusterId];
+		if (!cluster.websites.includes(noteWebsiteId)) {
+			cluster.websites.push(noteWebsiteId);
+		}
+		const notesHubClusterId = linkClusterToNotesHub(topCandidate.clusterId, albumId);
+		console.log(`🔗 Note added to cluster ${topCandidate.clusterId}, linked to Notes hub`);
+		return { clusterId: topCandidate.clusterId, notesHubClusterId };
+	}
+
+	const notesClusterId = findOrCreateNotesCluster(albumId);
+	if (!clusters.value[notesClusterId].websites.includes(noteWebsiteId)) {
+		clusters.value[notesClusterId].websites.push(noteWebsiteId);
+	}
+	console.log(`🗒️ Note fell into the Notes hub ${notesClusterId} (no strict match)`);
+	return { clusterId: notesClusterId, notesHubClusterId: null };
+}
+
+// ==============================================
+// GRAPH DATA LOADING
+// ==============================================
+export function processApiData(clustersData, similarities) {
+	console.log("Processing Cluster data:", { clustersData, similarities });
+
+	const nodes = clustersData.map((cluster, index) => {
+		const baseSize = Math.max(15, Math.min(40, cluster.website_count * 8 + 15));
+
+		return {
+			id: cluster.cluster_id,
+
+			cluster_id: cluster.cluster_id,
+
+			topic: cluster.topic,
+
+			website_count: cluster.website_count,
+
+			websites: cluster.websites || [],
+
+			similar_links: cluster.similar_links || [],
+
+			is_notes_cluster: !!cluster.is_notes_cluster,
+
+			notes_hub_links: cluster.notes_hub_links || [],
+
+			size: baseSize,
+
+			baseSize: baseSize,
+
+			type: "cluster",
+
+			x: Math.cos((index * 2 * Math.PI) / clustersData.length) * 300,
+
+			y: Math.sin((index * 2 * Math.PI) / clustersData.length) * 300,
+
+			metadata: {
+				description: `Cluster containing ${cluster.website_count} websites about ${cluster.topic}`,
+
+				tags: ["cluster", cluster.topic.toLowerCase().replace(/\s+/g, "-")],
+			},
+		};
+	});
+
+	const links = [];
+
+	Object.entries(similarities).forEach(([sourceId, targets]) => {
+		Object.entries(targets).forEach(([targetId, similarity]) => {
+			if (
+				similarity >= settings.similarityThreshold &&
+				!links.some(
+					(l) =>
+						(l.source === sourceId && l.target === targetId) ||
+						(l.source === targetId && l.target === sourceId)
+				)
+			) {
+				links.push({
+					source: sourceId,
+
+					target: targetId,
+
+					similarity: similarity,
+
+					strength: similarity,
+
+					type: "cluster-link",
+				});
+			}
+		});
+	});
+
+	// Dashed hub connectors from the "Notes" cluster to every topic cluster
+	// that picked up a linked note - not similarity-derived (the Notes hub is
+	// deliberately excluded from fetchSimilarities' embedding pass, since its
+	// member notes are semantically unrelated to each other), so these are
+	// generated here from notes_hub_links instead.
+	const nodeIds = new Set(nodes.map((n) => n.id));
+	clustersData.forEach((cluster) => {
+		if (!cluster.is_notes_cluster) return;
+		(cluster.notes_hub_links || []).forEach((topicClusterId) => {
+			if (!nodeIds.has(topicClusterId)) return; // topic cluster not in this album/day view
+			const already = links.some(
+				(l) =>
+					(l.source === cluster.cluster_id && l.target === topicClusterId) ||
+					(l.source === topicClusterId && l.target === cluster.cluster_id)
+			);
+			if (already) return;
+			links.push({ source: cluster.cluster_id, target: topicClusterId, type: "notes-hub-link" });
+		});
+	});
+
+	console.log("✅ Processed data:", {
+		nodeCount: nodes.length,
+
+		linkCount: links.length,
+	});
+
+	return { nodes, links };
+}
+
+// Set while the current view is a shared graph (fetched from the server)
+// rather than this browser's own IndexedDB - null in normal single-player
+// use. Read by loadData()'s callers to decide which loader to invoke, and by
+// the sharing UI to know whether "add a node" should also push to the server.
+export const remoteGraphId = ref(null);
+export const remoteGraphRole = ref(null); // 'owner' | 'edit' | 'view' | 'guest' | null
+export const remoteGraphFrozen = ref(false);
+// { id, isDark } when the shared-graph payload carries the owner's theme,
+// null when it doesn't (backend hasn't added this field yet) - GraphNode.vue
+// falls back to the viewer's own local theme preference in that case.
+export const remoteGraphTheme = ref(null);
+
+// The owner's own /dashboard equivalent of remoteGraphId: set (by
+// useSharing.js) whenever the currently-selected local album is actively
+// shared, null otherwise. Declared here rather than in useSharing.js - which
+// owns every read/write of it - specifically so this file's own rendering
+// code (renderGraph()) can read it directly without a static import back to
+// useSharing.js, which would recreate the circular-eval-order crash this
+// project has hit before (useSharing.js already imports heavily from this
+// file; the reverse direction is never safe at module-eval time).
+export const activeShareGraphId = ref(null);
+
+// Whether the currently-viewed graph (owner's actively-shared album, or a
+// remote /shared/:graphId view) is shared with anyone at all - the single
+// condition that should gate anything that only makes sense once there's
+// more than one possible contributor (e.g. the "who added this" attribution
+// badge/tooltip in renderGraph() below). Exported so GraphNode.vue's
+// isCurrentGraphShared computed can defer to this instead of re-deriving the
+// same boolean a third time.
+export function isSharedGraphContext() {
+	return !!(remoteGraphId.value || activeShareGraphId.value);
+}
+
+// Attribution badges are a function of CURRENT share state, not of DOM entry
+// history - without this, unsharing a graph wouldn't clear badges already
+// appended to still-present nodes (they only ever went through the D3 join's
+// enter branch once), and re-sharing wouldn't retroactively add them back.
+// renderGraph() itself only reacts to graphData changes, so share-state
+// flips need their own trigger here.
+watch([remoteGraphId, activeShareGraphId], () => {
+	if (svg) renderGraph();
+});
+
+// Single source of truth for "this viewer should not be able to change
+// anything" - a view-only collaborator or an anonymous guest on a shared
+// graph. Local/single-player use (remoteGraphId null) and owner/edit
+// collaborators are never read-only. Used to hide/disable every mutating
+// control in GraphNode.vue (Albums/History switching, theme, uploads,
+// settings, note-creation gestures, website deletion) - previously only the
+// Share button itself checked remoteGraphRole, which meant a guest or
+// view-only collaborator could still use every other control in the app.
+export const isReadOnlySharedView = computed(
+	() => !!remoteGraphId.value && (remoteGraphRole.value === "guest" || remoteGraphRole.value === "view")
+);
+
+// Resolves the album new content (a note, an uploaded file) should be tagged
+// with. currentAlbum.value is correct on the owner's own /dashboard, but
+// loadSharedGraphData() deliberately sets it to null in shared/remote view
+// mode - a shared view isn't scoped to any of THIS browser's own local
+// albums. Without this fallback, anything added from within a shared view
+// got tagged album_id: null, which matches none of the real clusters
+// mirrored over from the owner's actual album (they all carry the owner's
+// real, non-null album id) - the content would still reach the owner via the
+// live-sync push, but arrive invisible, filed under an album nobody's
+// dashboard ever looks at. Every cluster in a shared-view session
+// originated from one gatherAlbumNodes() call for one specific album, so
+// they all already carry that same real id - this just reads it back
+// instead of assuming null.
+export function effectiveAlbumId() {
+	if (currentAlbum.value?.id) return currentAlbum.value.id;
+	if (remoteGraphId.value) {
+		const anyCluster = Object.values(clusters.value).find((c) => c.album_id);
+		if (anyCluster) return anyCluster.album_id;
+	}
+	return null;
+}
+
+// Mirrors fetchClusters()'s website-summarizing shape exactly, but reads from
+// the in-memory refs directly instead of IndexedDB - this is what lets
+// processApiData()/fetchSimilarities() stay completely unaware of whether
+// the data they're shaping came from a shared graph or a local one.
+function clusterRecordToClusterData(cluster) {
+	const websitesList = (cluster.websites || [])
+		.map((id) => websites.value[id])
+		.filter(Boolean)
+		.map((website) => ({
+			id: website.id,
+			title: website.title,
+			url: website.url,
+			domain: website.domain,
+			processed_at: website.processed_at,
+			is_file: !!website.is_file,
+			file_id: website.file_id || null,
+			is_note: !!website.is_note,
+			note_text: website.note_text || null,
+			added_by: website.added_by || null,
+		}));
+
+	return {
+		cluster_id: cluster.id,
+		topic: cluster.topic,
+		website_count: websitesList.length,
+		websites: websitesList,
+		similar_links: cluster.similar_links || {},
+		is_notes_cluster: !!cluster.is_notes_cluster,
+		notes_hub_links: cluster.notes_hub_links || [],
+	};
+}
+
+// The remote counterpart to loadData(): same shape (fills websites/clusters/
+// embeddings, then runs the identical processApiData()/fetchSimilarities()
+// pipeline), just sourced from GET /api/shared/:graphId instead of
+// IndexedDB. This is the graph-store abstraction boundary described in the
+// plan doc - renderGraph()/centerView()/drag() never change, they only ever
+// see the resulting graphData either way.
+export async function loadSharedGraphData(graphId, { API_BASE, credentials = "include" } = {}) {
+	isLoading.value = true;
+	try {
+		const res = await fetch(`${API_BASE}/api/shared/${graphId}`, { credentials });
+		if (!res.ok) {
+			const body = await res.json().catch(() => ({}));
+			throw new Error(body.error || `load_failed_${res.status}`);
+		}
+		const payload = await res.json();
+
+		remoteGraphId.value = graphId;
+		remoteGraphRole.value = payload.role;
+		remoteGraphFrozen.value = !!payload.frozen;
+		remoteGraphTheme.value = payload.theme?.id ? payload.theme : null;
+
+		// A shared graph's clusters carry the ORIGINAL owner's album_id, which is
+		// meaningless on a collaborator's own device - clearing the local
+		// album/day filters means fetchSimilarities()'s own album/day filtering
+		// (it reads these same refs) doesn't accidentally exclude everything.
+		currentAlbum.value = null;
+		currentHistoryDay.value = null;
+
+		websites.value = {};
+		clusters.value = {};
+		embeddings.value = {};
+
+		for (const node of payload.nodes || []) {
+			if (node.type === "website") {
+				websites.value[node.id] = node.data;
+				if (node.data?.embedding) embeddings.value[node.id] = node.data.embedding;
+			} else if (node.type === "cluster") {
+				clusters.value[node.id] = node.data;
+			}
+		}
+
+		const clustersData = Object.values(clusters.value).map(clusterRecordToClusterData);
+		rawClusters = clustersData;
+
+		const similarities = await fetchSimilarities();
+		rawSimilarities = similarities;
+
+		graphData = processApiData(clustersData, similarities);
+
+		return payload;
+	} finally {
+		isLoading.value = false;
+	}
+}
+
+// Called when leaving a shared-graph view (navigating back to the normal
+// local dashboard) so loadData()'s own IndexedDB-backed path takes over
+// again cleanly next time it runs.
+export function clearRemoteGraphState() {
+	remoteGraphId.value = null;
+	remoteGraphRole.value = null;
+	remoteGraphFrozen.value = false;
+	remoteGraphTheme.value = null;
+}
+
+export async function loadData() {
+	isLoading.value = true;
+
+	try {
+		console.log("🔄 Loading data from IndexedDB...");
+
+		// First load websites and embeddings
+		await loadFromIndexedDB();
+
+		// Then fetch processed clusters (already filtered by album in fetchClusters)
+		const [clustersData, albumsData] = await Promise.all([
+			fetchClusters(), // This is already filtered by currentAlbum
+			fetchAlbums(),
+		]);
+
+		console.log("📊 Data loaded:", {
+			clusterCount: clustersData.length,
+			albumCount: Object.keys(albumsData).length,
+			currentAlbum: currentAlbum.value?.name || 'All Clusters'
+		});
+
+		// UPDATE rawClusters with filtered data
+		rawClusters = clustersData;
+
+		// Calculate similarities ONLY for the filtered clusters
+		const similarities = await fetchSimilarities();
+		rawSimilarities = similarities;
+
+		console.log("Similarities calculated:", Object.keys(similarities).length);
+
+		// Process the filtered data into graph format
+		graphData = processApiData(clustersData, similarities);
+
+		if (graphData.nodes.length === 0) {
+			console.warn("⚠️ No clusters found for this album, showing empty state");
+			graphData = { nodes: [], links: [] };
+		} else {
+			console.log("✅ Graph data ready:", graphData);
+		}
+	} catch (error) {
+		console.error("❌ Error loading data:", error);
+		graphData = { nodes: [], links: [] };
+	} finally {
+		isLoading.value = false;
+	}
+}
+
+export function generatePlaceholderData() {
+	console.log("🔄 Generating placeholder data...");
+	const categories = [
+		"Ideas",
+		"Concepts",
+		"Projects",
+		"Notes",
+		"Research",
+		"Tasks",
+	];
+	const nodes = [];
+	const nodeCount = 6;
+
+	const nodeNames = [
+		"Machine Learning",
+		"Artificial Intelligence",
+		"Data Science",
+		"Web Development",
+		"Cloud Computing",
+		"Cybersecurity",
+	];
+
+	for (let i = 0; i < nodeCount; i++) {
+		const category = categories[Math.floor(Math.random() * categories.length)];
+		const baseSize = Math.random() * 15 + 15;
+		nodes.push({
+			id: `placeholder-${i}`,
+			cluster_id: `placeholder-${i}`,
+			topic: nodeNames[i] || `Cluster ${i + 1}`,
+			website_count: Math.floor(Math.random() * 5) + 1,
+			websites: [],
+			similar_links: [],
+			size: baseSize,
+			baseSize: baseSize,
+			type: "cluster",
+			x: Math.cos((i * 2 * Math.PI) / nodeCount) * 200,
+			y: Math.sin((i * 2 * Math.PI) / nodeCount) * 200,
+			metadata: {
+				description: `Placeholder cluster for ${nodeNames[i] || "various topics"
+					}`,
+				tags: [category.toLowerCase(), "placeholder"],
+			},
+		});
+	}
+
+	const links = [];
+	for (let i = 0; i < nodeCount - 1; i++) {
+		if (Math.random() < 0.6) {
+			links.push({
+				source: nodes[i].id,
+				target: nodes[i + 1].id,
+				similarity: 0.5 + Math.random() * 0.3,
+				strength: 0.5,
+				type: "cluster-link",
+			});
+		}
+	}
+
+	return { nodes, links };
+}
+
+export async function refreshData() {
+	console.log("🔄 Refreshing data...");
+	selectedWebsite.value = null;
+	explodedNode.value = null;
+	await loadData();
+	if (simulation) {
+		simulation.nodes(graphData.nodes);
+		simulation.force("link").links(graphData.links);
+		simulation.alpha(1).restart();
+		renderGraph();
+	}
+}
+
+// Same re-tick/re-render pattern as refreshData(), just sourced from
+// loadSharedGraphData() instead of the IndexedDB-backed loadData() - always a
+// full authoritative reload rather than an incremental patch, since a shared
+// graph's WebSocket messages only ever say "something changed," not what.
+export async function refreshRemoteGraph(API_BASE) {
+	if (!remoteGraphId.value) return;
+	selectedWebsite.value = null;
+	explodedNode.value = null;
+	await loadSharedGraphData(remoteGraphId.value, { API_BASE });
+	if (simulation) {
+		simulation.nodes(graphData.nodes);
+		simulation.force("link").links(graphData.links);
+		simulation.alpha(1).restart();
+		renderGraph();
+	}
+}
+
+// Re-renders from whatever's already in clusters.value/websites.value (no
+// network fetch), honoring currentAlbum/currentHistoryDay - the in-memory
+// equivalent of fetchClusters()'s own IndexedDB query+filter, for a shared
+// graph's data. loadSharedGraphData() deliberately never persists a shared
+// graph to IndexedDB (see its own comment above), so selectHistoryDay()
+// calling the ordinary loadData() there queried THIS BROWSER's own local
+// IndexedDB store instead - correctly empty/irrelevant on a fresh session,
+// which is exactly why the History tab's day badges (built from this same
+// in-memory data) showed real counts but clicking one produced nothing.
+export async function refreshRemoteGraphView() {
+	if (!remoteGraphId.value) return;
+	selectedWebsite.value = null;
+	explodedNode.value = null;
+
+	const activeAlbumId = currentAlbum.value?.id ?? null;
+	const activeDayKey = currentHistoryDay.value;
+	const clustersData = Object.values(clusters.value)
+		.filter((c) => {
+			if (activeAlbumId !== null && c.album_id !== activeAlbumId) return false;
+			if (activeDayKey !== null && getClusterDayKey(c) !== activeDayKey) return false;
+			return true;
+		})
+		.map(clusterRecordToClusterData);
+
+	rawClusters = clustersData;
+	const similarities = await fetchSimilarities();
+	rawSimilarities = similarities;
+	graphData = processApiData(clustersData, similarities);
+
+	if (simulation) {
+		simulation.nodes(graphData.nodes);
+		simulation.force("link").links(graphData.links);
+		simulation.alpha(1).restart();
+		renderGraph();
+	}
+}
+
+export function addProcessingPlaceholder(data) {
+	if (!graphData || !simulation) return { id: null };
+	const nodeId = `processing-${generateId()}`;
+	const width = graphContainer.value?.clientWidth || 800;
+	const height = graphContainer.value?.clientHeight || 600;
+	const node = {
+		id: nodeId,
+		title: (data.metadata?.title || data.url || 'New website').substring(0, 25),
+		size: 18,
+		baseSize: 18,
+		type: 'processing',
+		x: width / 2 + (Math.random() - 0.5) * 300,
+		y: height / 2 + (Math.random() - 0.5) * 300,
+		vx: 0,
+		vy: 0,
+	};
+	graphData.nodes.push(node);
+	simulation.nodes(graphData.nodes);
+	simulation.alpha(0.3).restart();
+	renderGraph();
+	return node;
+}
+
+export function removeProcessingPlaceholder(nodeId) {
+	if (!nodeId || !graphData) return;
+	graphData.nodes = graphData.nodes.filter(n => n.id !== nodeId);
+	if (simulation) simulation.nodes(graphData.nodes);
+	renderGraph();
+}
+
+export function updateConnections() {
+	if (rawClusters.length > 0) {
+		// eslint-disable-next-line no-undef
+		filterGraphByAlbum();
+	}
+}
+
+// Duration of the explosion reveal tween in performExplosion() below -
+// exported so useTutorial.js's post-explosion highlight recalculation can key
+// off the same number instead of duplicating a magic value.
+export const EXPLOSION_TWEEN_MS = 500;
+
+// ==============================================
+// NODE EXPLOSION / COLLAPSE
+// ==============================================
+export function explodeNode(clusterNode) {
+	trackEvent('cluster_exploded', {
+		website_count: clusterNode.websites.length
+	});
+	if (explodedNode.value && explodedNode.value.id !== clusterNode.id) {
+		collapseNode();
+		setTimeout(() => {
+			performExplosion(clusterNode);
+		}, 100);
+	} else if (explodedNode.value && explodedNode.value.id === clusterNode.id) {
+		collapseNode();
+	} else {
+		performExplosion(clusterNode);
+	}
+}
+
+export function performExplosion(clusterNode) {
+	explodedNode.value = clusterNode;
+	const centerX = clusterNode.x;
+	const centerY = clusterNode.y;
+
+	// Lock cluster position ONLY
+	clusterNode.fx = centerX;
+	clusterNode.fy = centerY;
+
+	const radius = 95;
+	websiteNodes = [];
+	const totalNodes = clusterNode.websites.length + 1;
+	const angleStep = (2 * Math.PI) / totalNodes;
+
+	clusterNode.websites.forEach((website, index) => {
+		const angle = angleStep * index;
+		const websiteNode = {
+			id: `website-${website.id}`,
+			websiteId: website.id,
+			title: website.title,
+			url: website.url,
+			domain: website.domain,
+			processed_at: website.processed_at,
+			is_file: !!website.is_file,
+			file_id: website.file_id || null,
+			is_note: !!website.is_note,
+			note_text: website.note_text || null,
+			added_by: website.added_by || null,
+			// Grown on touch devices - this is the primary "inspect a website"
+			// tap target for a shared-view guest. Bumped up from 10/16 - the
+			// exploded ring is a tight target to hit at the smaller size,
+			// especially on a trackpad/mouse.
+			size: isCoarsePointer.value ? 20 : 13,
+			baseSize: isCoarsePointer.value ? 20 : 13,
+			type: "website",
+			parentCluster: clusterNode.id,
+			x: centerX, // Start at center
+			y: centerY,
+			vx: 0, // ADD: reset velocity
+			vy: 0, // ADD: reset velocity
+			// Pinned at the parent for now, not the final ring position - the
+			// tween below eases fx/fy out to _targetFx/_targetFy so the (unchanged)
+			// tick handler's raw position paint is smooth instead of snapping
+			// straight to the final spot on frame 1.
+			fx: centerX,
+			fy: centerY,
+			_targetFx: centerX + Math.cos(angle) * radius,
+			_targetFy: centerY + Math.sin(angle) * radius,
+		};
+		websiteNodes.push(websiteNode);
+		graphData.nodes.push(websiteNode);
+
+		graphData.links.push({
+			source: clusterNode.id,
+			target: websiteNode.id,
+			type: "website-link",
+		});
+	});
+
+	const discoverAngle = angleStep * clusterNode.websites.length;
+	const discoverNode = {
+		id: `discover-${clusterNode.id}`,
+		title: "Discover Similar",
+		size: 17,
+		baseSize: 17,
+		type: "discover",
+		parentCluster: clusterNode.id,
+		x: centerX,
+		y: centerY,
+		vx: 0, // ADD: reset velocity
+		vy: 0, // ADD: reset velocity
+		fx: centerX,
+		fy: centerY,
+		_targetFx: centerX + Math.cos(discoverAngle) * radius,
+		_targetFy: centerY + Math.sin(discoverAngle) * radius,
+	};
+	websiteNodes.push(discoverNode);
+	graphData.nodes.push(discoverNode);
+
+	graphData.links.push({
+		source: clusterNode.id,
+		target: discoverNode.id,
+		type: "discover-link",
+	});
+
+	// Residual velocity from earlier explosions doesn't fully damp out before
+	// the next one restarts alpha - it compounds. Over several cycles the
+	// whole graph's OTHER (never-pinned) clusters measurably drift, eventually
+	// carrying them off the visible viewport - which looks exactly like the
+	// graph going unresponsive/"static," when really they've just wandered
+	// off-screen. Zeroing every node's velocity before each explosion's kick
+	// means each one starts from rest, so nothing can accumulate cycle over
+	// cycle.
+	graphData.nodes.forEach((node) => {
+		node.vx = 0;
+		node.vy = 0;
+	});
+
+	simulation.nodes(graphData.nodes);
+	simulation.force("link").links(graphData.links);
+	// A small kick, not 0.3 - the reveal itself is now driven entirely by the
+	// tween below (every ring node is fully pinned throughout), so this only
+	// needs to keep the tick loop alive long enough to paint it.
+	simulation.alpha(0.05).restart();
+
+	renderGraph();
+
+	// Ease fx/fy from the parent's position out to each node's target ring
+	// spot. The tick handler is untouched - it always just paints whatever
+	// x/y currently is, so smoothly animating the underlying pinned position
+	// (instead of setting it once, final, up front) is what makes the paint
+	// loop's existing raw `.attr("transform", ...)` look smooth for free.
+	//
+	// Deliberately never released back to real physics once the tween lands -
+	// with charge repulsion (-200) from every other node in a real, populated
+	// graph and only a weak link constraint (strength 0.03) pulling back, an
+	// unpinned ring drifts far past its intended 80px radius as soon as
+	// anything (e.g. the alpha restart above, which re-energizes the WHOLE
+	// simulation, not just this cluster) nudges it. Staying pinned at the
+	// exact computed ring position for as long as the cluster is exploded
+	// keeps the spacing exactly where it's supposed to be, no matter how
+	// large the rest of the graph is. Same reasoning applies to the cluster's
+	// own fx/fy (locked further up) - both release together in collapseNode()
+	// instead, which already nulls the cluster's fx/fy and discards the
+	// website/discover nodes outright.
+	const revealTimer = d3.timer((elapsed) => {
+		const t = Math.min(1, elapsed / EXPLOSION_TWEEN_MS);
+		const eased = d3.easeCubicOut(t);
+		websiteNodes.forEach((node) => {
+			node.fx = centerX + (node._targetFx - centerX) * eased;
+			node.fy = centerY + (node._targetFy - centerY) * eased;
+		});
+		if (t >= 1) {
+			// d3.timer ignores the callback's return value - returning true
+			// here does nothing. Only timer.stop() actually stops it; without
+			// this, the timer runs forever, still writing into the shared
+			// websiteNodes variable on every future explosion.
+			revealTimer.stop();
+		}
+	});
+}
+
+export function collapseNode() {
+	if (!explodedNode.value) return;
+
+	const centerX = explodedNode.value.x;
+	const centerY = explodedNode.value.y;
+
+	// Immediately remove nodes and links (no animation needed for switch)
+	graphData.nodes = graphData.nodes.filter(
+		(node) => node.type !== "website" && node.type !== "discover"
+	);
+
+	graphData.links = graphData.links.filter(
+		(link) => link.type !== "website-link" && link.type !== "discover-link"
+	);
+
+	// Release the exploded cluster's fixed position
+	if (explodedNode.value) {
+		explodedNode.value.fx = null;
+		explodedNode.value.fy = null;
+	}
+
+	websiteNodes = [];
+	explodedNode.value = null;
+	selectedWebsite.value = null;
+
+	// Update simulation
+	simulation.nodes(graphData.nodes);
+	simulation.force("link").links(graphData.links);
+
+	renderGraph();
+}
+
+// ==============================================
+// STICKY NOTE DRAGGING
+// ==============================================
+// e.touches?.[0] ?? e covers both mouse events (clientX/Y directly on the
+// event) and touch events (coordinates live on the first Touch in the list
+// instead) with the same code path, rather than duplicating this function
+// three times over.
+function pointFromEvent(e) {
+	return e.touches?.[0] ?? e;
+}
+
+export function startDraggingSticky(e) {
+	isDraggingSticky = true;
+	const stickyEl = e.currentTarget.parentElement;
+	const rect = stickyEl.getBoundingClientRect();
+	const point = pointFromEvent(e);
+	dragOffsetX = point.clientX - rect.left;
+	dragOffsetY = point.clientY - rect.top;
+	document.addEventListener("mousemove", handleStickyDrag);
+	document.addEventListener("mouseup", stopStickyDrag);
+	// passive: false so preventDefault() below can actually suppress the
+	// page scrolling underneath the drag - touch-action: none on the graph
+	// canvas covers the D3 zoom/pan surface, but the sticky note popup is a
+	// regular DOM element outside that surface.
+	document.addEventListener("touchmove", handleStickyDrag, { passive: false });
+	document.addEventListener("touchend", stopStickyDrag);
+}
+
+export function handleStickyDrag(e) {
+	if (!isDraggingSticky) return;
+	if (e.cancelable) e.preventDefault();
+	const point = pointFromEvent(e);
+	stickyNoteStyle.value = {
+		left: point.clientX - dragOffsetX + "px",
+		top: point.clientY - dragOffsetY + "px",
+	};
+}
+
+export function stopStickyDrag() {
+	isDraggingSticky = false;
+	document.removeEventListener("mousemove", handleStickyDrag);
+	document.removeEventListener("mouseup", stopStickyDrag);
+	document.removeEventListener("touchmove", handleStickyDrag);
+	document.removeEventListener("touchend", stopStickyDrag);
+}
+
+// ==============================================
+// D3 RENDERING
+// ==============================================
+// sharedGraphId is optional - passed by GraphNode.vue when mounted at
+// /shared/:graphId. Dynamic import (rather than a static one) avoids turning
+// the existing useGraphEngine <-> useAlbums-style circular-import convention
+// into a three-way cycle for this one, optional, rarely-taken path.
+// d3.forceCenter recenters by averaging every node's x/y and shifting all of
+// them by the difference - a raw position shift each tick, not damped by
+// velocityDecay like every other force. Website/discover ring nodes are
+// transient satellites that briefly cluster tightly around whichever node
+// exploded them; counting them in that average skews the centroid toward
+// that node, and forceCenter yanks every other (free) node the same amount
+// the opposite way to compensate. Negligible in a populated graph, but with
+// only a couple of clusters the ring can outnumber everything else, so the
+// shove compounds every explosion into a runaway drift. Recentering off only
+// the "real" nodes removes that entirely.
+function forceCenterExcludingRing(cx, cy) {
+	let nodes;
+	function force() {
+		let sx = 0, sy = 0, n = 0;
+		for (const node of nodes) {
+			if (node.type === "website" || node.type === "discover") continue;
+			sx += node.x;
+			sy += node.y;
+			n++;
+		}
+		if (!n) return;
+		sx = sx / n - cx;
+		sy = sy / n - cy;
+		for (const node of nodes) {
+			node.x -= sx;
+			node.y -= sy;
+		}
+	}
+	force.initialize = (_nodes) => { nodes = _nodes; };
+	return force;
+}
+
+export async function initializeGraph(sharedGraphId = null) {
+	const width = graphContainer.value.clientWidth;
+	const height = graphContainer.value.clientHeight;
+
+	if (sharedGraphId) {
+		const { openSharedGraph } = await import("./useSharing");
+		await openSharedGraph(sharedGraphId);
+	} else {
+		await loadData();
+	}
+
+	svg = d3
+		.select(graphContainer.value)
+		.append("svg")
+		.attr("width", width)
+		.attr("height", height)
+		.style("overflow", "visible");
+
+	container = svg.append("g");
+
+	zoom = d3
+		.zoom()
+		.scaleExtent([0.2, 3])
+		.on("zoom", (event) => {
+			container.attr("transform", event.transform);
+		});
+
+	svg.call(zoom);
+
+	simulation = d3
+		.forceSimulation(graphData.nodes)
+		.force(
+			"link",
+			d3
+				.forceLink(graphData.links)
+				.id((d) => d.id)
+				.distance((d) => (d.type === "website-link" ? 80 : 200))
+				.strength(0.03)
+		)
+		// Website/discover ring nodes are always fx/fy-pinned for their entire
+		// lifecycle (see performExplosion/dragended/collapseNode) - real physics
+		// never moves them, so they don't need to push on anything else either.
+		// Without this, every explosion briefly stacks a whole cluster's worth of
+		// them on the same coordinate as the cluster, and d3-force's charge
+		// force sums coincident nodes' strengths into one combined spike (see
+		// node_modules/d3-force/src/manyBody.js accumulate()) - flinging nearby
+		// clusters away. Scoped by type so normal cluster-to-cluster spacing is
+		// untouched.
+		.force("charge", d3.forceManyBody().strength((d) => (d.type === "website" || d.type === "discover") ? 0 : -200))
+		.force("center", forceCenterExcludingRing(width / 2, height / 2))
+		.force(
+			"collision",
+			d3.forceCollide().radius((d) => d.size * settings.nodeSize + 15)
+		)
+		.force("x", d3.forceX(width / 2).strength(0.02))
+		.force("y", d3.forceY(height / 2).strength(0.02));
+
+	renderGraph();
+
+	setTimeout(() => {
+		centerView();
+	}, 1000);
+}
+
+// Node-anchored live-cursor badges for a shared graph: a small dot per
+// identity currently "looking at" a node, keyed the same way renderGraph()
+// keys node <g> elements (d.id) - see plan doc on why cursors are
+// node-anchored rather than coordinate-anchored (D3 force simulations are
+// non-deterministic per client, so a raw position means nothing on a
+// collaborator's independently-laid-out copy of the same graph). Called from
+// useSharing.js's watch(remoteCursors, ...), not from renderGraph() itself,
+// since it only ever needs to run when the cursor map changes, not on every
+// tick.
+export function renderRemoteCursors(cursorsByIdentity) {
+	if (!container) return;
+	const nodeGroup = container.select(".nodes");
+	if (nodeGroup.empty()) return;
+
+	const cursorsByNode = {};
+	Object.entries(cursorsByIdentity || {}).forEach(([identityKey, nodeId]) => {
+		if (!nodeId) return;
+		(cursorsByNode[nodeId] ||= []).push(identityKey);
+	});
+
+	nodeGroup.selectAll(".node").each(function (d) {
+		const g = d3.select(this);
+		const identities = cursorsByNode[d.id] || [];
+		const radius = d.size * settings.nodeSize;
+
+		g.selectAll(".node-cursor-badge")
+			.data(identities, (identityKey) => identityKey)
+			.join(
+				(enter) => enter.append("circle").attr("class", "node-cursor-badge").attr("r", 5).attr("stroke", "#fff").attr("stroke-width", 1.5),
+				(update) => update,
+				(exit) => exit.remove()
+			)
+			.attr("cy", -(radius + 10))
+			.attr("cx", (_, i) => radius + 10 + i * 14)
+			.attr("fill", currentTheme.value.colors.secondary);
+	});
+}
+
+export function centerView() {
+	if (!svg || !container || !graphContainer.value) return;
+
+	const width = graphContainer.value.clientWidth;
+	const height = graphContainer.value.clientHeight;
+	const bounds = container.node().getBBox();
+
+	if (bounds.width > 0 && bounds.height > 0) {
+		const fullWidth = bounds.width;
+		const fullHeight = bounds.height;
+		const midX = bounds.x + fullWidth / 2;
+		const midY = bounds.y + fullHeight / 2;
+
+		const scale = Math.min(width / fullWidth, height / fullHeight) * 0.7;
+		const translate = [width / 2 - scale * midX, height / 2 - scale * midY];
+
+		svg
+			.transition()
+			.duration(1500)
+			.call(
+				zoom.transform,
+				d3.zoomIdentity.translate(translate[0], translate[1]).scale(scale)
+			);
+	}
+}
+
+export function renderGraph() {
+	graphIsEmpty.value = graphData.nodes.length === 0;
+
+	container.selectAll(".links").data([null]).join("g").attr("class", "links");
+	container.selectAll(".nodes").data([null]).join("g").attr("class", "nodes");
+	container.selectAll(".labels").data([null]).join("g").attr("class", "labels");
+
+	const linkGroup = container.select(".links");
+	const nodeGroup = container.select(".nodes");
+	const labelGroup = container.select(".labels");
+
+	const links = linkGroup
+		.selectAll(".link")
+		.data(
+			graphData.links,
+			(d) => `${d.source.id || d.source}-${d.target.id || d.target}`
+		)
+		.join("line")
+		.attr("class", (d) => `link ${d.type}`)
+		.style("opacity", (d) => {
+			if (d.type === "website-link" || d.type === "discover-link") return 0.6;
+			if (d.type === "notes-hub-link") return showConnections.value ? 0.5 : 0;
+			return showConnections.value ? 0.4 : 0;
+		})
+		.style("stroke-width", (d) => {
+			if (d.type === "website-link" || d.type === "discover-link") return 1.5;
+			if (d.type === "notes-hub-link") return 1.5;
+			return Math.max(1, (d.similarity || 0.5) * 4);
+		})
+		.style("stroke", (d) => {
+			if (d.type === "discover-link") return "#95a5a6";
+			if (d.type === "website-link") return "#adb5bd";
+			if (d.type === "notes-hub-link") return currentTheme.value.colors.secondary;
+			return "#adb5bd";
+		})
+		.style("stroke-dasharray", (d) => (d.type === "notes-hub-link" ? "5 4" : null));
+
+	// Each node is a <g> (not a bare <circle>) so a subset - uploaded-file
+	// website nodes - can carry a second child element (the file glyph) on
+	// top of the exact same circle every other node gets. The circle's own
+	// r/fill/stroke logic is unchanged; only the wrapper changed, so "same
+	// size and same color" for file nodes falls out for free.
+	const nodes = nodeGroup
+		.selectAll(".node")
+		.data(graphData.nodes, (d) => d.id)
+		.join(
+			(enter) => {
+				const g = enter.append("g").attr("class", (d) => `node ${d.type}`);
+				g.append("circle").attr("class", "node-circle");
+				g.filter((d) => d.type === "website" && d.is_file)
+					.append("path")
+					.attr("class", "node-file-icon")
+					.attr("d", FILE_ICON_PATH)
+					.attr("pointer-events", "none");
+				g.filter((d) => d.type === "website" && d.is_note)
+					.append("path")
+					.attr("class", "node-note-icon")
+					.attr("d", NOTE_ICON_PATH)
+					.attr("pointer-events", "none");
+				return g;
+			},
+			(update) => update,
+			(exit) => exit.remove()
+		)
+		.attr("data-id", (d) => d.id)
+		.call(drag(simulation));
+
+	nodes
+		.select(".node-circle")
+		.attr("r", (d) => d.size * settings.nodeSize)
+		.attr("fill", (d) => {
+			if (d.type === "discover") return currentTheme.value.colors.primary;
+			if (d.type === "processing") return currentTheme.value.colors.secondary;
+			if (d.type === "website") return currentTheme.value.colors.node;
+			return currentTheme.value.colors.node;
+		})
+		.attr("stroke", (d) => {
+			if (d.type === "discover") return currentTheme.value.colors.secondary;
+			if (d.type === "processing") return currentTheme.value.colors.nodeStroke;
+			if (d.type === "website") return currentTheme.value.colors.nodeStroke;
+			return currentTheme.value.colors.nodeStroke;
+		})
+		.attr("stroke-width", 2)
+		.attr("stroke-dasharray", (d) => (d.type === "cluster" && d.is_notes_cluster ? "4 3" : null));
+
+	nodes
+		.select(".node-file-icon")
+		.attr("transform", () => `scale(${settings.nodeSize})`)
+		.attr("fill", currentTheme.value.colors.background)
+		.attr("stroke", currentTheme.value.colors.nodeStroke)
+		.attr("stroke-width", 0.8)
+		.attr("stroke-linejoin", "round");
+
+	nodes
+		.select(".node-note-icon")
+		.attr("transform", () => `scale(${settings.nodeSize})`)
+		.attr("fill", currentTheme.value.colors.background)
+		.attr("stroke", currentTheme.value.colors.nodeStroke)
+		.attr("stroke-width", 0.8)
+		.attr("stroke-linejoin", "round");
+
+	// "Who added this" - a persistent satellite dot, opposite corner from
+	// .node-cursor-badge (renderRemoteCursors()) so the two never collide:
+	// this one is static per-node data, that one is a live, ephemeral
+	// presence ping. Attribution only matters once there's more than one
+	// possible contributor - a plain local album's added_by is always just
+	// the viewer themself, so the badge would be pure clutter there.
+	// Re-evaluated on every render (not just for newly-entering nodes, via
+	// this .each() rather than the D3 join's enter branch) so a graph being
+	// shared/unshared while already-rendered nodes exist immediately shows
+	// or clears their badges, instead of only affecting nodes that happen to
+	// re-enter the DOM afterward.
+	const sharedContext = isSharedGraphContext();
+	nodes.each(function (d) {
+		const shouldShow = sharedContext && d.type === "website" && !!d.added_by;
+		const g = d3.select(this);
+		let badge = g.select(".node-attribution-badge");
+		if (shouldShow && badge.empty()) {
+			badge = g
+				.append("circle")
+				.attr("class", "node-attribution-badge")
+				.attr("r", 5)
+				.attr("stroke", "#fff")
+				.attr("stroke-width", 1.5)
+				.attr("pointer-events", "none");
+		} else if (!shouldShow && !badge.empty()) {
+			badge.remove();
+			return;
+		}
+		if (shouldShow) {
+			badge
+				.attr("cy", d.size * settings.nodeSize + 8)
+				.attr("cx", -(d.size * settings.nodeSize + 8))
+				.attr("fill", colorForIdentity(d.added_by));
+		}
+	});
+
+	const labels = labelGroup
+		.selectAll(".node-label")
+		.data(graphData.nodes, (d) => d.id)
+		.join("text")
+		.attr("class", "node-label")
+		.text((d) => {
+			if (d.type === "processing") return "Processing...";
+			if (d.type === "website")
+				return d.title.substring(0, 20) + (d.title.length > 20 ? "..." : "");
+			if (d.type === "discover") return "";
+			return d.topic;
+		})
+		.style("font-size", (d) => {
+			if (d.type === "website") return "8px";
+			if (d.type === "processing") return "9px";
+			if (d.type === "discover") return "18px";
+			return Math.max(10, (d.size * settings.nodeSize) / 3.5) + "px";
+		})
+		.style("fill", (d) => {
+			if (d.type === "discover") return "#ffffff";
+			return currentTheme.value.colors.text;
+		})
+		.style("font-weight", (d) => (d.type === "discover" ? "400" : "500"))
+		.style('text-anchor', 'middle');
+
+	nodes
+		.on("mouseover", handleNodeMouseOver)
+		.on("mouseout", handleNodeMouseOut)
+		.on("click", handleNodeClick)
+		.on('contextmenu', handleNodeRightClick);
+
+	simulation.on("tick", () => {
+		links
+			.attr("x1", (d) => d.source.x)
+			.attr("y1", (d) => d.source.y)
+			.attr("x2", (d) => d.target.x)
+			.attr("y2", (d) => d.target.y);
+
+		nodes.attr("transform", (d) => `translate(${d.x},${d.y})`);
+
+		labels
+			.attr('x', d => d.x)
+			.attr('y', d => {
+				// All node types should have text below
+				return d.y + (d.size * settings.nodeSize) + 18;
+			});
+	});
+}
+
+export function drag(simulation) {
+	function dragstarted(event, d) {
+		if (!event.active) simulation.alphaTarget(0.3).restart();
+		d.fx = d.x;
+		d.fy = d.y;
+	}
+
+	function dragged(event, d) {
+		d.fx = event.x;
+		d.fy = event.y;
+	}
+
+	function dragended(event, d) {
+		if (!event.active) simulation.alphaTarget(0);
+
+		// Exploded ring node (has a stashed home slot from performExplosion) -
+		// ease back to that slot instead of releasing into real physics, where
+		// charge repulsion from the rest of a populated graph could fling it
+		// away instead of returning it home.
+		if (d._targetFx != null && d._targetFy != null) {
+			const startFx = d.fx;
+			const startFy = d.fy;
+			const targetFx = d._targetFx;
+			const targetFy = d._targetFy;
+			const returnTimer = d3.timer((elapsed) => {
+				const t = Math.min(1, elapsed / EXPLOSION_TWEEN_MS);
+				const eased = d3.easeCubicOut(t);
+				d.fx = startFx + (targetFx - startFx) * eased;
+				d.fy = startFy + (targetFy - startFy) * eased;
+				// d3.timer ignores the callback's return value - only
+				// timer.stop() actually stops it (see performExplosion()).
+				if (t >= 1) returnTimer.stop();
+			});
+			return;
+		}
+
+		d.fx = null;
+		d.fy = null;
+	}
+
+	return d3
+		.drag()
+		.on("start", dragstarted)
+		.on("drag", dragged)
+		.on("end", dragended);
+}
+
+// ==============================================
+// EVENT HANDLERS
+// ==============================================
+export function handleNodeMouseOver(event, d) {
+	const tooltipEl = d3.select(tooltip.value);
+	tooltipEl
+		.transition()
+		.duration(200 / settings.animationSpeed)
+		.style("opacity", 1);
+
+	let tooltipContent = "";
+	if (d.type === "cluster") {
+		tooltipContent = `<strong>${d.topic}</strong><br>Websites: ${d.website_count}<br>Click to explode`;
+	} else if (d.type === "website") {
+		tooltipContent = `<strong>${d.title}</strong><br>${d.domain}<br>Click for details`;
+	} else if (d.type === "discover") {
+		tooltipContent = `<strong>Discover Similar</strong><br>Find related websites`;
+	} else if (d.type === "processing") {
+		tooltipContent = `<strong>Processing…</strong><br>${d.title}`;
+	}
+
+	// "Added by X" - appended asynchronously once resolved (same dynamic-
+	// import pattern as sendCursorUpdate below, to avoid the circular-import
+	// hazard this project has hit before). Skipped for older content with no
+	// added_by, resolves to nothing for a guest viewer (never reveals
+	// identities to guests - see resolveAddedByName()'s own comment), and
+	// gated on isSharedGraphContext() so it doesn't show on purely local,
+	// never-shared content (added_by is set unconditionally at creation
+	// time regardless of share status - this is the only place that mattered).
+	if (d.type === "website" && d.added_by && isSharedGraphContext()) {
+		import("./useSharing").then(({ resolveAddedByName }) => {
+			const name = resolveAddedByName(d.added_by);
+			if (name) tooltipEl.html(tooltipEl.html() + `<br>Added by ${name}`);
+		});
+	}
+
+	tooltipEl
+		.html(tooltipContent)
+		.style("left", event.pageX + 15 + "px")
+		.style("top", event.pageY - 10 + "px");
+
+	if (d.type === "cluster") {
+		highlightConnections(d);
+	}
+
+	// Node-anchored live cursor ping - dynamic import (not a static one)
+	// deliberately, matching the same safe pattern initializeGraph() already
+	// uses below: useSharing.js statically imports from this file, so a
+	// static import back would create the same circular-eval-order hazard
+	// that caused a real, app-breaking crash earlier in this project (see
+	// initLocalOwnerSync()'s comment in useSharing.js for the full story).
+	// sendCursorUpdate() itself already no-ops with no open socket and is
+	// internally throttled, so firing this on every hover is safe.
+	import("./useSharing").then(({ sendCursorUpdate }) => sendCursorUpdate(d.id));
+}
+
+export function handleNodeMouseOut() {
+	d3.select(tooltip.value)
+		.transition()
+		.duration(200 / settings.animationSpeed)
+		.style("opacity", 0);
+	clearHighlights();
+
+	// Clears this viewer's presence dot on every other collaborator's
+	// screen - previously nothing ever did, so a dot stuck around on
+	// whatever node was last hovered until someone happened to hover a
+	// different one. Same dynamic-import pattern as handleNodeMouseOver.
+	import("./useSharing").then(({ sendCursorUpdate }) => sendCursorUpdate(null));
+}
+
+export async function handleNodeClick(event, d) {
+	event.stopPropagation();
+	showAddNotePrompt.value = false;
+	showAddTypeMenu.value = false;
+
+	if (d.type === 'processing') return;
+
+	if (d.type === "cluster") {
+		explodeNode(d);
+	} else if (d.type === "website") {
+		await showWebsiteDetails(event, d);
+	} else if (d.type === "discover") {
+		await handleDiscoverClick();
+	}
+}
+
+export async function showWebsiteDetails(event, websiteNode) {
+	selectedWebsite.value = websiteNode;
+	websiteDetails.value = null;
+	console.log("Showing details for website:", websiteNode);
+
+	const containerRect = graphContainer.value.getBoundingClientRect();
+	const nodeScreenX = event.pageX - containerRect.left;
+	const nodeScreenY = event.pageY - containerRect.top;
+
+	const stickyWidth = 300;
+	const stickyHeight = 280;
+
+	let left = nodeScreenX + 20;
+	let top = nodeScreenY - stickyHeight / 2;
+
+	if (left + stickyWidth > containerRect.width) {
+		left = nodeScreenX - stickyWidth - 20;
+	}
+	if (top < 20) top = 20;
+	if (top + stickyHeight > containerRect.height - 20) {
+		top = containerRect.height - stickyHeight - 20;
+	}
+
+	stickyNoteStyle.value = {
+		left: left + "px",
+		top: top + "px",
+	};
+
+	try {
+		const result = await fetchWebsiteDetails(websiteNode.websiteId);
+
+		if (result && result.website) {
+			websiteDetails.value = result.website;
+		}
+	} catch (error) {
+		console.error("Error loading website details:", error);
+	}
+}
+
+export function handleBackgroundClick() {
+	selectedWebsite.value = null;
+	showAlbumsDropdown.value = false;
+	closeContextMenu();
+	showWebsiteContextMenu.value = false;
+	showAddTypeMenu.value = false;
+}
+
+export function closeStickyNote() {
+	selectedWebsite.value = null;
+	websiteDetails.value = null;
+}
+
+export function handleNodeRightClick(event, d) {
+	event.preventDefault();
+	event.stopPropagation();
+
+	// No context menu at all in a read-only shared view - every item in both
+	// menus (Add to Album, Delete Cluster, Edit Title, etc.) is a mutation,
+	// and a guest/view-only collaborator shouldn't be offered any of them.
+	if (isReadOnlySharedView.value) return;
+
+	if (d.type === 'cluster') {
+		contextCluster.value = clusters.value[d.id];
+		contextMenuStyle.value = { left: event.pageX + 'px', top: event.pageY + 'px' };
+		showContextMenu.value = true;
+		showWebsiteContextMenu.value = false;
+	} else if (d.type === 'website') {
+		websiteContextNode.value = d;
+		contextMenuStyle.value = { left: event.pageX + 'px', top: event.pageY + 'px' };
+		showWebsiteContextMenu.value = true;
+		showContextMenu.value = false;
+	}
+}
+
+export function closeContextMenu() {
+	showContextMenu.value = false;
+	contextCluster.value = null;
+}
+
+export function highlightConnections(node) {
+	const connectedNodeIds = new Set();
+	const connectedLinks = new Set();
+
+	graphData.links.forEach((link) => {
+		const sourceId = link.source.id || link.source;
+		const targetId = link.target.id || link.target;
+
+		if (sourceId === node.id && link.type === "cluster-link") {
+			connectedNodeIds.add(targetId);
+			connectedLinks.add(link);
+		} else if (targetId === node.id && link.type === "cluster-link") {
+			connectedNodeIds.add(sourceId);
+			connectedLinks.add(link);
+		}
+	});
+
+	// Highlight connected nodes. Opacity dims the whole node (circle + file
+	// icon together); stroke/stroke-width target the circle specifically -
+	// it carries its own explicit stroke attrs, which would otherwise shadow
+	// anything set on the parent <g>.
+	container.select('.nodes')
+		.selectAll('.node')
+		.style('opacity', d =>
+			d.id === node.id || connectedNodeIds.has(d.id) ? 1 : 0.4
+		);
+
+	container.select('.nodes')
+		.selectAll('.node-circle')
+		.attr("stroke", d =>
+			d.id === node.id || connectedNodeIds.has(d.id) ? currentTheme.value.colors.primary : null
+		)
+		.attr('stroke-width', d =>
+			d.id === node.id || connectedNodeIds.has(d.id) ? 3 : 2
+		);
+
+	// Highlight connected links
+	container.select('.links')
+		.selectAll('.link')
+		.style('opacity', d => connectedLinks.has(d) ? 0.8 : 0.2)
+		.style('stroke', d => connectedLinks.has(d) ? '#4A90E2' : null)
+		.style('stroke-width', d => connectedLinks.has(d) ? 3 : null);
+}
+
+export function clearHighlights() {
+	if (!container) return;
+
+	// Don't clear search highlights if there's an active search
+	if (!searchTerm()) {
+		container.select('.nodes')
+			.selectAll('.node')
+			.style('opacity', 1);
+
+		container.select('.nodes')
+			.selectAll('.node-circle')
+			.attr('stroke-width', 2);
+
+		container.select('.labels')
+			.selectAll('.node-label')
+			.style('opacity', 1)
+			.style('font-weight', '500');
+	} else {
+		// Restore search highlight state
+		const term = searchTerm().toLowerCase();
+		container.select('.nodes')
+			.selectAll('.node')
+			.style('opacity', d => {
+				const matches = d.type === 'cluster'
+					? d.topic?.toLowerCase().includes(term)
+					: d.title?.toLowerCase().includes(term);
+				return matches ? 1 : 0.3;
+			});
+	}
+
+	// Always clear connection highlights
+	container.select('.nodes')
+		.selectAll('.node-circle')
+		.attr("stroke", d => {
+			if (d.type === 'discover') return currentTheme.value.colors.secondary;
+			if (d.type === 'website') return currentTheme.value.colors.nodeStroke;
+			return currentTheme.value.colors.nodeStroke;
+		})
+		.attr('stroke-width', 2);
+
+	container.select('.links')
+		.selectAll('.link')
+		.style('opacity', d => {
+			if (d.type === 'website-link' || d.type === 'discover-link') return 0.6;
+			return showConnections.value ? 0.4 : 0;
+		})
+		.style("stroke", d => {
+			if (d.type === 'discover-link') return currentTheme.value.colors.nodeStroke;
+			if (d.type === 'website-link') return currentTheme.value.colors.nodeStroke;
+			return currentTheme.value.colors.nodeStroke;
+		})
+		.style('stroke-width', d => {
+			if (d.type === 'website-link' || d.type === 'discover-link') return 1.5;
+			return Math.max(1, (d.similarity || 0.5) * 4);
+		});
+}
+
+// ==============================================
+// VIEW / SETTINGS
+// ==============================================
+export function updateNodeSizes() {
+	container
+		.select(".nodes")
+		.selectAll(".node-circle")
+		.transition()
+		.duration(300 / settings.animationSpeed)
+		.attr("r", (d) => d.baseSize * settings.nodeSize);
+
+	container
+		.select(".nodes")
+		.selectAll(".node-file-icon")
+		.transition()
+		.duration(300 / settings.animationSpeed)
+		.attr("transform", () => `scale(${settings.nodeSize})`);
+
+	container
+		.select(".nodes")
+		.selectAll(".node-note-icon")
+		.transition()
+		.duration(300 / settings.animationSpeed)
+		.attr("transform", () => `scale(${settings.nodeSize})`);
+
+	container
+		.select(".labels")
+		.selectAll(".node-label")
+		.transition()
+		.duration(300 / settings.animationSpeed)
+		.style("font-size", (d) => {
+			if (d.type === "website") return "8px";
+			if (d.type === "discover") return "18px";
+			return Math.max(10, (d.baseSize * settings.nodeSize) / 3.5) + "px";
+		});
+
+	if (simulation) {
+		simulation.force(
+			"collision",
+			d3.forceCollide().radius((d) => d.baseSize * settings.nodeSize + 15)
+		);
+		simulation.alpha(0.3).restart();
+	}
+}
+
+export function resetView() {
+	centerView();
+}
+
+// Same auto-zoom-to-node approach useSearch.js's performSearch() already uses
+// for its first search match - reuses the same svg/zoom singletons rather
+// than inventing a second camera-pan mechanism.
+export function panToCluster(clusterId) {
+	if (!svg || !zoom || !graphContainer.value) return;
+	const node = graphData?.nodes?.find((n) => n.id === clusterId);
+	if (!node) return;
+
+	const width = graphContainer.value.clientWidth;
+	const height = graphContainer.value.clientHeight;
+
+	svg.transition()
+		.duration(1000)
+		.call(
+			zoom.transform,
+			d3.zoomIdentity
+				.translate(width / 2, height / 2)
+				.scale(1.2)
+				.translate(-node.x, -node.y)
+		);
+}
+
+// A temporary "this one just grew" pulse - reuses the exact pulse-processing
+// keyframe .node.processing already gets (see GraphNode.vue's <style>) rather
+// than inventing a new visual language for "something here changed."
+export function pulseClusterNode(clusterId) {
+	if (!container) return;
+	const selection = container
+		.select(".nodes")
+		.selectAll(".node")
+		.filter((d) => d.id === clusterId);
+	selection.classed("just-grown", true);
+	setTimeout(() => selection.classed("just-grown", false), 4000);
+}
+
+// Orchestrates a /dashboard?cluster=<id> deep link (see the return-triggers
+// extension relay): make sure the target cluster is actually visible under
+// whatever album/history-day filter is currently active, then pan the camera
+// to it and pulse it. Silently no-ops if the cluster doesn't exist locally
+// (wrong browser/profile, or deleted since the link was generated) - nothing
+// sensible to do in that case.
+export async function focusDeepLinkedCluster(clusterId) {
+	if (!clusterId || !clusters.value[clusterId]) return;
+
+	// The default "All Clusters, All History" view (both filters null)
+	// already contains every cluster regardless of its own album_id -
+	// fetchClusters() only excludes a cluster when a specific album/day IS
+	// selected. So a filter reset is only needed if some other album/day was
+	// already active (e.g. an already-open dashboard tab got reused rather
+	// than a fresh navigation, where these already default to null).
+	if (currentAlbum.value !== null || currentHistoryDay.value !== null) {
+		currentAlbum.value = null;
+		currentHistoryDay.value = null;
+		await loadData();
+		if (simulation) {
+			simulation.nodes(graphData.nodes);
+			simulation.force("link").links(graphData.links);
+			simulation.alpha(1).restart();
+			renderGraph();
+		}
+	}
+
+	// Give the simulation a beat to settle before reading node.x/y - same
+	// convention selectAlbum()/useHistory.js already use after a data reload.
+	setTimeout(() => {
+		panToCluster(clusterId);
+		pulseClusterNode(clusterId);
+	}, 1000);
+}
+
+export function toggleConnections() {
+	container
+		.select(".links")
+		.selectAll(".link.cluster-link")
+		.transition()
+		.duration(500 / settings.animationSpeed)
+		.style("opacity", showConnections.value ? 0.4 : 0);
+}
+
+export function handleResize() {
+	if (svg && graphContainer.value) {
+		const width = graphContainer.value.clientWidth;
+		const height = graphContainer.value.clientHeight;
+		svg.attr("width", width).attr("height", height);
+		selectedWebsite.value = null;
+	}
+}

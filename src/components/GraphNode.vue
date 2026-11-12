@@ -1,19 +1,128 @@
+<!--
+Copyright (C) 2025-2026 Othman Ali
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public
+License along with this program. If not, see
+<https://www.gnu.org/licenses/>.
+-->
 <template>
 	<div class="w-screen h-screen relative overflow-hidden font-sans transition-all duration-300"
-		:style="{ backgroundColor: currentTheme.colors.background }">
+		:style="{ backgroundColor: currentTheme.colors.background }"
+		@dragenter="handleDragEnter" @dragover="handleDragOver" @dragleave="handleDragLeave" @drop.prevent="handleDrop">
+		<FirstRunChoice v-if="showFirstRunChoice" @choose="handleFirstRunChoice" />
+		<div v-if="showDropOverlay" class="fixed inset-0 z-[1500] flex items-center justify-center pointer-events-none animate-fadeIn"
+			:style="{ backgroundColor: 'rgba(0,0,0,0.35)' }">
+			<div class="flex flex-col items-center gap-4">
+				<div class="w-20 h-20 rounded-full flex items-center justify-center border-2 border-dashed"
+					:style="{ borderColor: '#ffffff', backgroundColor: 'rgba(255,255,255,0.1)' }">
+					<svg class="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+					</svg>
+				</div>
+				<p class="text-white text-lg font-semibold">Drop files for Rocus</p>
+			</div>
+		</div>
 		<div class="fixed top-0 left-0 right-0 z-[1000] px-5 py-4"
 			:style="{ backgroundColor: currentTheme.colors.background }">
 			<div class="flex items-center justify-between max-w-screen-2xl mx-auto">
-				<div class="flex items-center gap-4">
+				<div class="flex items-center gap-3">
 					<a href="/" class="flex items-center">
 						<img v-if="currentTheme.isDark" src="./images/RocusBlue.png" alt="Rocus" class="h-10 w-auto" />
 						<img v-else src="./images/RocusBlue.png" alt="Rocus" class="h-10 w-auto" />
 					</a>
+					<!-- Guest gets no pill here at all - the top-right role indicator
+						 ("Shared (view only)" / "Frozen copy") already says it, and having
+						 both said the same thing in two different spots in the header was
+						 redundant clutter, especially on a narrow mobile viewport. -->
+					<!-- Owner/collaborator: avatar stack + small share icon, click opens
+						 the share panel - the OWNER's own existing full management panel
+						 (top-right icon row, unchanged) for role==='owner' since it's the
+						 same isSharePanelOpen state either way; a NEW reduced, read-only
+						 panel (member list + quick-add toggle, no management controls)
+						 rendered right here for a collaborator, who has no owner panel to
+						 reuse. -->
+					<div v-if="isCurrentGraphShared && remoteGraphRole !== 'guest' && (sharedAvatars.length > 0 || sharePublicLinkEnabled)" class="relative">
+						<button @click.stop="isSharePanelOpen = !isSharePanelOpen"
+							:title="sharedAvatars.map((a) => a.label).join(', ')"
+							class="flex items-center gap-1.5">
+							<div class="flex items-center" style="padding-left: 6px;">
+								<div v-for="(avatar, i) in sharedAvatars.slice(0, 3)" :key="avatar.label"
+									class="relative w-7 h-7 rounded-full border-2 flex items-center justify-center text-xs font-semibold overflow-hidden"
+									:style="{ borderColor: currentTheme.colors.background, backgroundColor: currentTheme.colors.primary, color: '#fff', marginLeft: '-6px', zIndex: 3 - i }">
+									<img v-if="avatar.pictureUrl && !failedAvatarUrls.has(avatar.pictureUrl)" :src="avatar.pictureUrl"
+										:alt="avatar.label" class="w-full h-full object-cover" @error="markAvatarFailed(avatar.pictureUrl)" />
+									<span v-else>{{ avatar.label.charAt(0).toUpperCase() }}</span>
+									<span v-if="avatar.online" class="absolute bottom-0 right-0 w-2 h-2 rounded-full bg-green-500"
+										:style="{ border: `1.5px solid ${currentTheme.colors.background}` }" :title="`${avatar.label} is online`"></span>
+								</div>
+								<div v-if="sharedAvatars.length > 3"
+									class="w-7 h-7 rounded-full border-2 flex items-center justify-center text-[10px] font-semibold"
+									:style="{ borderColor: currentTheme.colors.background, backgroundColor: currentTheme.colors.surface, color: currentTheme.colors.textSecondary, marginLeft: '-6px' }">
+									+{{ sharedAvatars.length - 3 }}
+								</div>
+							</div>
+							<svg class="w-4 h-4" :style="{ color: currentTheme.colors.textSecondary }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+									d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+							</svg>
+						</button>
+
+						<div v-if="isSharePanelOpen && remoteGraphId && remoteGraphRole !== 'owner'" @click.stop
+							class="absolute top-full left-0 mt-2 w-80 rounded-2xl shadow-2xl border overflow-hidden z-50 animate-fadeIn"
+							:style="{ backgroundColor: currentTheme.colors.surface, borderColor: currentTheme.colors.border }">
+							<div class="px-4 py-3 border-b flex items-center justify-between" :style="{ borderColor: currentTheme.colors.border }">
+								<div class="text-sm font-semibold" :style="{ color: currentTheme.colors.text }">Shared graph</div>
+								<button @click="closeSharePanel" :style="{ color: currentTheme.colors.textSecondary }">✕</button>
+							</div>
+							<div class="p-4 space-y-3 max-h-96 overflow-y-auto text-xs">
+								<div v-for="avatar in sharedAvatars" :key="avatar.label" class="flex items-center gap-2">
+									<div class="relative w-6 h-6 rounded-full flex items-center justify-center font-semibold overflow-hidden"
+										:style="{ backgroundColor: currentTheme.colors.primary, color: '#fff' }">
+										<img v-if="avatar.pictureUrl && !failedAvatarUrls.has(avatar.pictureUrl)" :src="avatar.pictureUrl"
+											:alt="avatar.label" class="w-full h-full object-cover" @error="markAvatarFailed(avatar.pictureUrl)" />
+										<span v-else>{{ avatar.label.charAt(0).toUpperCase() }}</span>
+										<span v-if="avatar.online" class="absolute bottom-0 right-0 w-1.5 h-1.5 rounded-full bg-green-500"
+											:style="{ border: `1px solid ${currentTheme.colors.surface}` }" :title="`${avatar.label} is online`"></span>
+									</div>
+									<span :style="{ color: currentTheme.colors.text }">{{ avatar.label }}</span>
+								</div>
+
+								<!-- Only meaningful for an edit collaborator - a view-only
+									 collaborator can't push content into this graph at all, so
+									 the routing choice has nothing to act on. -->
+								<label v-if="remoteGraphRole === 'edit'"
+									class="flex items-center gap-2 pt-3 mt-1 border-t" :style="{ borderColor: currentTheme.colors.border, color: currentTheme.colors.textSecondary }">
+									<input type="checkbox" :checked="quickAddRoutesHere" @change="setQuickAddRouting($event.target.checked)" />
+									Route new quick-adds into this shared graph
+								</label>
+							</div>
+						</div>
+					</div>
 				</div>
 
-				<div class="flex-1 max-w-2xl mx-8">
+				<div v-if="!isCoarsePointer" class="flex-1 max-w-2xl mx-8">
 					<div class="relative">
-						<button @click.stop="toggleAlbumsDropdown"
+						<!-- Bare-bones read-only shell (guest/view-only shared graph): no
+							 album switching, just a static label - see isReadOnlySharedView -->
+						<div v-if="isReadOnlySharedView"
+							class="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl border"
+							:style="{ backgroundColor: currentTheme.colors.surface, borderColor: currentTheme.colors.border }">
+							<img src="./images/RocusFileIconColored.png" alt="" class="w-8 h-8 object-contain" />
+							<div class="text-sm font-medium" :style="{ color: currentTheme.colors.text }">
+								{{ currentAlbum ? currentAlbum.name : 'Shared Graph' }}
+							</div>
+						</div>
+						<button v-else @click.stop="handleToggleAlbumsDropdown"
 							class="w-full flex items-center justify-between px-4 py-2.5 rounded-xl border transition-all duration-200 group"
 							:style="{
 								backgroundColor: currentTheme.colors.surface,
@@ -21,14 +130,23 @@
 								color: currentTheme.colors.textSecondary
 							}" :class="'hover:border-[' + currentTheme.colors.primary + ']'">
 							<div class="flex items-center gap-3">
-								<img v-if="currentAlbum?.icon" :src="getIconUrl(currentAlbum.icon)" alt="Album icon"
+								<div v-if="dropdownMode === 'history'" class="w-8 h-8 shrink-0" :style="badgeVars">
+									<div v-if="currentHistoryDay" class="cal-chip">
+										<span class="cal-chip__m">{{ historyBadge.month }}</span>
+										<span class="cal-chip__d">{{ historyBadge.day }}</span>
+									</div>
+									<div v-else class="globe-chip"><i></i></div>
+								</div>
+								<img v-else-if="currentAlbum?.icon" :src="getIconUrl(currentAlbum.icon)" alt="Album icon"
 									class="w-8 h-8 object-contain" />
 								<img v-else src="./images/RocusFileIconColored.png" alt="Album icon"
 									class="w-8 h-8 object-contain" />
 
 								<div class="text-left">
 									<div class="text-sm font-medium" :style="{ color: currentTheme.colors.text }">
-										{{ currentAlbum ? currentAlbum.name : 'All Clusters' }}
+										{{ dropdownMode === 'history'
+											? (currentHistoryDay ? formatDayLabel(currentHistoryDay) : 'All Clusters')
+											: (currentAlbum ? currentAlbum.name : 'All Clusters') }}
 									</div>
 								</div>
 							</div>
@@ -41,18 +159,44 @@
 							</svg>
 						</button>
 
-						<div v-if="showAlbumsDropdown"
+						<div v-if="showAlbumsDropdown && !isReadOnlySharedView"
 							class="absolute top-full left-0 right-0 mt-2 rounded-2xl shadow-2xl border overflow-hidden z-50 animate-fadeIn"
 							:style="{
 								backgroundColor: currentTheme.colors.surface,
 								borderColor: currentTheme.colors.border
 							}">
-							<button @click="selectAlbum(null)"
-								class="w-full flex items-center gap-3 px-4 py-3 transition-colors"
+							<!-- Albums / Shared / History switch -->
+							<div class="px-3 pt-3 pb-1">
+								<div class="relative flex rounded-full p-0.5"
+									:style="{ backgroundColor: currentTheme.colors.background, border: `1px solid ${currentTheme.colors.border}` }">
+									<div class="absolute top-0.5 bottom-0.5 left-0.5 w-[calc(33.333%-2px)] rounded-full bg-[#4A90E2] transition-transform duration-200 ease-out"
+										:style="{ transform: dropdownMode === 'shared' ? 'translateX(100%)' : dropdownMode === 'history' ? 'translateX(200%)' : 'translateX(0)' }"></div>
+									<button @click.stop="setDropdownMode('albums')"
+										class="relative z-10 flex-1 py-1.5 text-xs font-semibold rounded-full transition-colors duration-200"
+										:style="{ color: dropdownMode === 'albums' ? '#fff' : currentTheme.colors.textSecondary }">
+										Albums
+									</button>
+									<button @click.stop="setDropdownMode('shared')"
+										class="relative z-10 flex-1 py-1.5 text-xs font-semibold rounded-full transition-colors duration-200"
+										:style="{ color: dropdownMode === 'shared' ? '#fff' : currentTheme.colors.textSecondary }">
+										Shared
+									</button>
+									<button @click.stop="setDropdownMode('history')"
+										class="relative z-10 flex-1 py-1.5 text-xs font-semibold rounded-full transition-colors duration-200"
+										:style="{ color: dropdownMode === 'history' ? '#fff' : currentTheme.colors.textSecondary }">
+										History
+									</button>
+								</div>
+							</div>
+
+							<button v-if="dropdownMode !== 'shared'" @click="selectAllClusters"
+								class="w-full flex items-center gap-3 px-4 py-3 transition-colors group"
 								:style="{ color: currentTheme.colors.text }" :class="{
-									'bg-[#4A90E2]/10': !currentAlbum,
+									'bg-[#4A90E2]/10': !currentAlbum && !currentHistoryDay,
 								}">
-								<span class="text-2xl">🌐</span>
+								<div class="w-8 h-8 shrink-0" :style="badgeVars">
+									<div class="globe-chip"><i></i></div>
+								</div>
 								<div class="flex-1 text-left">
 									<div class="text-sm font-medium" :style="{ color: currentTheme.colors.text }">
 										All Clusters
@@ -60,7 +204,7 @@
 									<div class="text-xs" :style="{ color: currentTheme.colors.textSecondary }">View
 										everything</div>
 								</div>
-								<svg v-if="!currentAlbum" class="w-5 h-5 text-[#4A90E2]" fill="currentColor"
+								<svg v-if="!currentAlbum && !currentHistoryDay" class="w-5 h-5 text-[#4A90E2]" fill="currentColor"
 									viewBox="0 0 20 20">
 									<path fill-rule="evenodd"
 										d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
@@ -68,57 +212,168 @@
 								</svg>
 							</button>
 
-							<div class="h-px mx-4" :style="{ backgroundColor: currentTheme.colors.border }"></div>
+							<div v-if="dropdownMode !== 'shared'" class="h-px mx-4" :style="{ backgroundColor: currentTheme.colors.border }"></div>
 
-							<div class="max-h-64 overflow-y-auto">
-								<button v-for="album in albums" :key="album.id" @click="selectAlbum(album)"
-									class="w-full flex items-center gap-3 px-4 py-3 transition-colors group" :class="{
-										'bg-[#4A90E2]/10': currentAlbum?.id === album.id,
-									}">
-									<img :src="getIconUrl(album.icon)" alt="Album icon"
-										class="w-8 h-8 object-contain" />
-									<div class="flex-1 text-left">
-										<div class="text-sm font-medium" :style="{ color: currentTheme.colors.text }">
-											{{ album.name }}
+							<template v-if="dropdownMode === 'albums'">
+								<div class="max-h-64 overflow-y-auto">
+									<button v-for="album in albums" :key="album.id" @click="selectAlbum(album)"
+										class="w-full flex items-center gap-3 px-4 py-3 transition-colors group" :class="{
+											'bg-[#4A90E2]/10': currentAlbum?.id === album.id,
+										}">
+										<img :src="getIconUrl(album.icon)" alt="Album icon"
+											class="w-8 h-8 object-contain" />
+										<div class="flex-1 text-left">
+											<div class="text-sm font-medium" :style="{ color: currentTheme.colors.text }">
+												{{ album.name }}
+											</div>
 										</div>
-									</div>
-									<div class="flex items-center gap-2">
-										<svg v-if="currentAlbum?.id === album.id" class="w-5 h-5 text-[#4A90E2]"
+										<div class="flex items-center gap-2">
+											<svg v-if="currentAlbum?.id === album.id" class="w-5 h-5 text-[#4A90E2]"
+												fill="currentColor" viewBox="0 0 20 20">
+												<path fill-rule="evenodd"
+													d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+													clip-rule="evenodd" />
+											</svg>
+											<button @click.stop="editAlbum(album)"
+												class="p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"
+												:style="{ color: currentTheme.colors.textSecondary }">
+												<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+														d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+												</svg>
+											</button>
+											<button @click.stop="deleteAlbum(album)"
+												class="p-1.5 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 opacity-0 group-hover:opacity-100 transition-opacity">
+												<svg class="w-4 h-4 text-red-600 dark:text-red-400" fill="none"
+													stroke="currentColor" viewBox="0 0 24 24">
+													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+														d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+												</svg>
+											</button>
+										</div>
+									</button>
+								</div>
+
+								<div class="h-px mx-4" :style="{ backgroundColor: currentTheme.colors.border }"></div>
+
+								<button @click="createNewAlbum"
+									class="w-full flex items-center gap-3 px-4 py-3 transition-colors text-[#4A90E2] font-medium">
+									<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+											d="M12 4v16m8-8H4" />
+									</svg>
+									<span class="text-sm">Create New Album</span>
+								</button>
+							</template>
+
+							<template v-else-if="dropdownMode === 'history'">
+								<div class="max-h-64 overflow-y-auto">
+									<button v-if="historyDays.length === 0"
+										class="w-full px-4 py-3 text-sm text-center cursor-default"
+										:style="{ color: currentTheme.colors.textSecondary }">
+										No processed clusters yet
+									</button>
+									<button v-for="day in historyDays" :key="day.key" @click="selectHistoryDay(day.key)"
+										class="w-full flex items-center gap-3 px-4 py-3 transition-colors group" :class="{
+											'bg-[#4A90E2]/10': currentHistoryDay === day.key,
+										}">
+										<div class="w-8 h-8 shrink-0" :style="badgeVars">
+											<div class="cal-chip">
+												<span class="cal-chip__m">{{ computeDayBadge(day.key).month }}</span>
+												<span class="cal-chip__d">{{ computeDayBadge(day.key).day }}</span>
+											</div>
+										</div>
+										<div class="flex-1 text-left">
+											<div class="text-sm font-medium" :style="{ color: currentTheme.colors.text }">
+												{{ day.label }}
+											</div>
+											<div class="text-xs" :style="{ color: currentTheme.colors.textSecondary }">
+												{{ day.count }} {{ day.count === 1 ? 'cluster' : 'clusters' }}
+											</div>
+										</div>
+										<svg v-if="currentHistoryDay === day.key" class="w-5 h-5 text-[#4A90E2]"
 											fill="currentColor" viewBox="0 0 20 20">
 											<path fill-rule="evenodd"
 												d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
 												clip-rule="evenodd" />
 										</svg>
-										<button @click.stop="editAlbum(album)"
-											class="p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"
-											:style="{ color: currentTheme.colors.textSecondary }">
-											<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-													d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-											</svg>
-										</button>
-										<button @click.stop="deleteAlbum(album)"
-											class="p-1.5 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 opacity-0 group-hover:opacity-100 transition-opacity">
-											<svg class="w-4 h-4 text-red-600 dark:text-red-400" fill="none"
-												stroke="currentColor" viewBox="0 0 24 24">
-												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-													d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-											</svg>
+									</button>
+								</div>
+							</template>
+
+							<!-- Shared tab: two stacked lists, not a content filter for the
+								 current view - see setDropdownMode()'s comment on why
+								 switching here never touches currentAlbum/currentHistoryDay. -->
+							<template v-else-if="dropdownMode === 'shared'">
+								<div v-if="myActivelySharedAlbums.length === 0 && sharedWithMeGraphs.length === 0"
+									class="w-full px-4 py-6 text-sm text-center cursor-default"
+									:style="{ color: currentTheme.colors.textSecondary }">
+									Nothing shared yet
+								</div>
+
+								<!-- "Shared (Owner)" - the current user's OWN albums that are
+									 actively shared. Behaves exactly like a normal album row
+									 (same selectAlbum() call) since this is the owner's own
+									 local data, just annotated. -->
+								<template v-if="myActivelySharedAlbums.length > 0">
+									<div class="px-4 pt-3 pb-1 text-xs font-semibold uppercase tracking-wide"
+										:style="{ color: currentTheme.colors.textSecondary }">
+										Shared (Owner)
+									</div>
+									<div class="max-h-40 overflow-y-auto">
+										<button v-for="entry in myActivelySharedAlbums" :key="entry.graphId" @click="selectAlbum(entry.album)"
+											class="w-full flex items-center gap-3 px-4 py-3 transition-colors" :class="{
+												'bg-[#4A90E2]/10': currentAlbum?.id === entry.album.id,
+											}">
+											<img :src="getIconUrl(entry.album.icon)" alt="Album icon" class="w-8 h-8 object-contain" />
+											<div class="flex-1 text-left">
+												<div class="text-sm font-medium" :style="{ color: currentTheme.colors.text }">
+													{{ entry.album.name }}
+												</div>
+											</div>
+											<span class="text-[10px] font-medium px-2 py-0.5 rounded-full"
+												:style="{ backgroundColor: withAlpha(currentTheme.colors.primary, 0.12), color: currentTheme.colors.primary }">
+												Shared
+											</span>
 										</button>
 									</div>
-								</button>
-							</div>
+								</template>
 
-							<div class="h-px mx-4" :style="{ backgroundColor: currentTheme.colors.border }"></div>
-
-							<button @click="createNewAlbum"
-								class="w-full flex items-center gap-3 px-4 py-3 transition-colors text-[#4A90E2] font-medium">
-								<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-										d="M12 4v16m8-8H4" />
-								</svg>
-								<span class="text-sm">Create New Album</span>
-							</button>
+								<!-- "Shared with Me" - graphs someone ELSE shared with you.
+									 This data lives on their account, not this browser's local
+									 library, so clicking navigates to the real /shared/:graphId
+									 page rather than filtering the current view in place. -->
+								<template v-if="sharedWithMeGraphs.length > 0">
+									<div v-if="myActivelySharedAlbums.length > 0" class="h-px mx-4 mt-1" :style="{ backgroundColor: currentTheme.colors.border }"></div>
+									<div class="px-4 pt-3 pb-1 text-xs font-semibold uppercase tracking-wide"
+										:style="{ color: currentTheme.colors.textSecondary }">
+										Shared with Me
+									</div>
+									<div class="max-h-40 overflow-y-auto">
+										<button v-for="graph in sharedWithMeGraphs" :key="graph.id" @click="openSharedWithMeGraph(graph.id)"
+											class="w-full flex items-center gap-3 px-4 py-3 transition-colors">
+											<div class="w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold overflow-hidden shrink-0"
+												:style="{ backgroundColor: currentTheme.colors.primary, color: '#fff' }">
+												<img v-if="graph.ownerPictureUrl && !failedAvatarUrls.has(graph.ownerPictureUrl)" :src="graph.ownerPictureUrl"
+													:alt="graph.ownerName || '?'" class="w-full h-full object-cover" @error="markAvatarFailed(graph.ownerPictureUrl)" />
+												<span v-else>{{ (graph.ownerName || '?').charAt(0).toUpperCase() }}</span>
+											</div>
+											<div class="flex-1 text-left min-w-0">
+												<div class="text-sm font-medium truncate" :style="{ color: currentTheme.colors.text }">
+													{{ graph.title || 'Shared graph' }}
+												</div>
+												<div class="text-xs truncate" :style="{ color: currentTheme.colors.textSecondary }">
+													Shared by {{ graph.ownerName || 'someone' }}
+												</div>
+											</div>
+										<span class="text-[10px] font-medium px-2 py-0.5 rounded-full"
+											:style="{ backgroundColor: currentTheme.colors.background, color: currentTheme.colors.textSecondary, border: `1px solid ${currentTheme.colors.border}` }">
+											{{ graph.permissionLevel === 'edit' ? 'Edit' : 'View' }}
+										</span>
+									</button>
+								</div>
+							</template>
+						</template>
 						</div>
 					</div>
 
@@ -140,11 +395,11 @@
 							<input ref="searchInputRef" v-model="searchInput" @input="performSearch"
 								@focus="isSearchFocused = true" @blur="handleSearchBlur" type="text"
 								placeholder="Search clusters, websites, domains..."
-								class="bg-transparent border-none focus:outline-none focus:ring-0 outline-none w-80 placeholder-gray-400 transition-all duration-200"
+								class="bg-transparent border-none focus:outline-none focus:ring-0 outline-none w-[min(20rem,calc(100vw-8rem))] placeholder-gray-400 transition-all duration-200"
 								:style="{ color: currentTheme.colors.text }" />
 
 							<button v-if="searchInput" @click="clearSearch"
-								class="p-1.5 rounded-full transition-all duration-200 flex-shrink-0"
+								:class="[isCoarsePointer ? 'p-2.5' : 'p-1.5', 'rounded-full transition-all duration-200 flex-shrink-0']"
 								:style="{ color: currentTheme.colors.textSecondary }">
 								<svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
 									<path fill-rule="evenodd"
@@ -165,6 +420,16 @@
 								</span>
 							</div>
 
+							<button @click.stop="openShortcutsPanel" title="Tips & shortcuts"
+								class="flex items-center gap-1.5 px-2 py-1 rounded-lg transition-all duration-200 flex-shrink-0 border"
+								:style="{
+									backgroundColor: currentTheme.isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
+									borderColor: currentTheme.colors.border,
+									color: currentTheme.colors.textSecondary
+								}">
+								<span class="text-xs font-medium tracking-wider">/</span>
+							</button>
+
 							<!-- <div v-if="showContextMenu" @click.stop
 								class="fixed z-[2500] rounded-xl shadow-2xl border overflow-hidden min-w-[200px] animate-scaleIn"
 								:style="{
@@ -176,13 +441,41 @@
 								{{ matchCount }}
 							</div> -->
 						</div>
+
+						<div v-if="showShortcutsPanel" @click.stop
+							class="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-96 rounded-2xl shadow-2xl border overflow-hidden z-50 animate-fadeIn"
+							:style="{ backgroundColor: currentTheme.colors.surface, borderColor: currentTheme.colors.border }">
+							<div class="px-4 py-3 border-b flex items-center justify-between" :style="{ borderColor: currentTheme.colors.border }">
+								<div>
+									<div class="text-sm font-semibold" :style="{ color: currentTheme.colors.text }">Tips & shortcuts</div>
+									<div class="text-xs mt-0.5" :style="{ color: currentTheme.colors.textSecondary }">A quick reference for how Rocus works</div>
+								</div>
+								<button @click="closeShortcutsPanel" :style="{ color: currentTheme.colors.textSecondary }">✕</button>
+							</div>
+							<div class="p-4 space-y-4 max-h-96 overflow-y-auto">
+								<div v-for="section in shortcutSections" :key="section.title">
+									<div class="flex items-center gap-2 mb-2">
+										<svg class="w-4 h-4" :style="{ color: currentTheme.colors.primary }" fill="none"
+											stroke="currentColor" viewBox="0 0 24 24">
+											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="section.icon" />
+										</svg>
+										<span class="text-xs font-semibold uppercase tracking-wider"
+											:style="{ color: currentTheme.colors.textSecondary }">{{ section.title }}</span>
+									</div>
+									<ul class="space-y-1.5 pl-6">
+										<li v-for="tip in section.tips" :key="tip" class="text-sm list-disc"
+											:style="{ color: currentTheme.colors.text }">{{ tip }}</li>
+									</ul>
+								</div>
+							</div>
+						</div>
 					</div>
 
 				</div>
 
 				<div class="flex items-center gap-3">
-					<button @click="toggleThemes" class="p-2.5 rounded-xl transition-all"
-						:style="{ backgroundColor: currentTheme.colors.surface }">
+					<button v-if="!isReadOnlySharedView" @click="toggleThemes" :class="[isCoarsePointer ? 'p-3.5' : 'p-2.5', 'rounded-xl transition-all']"
+						:style="{ backgroundColor: currentTheme.colors.surface }" title="Theme">
 						<svg class="w-5 h-5" :style="{ color: currentTheme.colors.textSecondary }" fill="none"
 							stroke="currentColor" viewBox="0 0 24 24">
 							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -190,8 +483,160 @@
 						</svg>
 					</button>
 
-					<button @click="toggleSettings" class="p-2.5 rounded-xl transition-all"
-						:style="{ backgroundColor: currentTheme.colors.surface }">
+					<div v-if="!isReadOnlySharedView" class="relative uploads-panel-container">
+						<button @click.stop="toggleUploadsPanel" :class="[isCoarsePointer ? 'p-3.5' : 'p-2.5', 'rounded-xl transition-all']"
+							:style="{ backgroundColor: currentTheme.colors.surface }" title="My Files">
+							<svg class="w-5 h-5" :style="{ color: currentTheme.colors.textSecondary }" fill="none"
+								stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+									d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+							</svg>
+						</button>
+
+						<div v-if="showUploadsPanel"
+							class="absolute top-full right-0 mt-2 w-80 rounded-2xl shadow-2xl border overflow-hidden z-50 animate-fadeIn"
+							:style="{ backgroundColor: currentTheme.colors.surface, borderColor: currentTheme.colors.border }">
+							<div class="px-4 py-3 border-b" :style="{ borderColor: currentTheme.colors.border }">
+								<div class="text-sm font-semibold" :style="{ color: currentTheme.colors.text }">My Files</div>
+							</div>
+							<div class="max-h-72 overflow-y-auto">
+								<div v-if="uploadedFilesWithTopics.length === 0" class="px-4 py-6 text-sm text-center"
+									:style="{ color: currentTheme.colors.textSecondary }">
+									No files uploaded yet
+								</div>
+								<div v-for="group in filesByTopic" :key="group.topic">
+									<div class="px-4 pt-3 pb-1 text-xs font-semibold uppercase tracking-wide"
+										:style="{ color: currentTheme.colors.textSecondary }">
+										{{ group.topic }}
+									</div>
+									<div v-for="file in group.files" :key="file.id"
+										class="flex items-center gap-3 px-4 py-3 group">
+										<span class="text-xl">📄</span>
+										<div class="flex-1 min-w-0">
+											<div class="text-sm font-medium truncate" :style="{ color: currentTheme.colors.text }">
+												{{ file.original_name }}
+											</div>
+											<div class="text-xs truncate" :style="{ color: currentTheme.colors.textSecondary }">
+												{{ formatDate(file.created_at) }}
+											</div>
+										</div>
+										<button @click="downloadFile(file.id)" title="Download"
+											class="p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"
+											:style="{ color: currentTheme.colors.textSecondary }">
+											<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+													d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+											</svg>
+										</button>
+									</div>
+								</div>
+							</div>
+						</div>
+					</div>
+
+					<!-- Share icon: top right, every graph, per plan doc "UI surfaces" -->
+					<div v-if="!remoteGraphId || remoteGraphRole === 'owner'" class="relative share-panel-container">
+						<button @click.stop="handleShareClick" :class="[isCoarsePointer ? 'p-3.5' : 'p-2.5', 'rounded-xl transition-all']"
+							:style="{ backgroundColor: currentTheme.colors.surface }" title="Share this graph">
+							<svg class="w-5 h-5" :style="{ color: currentTheme.colors.textSecondary }" fill="none"
+								stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+									d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+							</svg>
+						</button>
+
+						<div v-if="isSharePanelOpen" @click.stop
+							class="absolute top-full right-0 mt-2 w-96 rounded-2xl shadow-2xl border overflow-hidden z-50 animate-fadeIn"
+							:style="{ backgroundColor: currentTheme.colors.surface, borderColor: currentTheme.colors.border }">
+							<div class="px-4 py-3 border-b flex items-center justify-between" :style="{ borderColor: currentTheme.colors.border }">
+								<div class="text-sm font-semibold" :style="{ color: currentTheme.colors.text }">Share this graph</div>
+								<button @click="closeSharePanel" :style="{ color: currentTheme.colors.textSecondary }">✕</button>
+							</div>
+							<div class="p-4 space-y-4 max-h-96 overflow-y-auto">
+								<div v-if="shareBusy" class="text-sm" :style="{ color: currentTheme.colors.textSecondary }">Sharing…</div>
+								<div v-if="shareError" class="text-sm text-red-500">{{ shareError }}</div>
+
+								<!-- Available whenever there's an actively-shared graph to route
+									 into, whether that's this /dashboard's currently-selected
+									 album (activeShareGraphId) or a reopened share link
+									 (remoteGraphId) - placed outside the activeShareUrl block
+									 below since that's only ever populated by shareCurrentGraph()
+									 in this same session, not by reopening an existing link. -->
+								<label v-if="remoteGraphId || activeShareGraphId"
+									class="flex items-center gap-2 text-xs" :style="{ color: currentTheme.colors.textSecondary }">
+									<input type="checkbox" :checked="quickAddRoutesHere" @change="setQuickAddRouting($event.target.checked)" />
+									Route new quick-adds into this shared graph
+								</label>
+
+								<div v-if="activeShareUrl">
+									<div class="flex items-center gap-2">
+										<input readonly :value="activeShareUrl" class="flex-1 text-xs px-2 py-1.5 rounded-lg border"
+											:style="{ backgroundColor: currentTheme.colors.background, borderColor: currentTheme.colors.border, color: currentTheme.colors.text }" />
+										<button @click="copyShareLink" class="text-xs px-2 py-1.5 rounded-lg"
+											:style="{ backgroundColor: currentTheme.colors.primary, color: '#fff' }">Copy</button>
+									</div>
+
+									<label class="flex items-center gap-2 mt-3 text-xs" :style="{ color: currentTheme.colors.textSecondary }">
+										<input type="checkbox" :checked="sharePublicLinkEnabled" @change="togglePublicLink($event.target.checked)" />
+										Anyone with the link can view (no account needed)
+									</label>
+
+									<!-- Only asked when (a) the public link is on, and (b) there's
+										 at least one file in the graph to actually gate - "if there
+										 are any," per the request. -->
+									<label v-if="sharePublicLinkEnabled && shareTargetHasFiles()"
+										class="flex items-center gap-2 mt-2 text-xs" :style="{ color: currentTheme.colors.textSecondary }">
+										<input type="checkbox" :checked="sharePublicLinkAllowsDownloads" @change="toggleGuestDownloads($event.target.checked)" />
+										Allow people with the link to download files in this graph
+									</label>
+
+									<div class="mt-4 pt-3 border-t" :style="{ borderColor: currentTheme.colors.border }">
+										<div class="text-xs font-semibold uppercase tracking-wide mb-2" :style="{ color: currentTheme.colors.textSecondary }">Invite by email</div>
+										<div class="flex items-center gap-2">
+											<input v-model="inviteEmailInput" type="email" placeholder="name@example.com"
+												class="flex-1 text-xs px-2 py-1.5 rounded-lg border"
+												:style="{ backgroundColor: currentTheme.colors.background, borderColor: currentTheme.colors.border, color: currentTheme.colors.text }" />
+											<select v-model="invitePermissionInput" class="text-xs px-2 py-1.5 rounded-lg border"
+												:style="{ backgroundColor: currentTheme.colors.background, borderColor: currentTheme.colors.border, color: currentTheme.colors.text }">
+												<option value="view">View only</option>
+												<option value="edit">Can edit</option>
+											</select>
+											<button @click="handleInviteSubmit" class="text-xs px-3 py-1.5 rounded-lg"
+												:style="{ backgroundColor: currentTheme.colors.primary, color: '#fff' }">Invite</button>
+										</div>
+									</div>
+
+									<div v-if="shareMembers.length" class="mt-4 pt-3 border-t space-y-2" :style="{ borderColor: currentTheme.colors.border }">
+										<div class="text-xs font-semibold uppercase tracking-wide mb-1" :style="{ color: currentTheme.colors.textSecondary }">Collaborators</div>
+										<div v-for="member in shareMembers" :key="member.invited_email" class="flex items-center justify-between gap-2 text-xs">
+											<span :style="{ color: currentTheme.colors.text }">{{ member.invited_email }}</span>
+											<div class="flex items-center gap-1">
+												<select :value="member.permission_level"
+													@change="updateCollaboratorPermission(member.invited_email, { permissionLevel: $event.target.value })"
+													class="text-xs px-1.5 py-1 rounded-lg border"
+													:style="{ backgroundColor: currentTheme.colors.background, borderColor: currentTheme.colors.border, color: currentTheme.colors.text }">
+													<option value="view">View</option>
+													<option value="edit">Edit</option>
+												</select>
+												<button @click="revokeCollaborator(member.invited_email)" class="px-1.5 py-1 rounded-lg"
+													:style="{ color: currentTheme.colors.textSecondary }" title="Revoke access">✕</button>
+											</div>
+										</div>
+									</div>
+								</div>
+							</div>
+						</div>
+					</div>
+
+					<!-- Shared-graph indicator for a non-owner viewer, per plan doc -->
+					<div v-if="remoteGraphId && remoteGraphRole !== 'owner'"
+						class="px-3 py-1.5 rounded-xl text-xs font-medium"
+						:style="{ backgroundColor: currentTheme.colors.surface, color: currentTheme.colors.textSecondary }">
+						{{ remoteGraphFrozen ? 'Frozen copy' : remoteGraphRole === 'guest' ? 'Shared (view only)' : `Shared (${remoteGraphRole})` }}
+					</div>
+
+					<button v-if="!isReadOnlySharedView" @click="toggleSettings" :class="[isCoarsePointer ? 'p-3.5' : 'p-2.5', 'rounded-xl transition-all']"
+						:style="{ backgroundColor: currentTheme.colors.surface }" title="Settings">
 						<svg class="w-5 h-5" :style="{ color: currentTheme.colors.textSecondary }" fill="none"
 							stroke="currentColor" viewBox="0 0 24 24">
 							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -201,9 +646,9 @@
 						</svg>
 					</button>
 
-					<button @click="toggleModelStatus" class="relative p-2.5 rounded-xl transition-all"
-						:style="{ backgroundColor: currentTheme.colors.surface }">
-						<svg v-if="modelLoading" class="w-5 h-5 text-[#4A90E2] animate-spin" fill="none"
+					<button v-if="!isReadOnlySharedView" @click="toggleModelStatus" class="relative p-2.5 rounded-xl transition-all"
+						:style="{ backgroundColor: currentTheme.colors.surface }" title="AI Model Status">
+						<svg v-if="showModelLoadingIndicator" class="w-5 h-5 text-[#4A90E2] animate-spin" fill="none"
 							stroke="currentColor" viewBox="0 0 24 24">
 							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
 								d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -217,7 +662,7 @@
 							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
 								d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
 						</svg>
-						<div v-if="!modelLoading && !error"
+						<div v-if="!showModelLoadingIndicator && !error"
 							class="absolute top-1 right-1 w-2 h-2 bg-green-500 rounded-full border-2"
 							:style="{ borderColor: currentTheme.colors.surface }">
 						</div>
@@ -227,14 +672,14 @@
 						</div>
 					</button>
 
-					<!-- <button @click="handleProfileClick" class="p-2.5 rounded-xl transition-all"
-						:style="{ backgroundColor: currentTheme.colors.surface }">
+					<button v-if="!isReadOnlySharedView" @click="handleProfileClick" :class="[isCoarsePointer ? 'p-3.5' : 'p-2.5', 'rounded-xl transition-all']"
+						:style="{ backgroundColor: currentTheme.colors.surface }" :title="store.user ? 'Sign out' : 'Sign in'">
 						<svg class="w-5 h-5" :style="{ color: currentTheme.colors.textSecondary }" fill="none"
 							stroke="currentColor" viewBox="0 0 24 24">
 							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
 								d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
 						</svg>
-					</button> -->
+					</button>
 				</div>
 			</div>
 		</div>
@@ -301,8 +746,8 @@
 						}">
 						Cancel
 					</button>
-					<button @click="saveAlbum"
-						class="flex-1 px-6 py-3 bg-[#4A90E2] text-white rounded-xl font-medium hover:bg-[#357ABD] transition-all shadow-lg shadow-[#4A90E2]/30">
+					<button @click="saveAlbum" :disabled="!albumForm.name.trim()"
+						class="flex-1 px-6 py-3 bg-[#4A90E2] text-white rounded-xl font-medium hover:bg-[#357ABD] transition-all shadow-lg shadow-[#4A90E2]/30 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-[#4A90E2]">
 						{{ editingAlbum ? "Save" : "Create" }}
 					</button>
 				</div>
@@ -310,7 +755,7 @@
 		</div>
 
 		<div v-if="showModelStatus" @click="closeModelStatus"
-			class="fixed inset-0 bg-black/50 backdrop-blur-sm z-[2000] flex items-center justify-center p-4 animate-fadeIn">
+			class="fixed inset-0 bg-black/50 backdrop-blur-sm z-[2100] flex items-center justify-center p-4 animate-fadeIn">
 			<div @click.stop class="border rounded-3xl p-8 w-full max-w-md shadow-2xl animate-scaleIn" :style="{
 				backgroundColor: currentTheme.colors.surface,
 				borderColor: currentTheme.colors.border
@@ -360,16 +805,16 @@
 							<span class="font-semibold" :style="{ color: currentTheme.colors.text }">
 								AI Model
 							</span>
-							<span v-if="summarizationModel"
+							<span v-if="summarizationModel || processingMode === 'commercial'"
 								class="px-2 py-1 rounded-full text-xs bg-green-500 text-white">
-								Loaded
+								{{ processingMode === 'commercial' ? 'Cloud' : 'Loaded' }}
 							</span>
 							<span v-else class="px-2 py-1 rounded-full text-xs bg-gray-500 text-white">
 								Not Loaded
 							</span>
 						</div>
 						<p class="text-sm" :style="{ color: currentTheme.colors.textSecondary }">
-							Qwen2.5-0.5B (Self-hosted)
+							{{ processingMode === 'commercial' ? 'Cloud Processing' : 'Self-Hosted' }}
 						</p>
 					</div>
 
@@ -423,7 +868,7 @@
 
 				<!-- Actions -->
 				<div class="mt-6 space-y-3">
-					<button v-if="error" @click="loadModels"
+					<button v-if="error" @click="ensureModelsLoaded"
 						class="w-full px-6 py-3 rounded-xl font-medium transition-all" :style="{
 							backgroundColor: currentTheme.colors.primary,
 							color: '#ffffff'
@@ -441,7 +886,7 @@
 				</div>
 			</div>
 		</div>
-		<div v-if="showSettings" @click="closeSettings"
+		<div v-if="showSettings && !isReadOnlySharedView" @click="closeSettings"
 			class="fixed inset-0 bg-black/50 backdrop-blur-sm z-[2000] flex items-center justify-center p-4 animate-fadeIn">
 			<div @click.stop
 				class="border rounded-3xl p-8 w-full max-w-md shadow-2xl animate-scaleIn max-h-[80vh] overflow-y-auto"
@@ -512,6 +957,56 @@
 						</button>
 					</div>
 
+					<div class="flex items-center justify-between">
+						<div>
+							<div class="font-medium flex items-center gap-2"
+								:style="{ color: currentTheme.colors.text }">
+								AI Processing
+							</div>
+							<div class="text-sm" :style="{ color: currentTheme.colors.textSecondary }">
+								Cloud AI Processing, or your own on-device model.
+							</div>
+						</div>
+						<div class="relative flex rounded-full p-0.5 w-36 shrink-0" :style="{
+							backgroundColor: currentTheme.colors.background,
+							border: `1px solid ${currentTheme.colors.border}`
+						}">
+							<div class="absolute top-0.5 bottom-0.5 left-0.5 w-[calc(50%-2px)] rounded-full bg-[#4A90E2] transition-transform duration-200 ease-out"
+								:style="{ transform: processingMode === 'local' ? 'translateX(100%)' : 'translateX(0)' }"></div>
+							<button @click="setProcessingMode('commercial')"
+								class="relative z-10 flex-1 py-1.5 text-xs font-semibold rounded-full transition-colors duration-200"
+								:style="{ color: processingMode === 'commercial' ? '#fff' : currentTheme.colors.textSecondary }">
+								Cloud
+							</button>
+							<button @click="setProcessingMode('local')"
+								class="relative z-10 flex-1 py-1.5 text-xs font-semibold rounded-full transition-colors duration-200"
+								:style="{ color: processingMode === 'local' ? '#fff' : currentTheme.colors.textSecondary }">
+								Local
+							</button>
+						</div>
+					</div>
+
+					<div class="h-px" :style="{ backgroundColor: currentTheme.colors.border }"></div>
+
+					<div class="flex items-center justify-between gap-4">
+						<div>
+							<div class="font-medium" :style="{ color: currentTheme.colors.text }">
+								Web suggestions
+							</div>
+							<div class="text-sm" :style="{ color: currentTheme.colors.textSecondary }">
+								Sends each saved page's topic to rocus.io + Serper to suggest related links. Off by
+								default.
+							</div>
+						</div>
+						<button @click="setWebSuggestionsEnabled(!webSuggestionsEnabled)" role="switch"
+							:aria-checked="webSuggestionsEnabled"
+							class="relative w-11 h-6 rounded-full shrink-0 transition-colors duration-200"
+							:style="{ backgroundColor: webSuggestionsEnabled ? '#4A90E2' : currentTheme.colors.border }">
+							<span class="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform duration-200"
+								:style="{ transform: webSuggestionsEnabled ? 'translateX(20px)' : 'translateX(0)' }"></span>
+						</button>
+					</div>
+
 					<!-- In Settings Modal, add after Show Connections -->
 					<div class="h-px" :style="{ backgroundColor: currentTheme.colors.border }"></div>
 
@@ -549,6 +1044,8 @@
 						</button>
 						<input ref="importFileInput" type="file" accept=".rocus" style="display: none"
 							@change="handleImport" />
+
+						<WaitlistEmailCapture />
 					</div>
 
 					<div class="h-px" :style="{ backgroundColor: currentTheme.colors.border }"></div>
@@ -651,6 +1148,7 @@
 
 		<div class="fixed bottom-8 right-8 z-[1000] flex flex-col gap-3">
 			<button @click="resetView" class="p-4 rounded-2xl shadow-lg hover:shadow-xl transition-all border group"
+				title="Reset view"
 				:style="{
 					backgroundColor: currentTheme.colors.background,
 					borderColor: currentTheme.colors.border
@@ -663,6 +1161,7 @@
 				</svg>
 			</button>
 			<button @click="refreshData" class="p-4 rounded-2xl shadow-lg hover:shadow-xl transition-all border group"
+				title="Refresh data"
 				:style="{
 					backgroundColor: currentTheme.colors.background,
 					borderColor: currentTheme.colors.border
@@ -675,15 +1174,138 @@
 				</svg>
 			</button>
 
-			<button v-if="explodedNode" @click="collapseNode"
+			<button v-if="explodedNode" @click="collapseNode" title="Collapse cluster"
 				class="p-4 bg-[#4A90E2] text-white rounded-2xl shadow-lg hover:shadow-xl hover:bg-[#357ABD] transition-all">
 				<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
 				</svg>
 			</button>
 		</div>
-		<div id="graph-container" ref="graphContainer" @click="handleBackgroundClick"
+		<div id="graph-container" ref="graphContainer" @click="handleBackgroundClick(); handleGraphLeftClick($event)"
+			@contextmenu.prevent="handleGraphRightClick"
 			class="w-full h-full pt-20 cursor-grab active:cursor-grabbing"></div>
+
+		<!-- Rocus branding on a read-only shared view only - the owner's own
+			 dashboard never shows this. Sits below the header (matches its own
+			 pt-20 clearance on graph-container above) so it doesn't collide with
+			 the "Shared (view only)" pill already living in the header's
+			 top-right icon cluster for guests. -->
+		<img v-if="isReadOnlySharedView" :src="rocusIconUrl" alt="Rocus"
+			class="fixed top-20 right-4 w-9 h-9 rounded-lg shadow-lg pointer-events-none select-none z-20" />
+
+		<!-- Persistent nudge once there's nothing on the canvas and the tutorial
+			 isn't up to explain that itself (dismissed/skipped/already seen). -->
+		<div v-if="graphIsEmpty && !tutorialActive && !isReadOnlySharedView"
+			class="fixed inset-0 flex items-center justify-center pointer-events-none z-10">
+			<div class="text-center max-w-sm px-6 pointer-events-none" :style="{ color: currentTheme.colors.textSecondary }">
+				<p class="text-lg font-medium mb-1" :style="{ color: currentTheme.colors.text }">No websites yet</p>
+				<p class="text-sm">Install the browser extension to start saving, or right-click anywhere here to add a note or file.</p>
+			</div>
+		</div>
+
+		<!-- "+" prompt after a right click on empty canvas (triple left-click opens the note creator directly) -->
+		<div v-if="showAddNotePrompt" class="fixed z-[1400] animate-fadeIn"
+			:style="{ ...addNotePromptStyle, transform: 'translate(-50%, -50%)' }">
+			<button @click.stop="openAddTypeMenu" title="Add a note or file"
+				class="w-9 h-9 rounded-full flex items-center justify-center shadow-lg transition-transform hover:scale-110"
+				:style="{ backgroundColor: currentTheme.colors.primary }">
+				<svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+				</svg>
+			</button>
+		</div>
+
+		<!-- "Note"/"File" menu opened by left-clicking the "+" above -->
+		<div v-if="showAddTypeMenu" @click.stop
+			class="fixed z-[2500] rounded-xl shadow-2xl border overflow-hidden min-w-[160px] animate-scaleIn" :style="{
+				...addTypeMenuStyle,
+				backgroundColor: currentTheme.colors.surface,
+				borderColor: currentTheme.colors.border
+			}">
+			<button @click="confirmAddNoteFromPrompt" class="w-full flex items-center gap-3 px-4 py-3 transition-colors"
+				:style="{ color: currentTheme.colors.text }">
+				<svg class="w-4 h-4" viewBox="-5 -6 10 12" fill="none" stroke="currentColor" stroke-width="0.7">
+					<path stroke-linecap="round" stroke-linejoin="round"
+						d="M -4 -4 L 4 -4 L 4 2.5 L 1.5 5 L -4 5 Z M 1.5 2.5 L 1.5 5 L 4 2.5 Z M -2 -1.5 H 2 M -2 1 H 1" />
+				</svg>
+				<span class="text-sm font-medium">Note</span>
+			</button>
+			<button @click="triggerAddFilePicker(); closeAddTypeMenu()"
+				class="w-full flex items-center gap-3 px-4 py-3 transition-colors"
+				:style="{ color: currentTheme.colors.text }">
+				<svg class="w-4 h-4" viewBox="-5 -6 10 12" fill="none" stroke="currentColor" stroke-width="0.7">
+					<path stroke-linecap="round" stroke-linejoin="round"
+						d="M -4 -5 L 1.5 -5 L 4 -2.5 L 4 5 L -4 5 Z M 1.5 -5 L 1.5 -2.5 L 4 -2.5 Z M -2 0.5 H 2 M -2 3 H 2" />
+				</svg>
+				<span class="text-sm font-medium">File</span>
+			</button>
+		</div>
+		<input ref="addFileInput" type="file" accept=".pdf,.docx" multiple style="display: none"
+			@change="handleAddFileSelected" />
+
+		<!-- Create/edit note modal -->
+		<div v-if="showNoteModal" @click="closeNoteModal"
+			class="fixed inset-0 bg-black/50 backdrop-blur-sm z-[2000] flex items-center justify-center p-4 animate-fadeIn">
+			<div @click.stop class="border rounded-3xl p-8 w-full max-w-md shadow-2xl animate-scaleIn" :style="{
+				backgroundColor: currentTheme.colors.surface,
+				borderColor: currentTheme.colors.border
+			}">
+				<h3 class="text-2xl font-bold mb-6" :style="{ color: currentTheme.colors.text }">
+					{{ editingNoteId ? 'Edit Note' : 'New Note' }}
+				</h3>
+
+				<textarea v-model="noteForm.text" rows="5" placeholder="Write your note here"
+					class="w-full px-4 py-3 border rounded-xl focus:ring-2 focus:ring-[#4A90E2] focus:border-transparent outline-none transition-all resize-none"
+					:style="{
+						backgroundColor: currentTheme.colors.background,
+						borderColor: currentTheme.colors.border,
+						color: currentTheme.colors.text
+					}"></textarea>
+
+				<div v-if="!editingNoteId" class="mt-3">
+					<div class="text-xs font-medium mb-1.5" :style="{ color: currentTheme.colors.textSecondary }">
+						Add to
+					</div>
+					<div class="flex flex-wrap gap-2">
+						<button v-for="suggestion in noteSuggestions" :key="suggestion.clusterId"
+							@click="toggleSuggestion(suggestion.clusterId)"
+							class="px-3 py-1.5 rounded-full text-xs font-medium border transition-all" :style="{
+								backgroundColor: selectedSuggestionClusterId === suggestion.clusterId ? currentTheme.colors.primary : currentTheme.colors.background,
+								borderColor: selectedSuggestionClusterId === suggestion.clusterId ? currentTheme.colors.primary : currentTheme.colors.border,
+								color: selectedSuggestionClusterId === suggestion.clusterId ? '#ffffff' : currentTheme.colors.text
+							}">
+							{{ suggestion.topic }}
+						</button>
+
+
+						<button @click="toggleSuggestion(NOTES_HUB_SENTINEL)"
+							class="px-3 py-1.5 rounded-full text-xs font-medium border transition-all" :style="{
+								backgroundColor: selectedSuggestionClusterId === NOTES_HUB_SENTINEL ? currentTheme.colors.primary : currentTheme.colors.background,
+								borderColor: selectedSuggestionClusterId === NOTES_HUB_SENTINEL ? currentTheme.colors.primary : currentTheme.colors.border,
+								color: selectedSuggestionClusterId === NOTES_HUB_SENTINEL ? '#ffffff' : currentTheme.colors.text
+							}">
+							Notes
+						</button>
+
+						
+					</div>
+				</div>
+
+				<div class="flex gap-3 mt-6">
+					<button @click="closeNoteModal" class="flex-1 px-6 py-3 rounded-xl font-medium transition-all"
+						:style="{
+							backgroundColor: currentTheme.colors.background,
+							color: currentTheme.colors.textSecondary
+						}">
+						Cancel
+					</button>
+					<button @click="saveNote"
+						class="flex-1 px-6 py-3 bg-[#4A90E2] text-white rounded-xl font-medium hover:bg-[#357ABD] transition-all shadow-lg shadow-[#4A90E2]/30">
+						{{ editingNoteId ? 'Save' : 'Create' }}
+					</button>
+				</div>
+			</div>
+		</div>
 
 		<div ref="tooltip"
 			class="fixed pointer-events-none opacity-0 transition-opacity duration-200 z-[2000] px-4 py-3 text-sm rounded-xl shadow-xl max-w-xs backdrop-blur-sm"
@@ -812,6 +1434,41 @@
 					<button @click="confirmRename"
 						class="flex-1 px-6 py-3 bg-[#4A90E2] text-white rounded-xl font-medium hover:bg-[#357ABD] transition-all">
 						Rename
+					</button>
+				</div>
+			</div>
+		</div>
+
+		<!-- Delete Cluster Modal -->
+		<div v-if="showDeleteClusterModal" @click="closeDeleteClusterModal"
+			class="fixed inset-0 bg-black/50 backdrop-blur-sm z-[2000] flex items-center justify-center p-4 animate-fadeIn">
+			<div @click.stop class="rounded-3xl p-8 w-full max-w-md shadow-2xl animate-scaleIn border" :style="{
+				backgroundColor: currentTheme.colors.surface,
+				borderColor: currentTheme.colors.border
+			}">
+				<h3 class="text-2xl font-bold mb-3" :style="{ color: currentTheme.colors.text }">
+					Delete Cluster
+				</h3>
+				<p class="text-sm mb-6" :style="{ color: currentTheme.colors.textSecondary }">
+					Delete "{{ contextCluster?.topic }}"? Choose what happens to its websites.
+				</p>
+				<div class="flex flex-col gap-3">
+					<button @click="confirmDeleteCluster(false)"
+						class="w-full px-6 py-3 rounded-xl font-medium transition-all" :style="{
+							backgroundColor: currentTheme.colors.background,
+							color: currentTheme.colors.text
+						}">
+						Delete cluster only <span class="font-normal opacity-70">(keep the websites)</span>
+					</button>
+					<button @click="confirmDeleteCluster(true)"
+						class="w-full px-6 py-3 bg-red-600 text-white rounded-xl font-medium hover:bg-red-700 transition-all">
+						Delete cluster and all its websites
+					</button>
+					<button @click="closeDeleteClusterModal"
+						class="w-full px-6 py-3 rounded-xl font-medium transition-all" :style="{
+							color: currentTheme.colors.textSecondary
+						}">
+						Cancel
 					</button>
 				</div>
 			</div>
@@ -954,7 +1611,7 @@
 					backgroundColor: currentTheme.colors.surface,
 					borderColor: currentTheme.colors.border
 				}">
-				<h3 class="text-2xl font-bold mb-6" :style="{ color: currentTheme.colors.text }">
+				<h3 class="text-2xl capitalize font-bold mb-6" :style="{ color: currentTheme.colors.text }">
 					Add Connection from "{{ contextCluster?.topic }}"
 				</h3>
 
@@ -976,7 +1633,7 @@
 						}" @click="selectedConnectionCluster = cluster.id">
 						<input type="radio" :checked="selectedConnectionCluster === cluster.id" class="w-4 h-4" />
 						<div class="flex-1">
-							<div class="font-medium" :style="{ color: currentTheme.colors.text }">
+							<div class="font-medium capitalize" :style="{ color: currentTheme.colors.text }">
 								{{ cluster.topic }}
 							</div>
 							<div class="text-sm" :style="{ color: currentTheme.colors.textSecondary }">
@@ -1011,7 +1668,7 @@
 					backgroundColor: currentTheme.colors.surface,
 					borderColor: currentTheme.colors.border
 				}">
-				<h3 class="text-2xl font-bold mb-6" :style="{ color: currentTheme.colors.text }">
+				<h3 class="text-2xl font-bold mb-6 capitalize" :style="{ color: currentTheme.colors.text }">
 					Remove Connection from "{{ contextCluster?.topic }}"
 				</h3>
 
@@ -1024,7 +1681,7 @@
 						}" @click="selectedConnectionToRemove = cluster.id">
 						<input type="radio" :checked="selectedConnectionToRemove === cluster.id" class="w-4 h-4" />
 						<div class="flex-1">
-							<div class="font-medium" :style="{ color: currentTheme.colors.text }">
+							<div class="font-medium capitalize" :style="{ color: currentTheme.colors.text }">
 								{{ cluster.topic }}
 							</div>
 							<div class="text-sm" :style="{ color: currentTheme.colors.textSecondary }">
@@ -1107,19 +1764,34 @@
 
 		<div v-if="selectedWebsite" :style="stickyNoteStyle" @click.stop
 			class="fixed z-[1500] rounded-2xl shadow-2xl min-w-[320px] max-w-md animate-scaleIn bg-yellow-100">
-			<div @mousedown="startDraggingSticky"
+			<div @mousedown="startDraggingSticky" @touchstart="startDraggingSticky"
 				class="flex justify-between items-center p-4 cursor-move border-b border-yellow-200">
 				<h4 class="font-semibold text-base truncate pr-4 text-gray-900">
 					{{ selectedWebsite.title }}
 				</h4>
 
-				<button @click="closeStickyNote"
-					class="p-1.5 rounded-lg hover:bg-yellow-200 transition-all flex-shrink-0">
-					<svg class="w-5 h-5 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-							d="M6 18L18 6M6 6l12 12" />
-					</svg>
-				</button>
+				<div class="flex items-center gap-1 flex-shrink-0">
+					<!-- Hidden entirely (not just guarded internally) for a read-only
+						 shared view - deleteSelectedWebsite() calls refreshData() even
+						 when the delete itself no-ops, which reloads from THIS
+						 browser's own local IndexedDB and would silently replace the
+						 shared view with the guest/collaborator's own (usually empty)
+						 local dashboard. -->
+					<button v-if="!isReadOnlySharedView" @click="deleteSelectedWebsite" title="Delete"
+						class="p-1.5 rounded-lg hover:bg-yellow-200 transition-all">
+						<svg class="w-5 h-5 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+								d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+						</svg>
+					</button>
+					<button @click="closeStickyNote"
+						class="p-1.5 rounded-lg hover:bg-yellow-200 transition-all">
+						<svg class="w-5 h-5 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+								d="M6 18L18 6M6 6l12 12" />
+						</svg>
+					</button>
+				</div>
 			</div>
 
 			<div class="p-4 space-y-3 text-sm text-gray-800">
@@ -1128,18 +1800,42 @@
 					{{ selectedWebsite.parentCluster }}
 				</div> -->
 
-				<div>
+				<div v-if="!selectedWebsite.is_note">
 					<span class="font-semibold">Domain:</span>
 					{{ selectedWebsite.domain }}
 				</div>
 
-				<div v-if="websiteDetails">
+				<div v-if="websiteDetails && !selectedWebsite.is_note">
 					<span class="font-semibold">Description:</span>
 					{{ websiteDetails.ai_summary || "None" }}
 				</div>
 
-				<a :href="selectedWebsite.url" target="_blank" class="cursor-pointer transition-all hover:shadow-md"
-					:class="isDarkMode ? 'border-gray-700 bg-[#212121]' : 'border-gray-300 bg-white'">
+				<div v-if="selectedWebsite.is_note" class="whitespace-pre-wrap text-sm text-gray-800 py-2">
+					{{ selectedWebsite.note_text }}
+				</div>
+				<!-- Guests (not invited collaborators, who are always allowed - see
+					 the matching backend rule) only get the download click when the
+					 owner has explicitly enabled it for this shared graph's public
+					 link. -->
+				<div v-else-if="selectedWebsite.is_file && (remoteGraphRole !== 'guest' || sharePublicLinkAllowsDownloads)"
+					@click="downloadFile(selectedWebsite.file_id)"
+					class="cursor-pointer transition-all hover:shadow-md"
+					>
+					<!-- Title -->
+					<div class="font-semibold text-sm" :class="isDarkMode ? 'text-gray-800' : 'text-gray-700'">
+						{{ websiteDetails?.metadata?.title || selectedWebsite.domain }}
+					</div>
+
+					<!-- Description -->
+					<div class="text-xs mt-1 line-clamp-2" :style="{ color: currentTheme.colors.textSecondary }">
+						{{ websiteDetails?.metadata?.description || "No description available" }}
+					</div>
+				</div>
+				<div v-else-if="selectedWebsite.is_file" class="text-xs italic" :style="{ color: currentTheme.colors.textSecondary }">
+					Downloads disabled by the owner
+				</div>
+				<a v-else :href="selectedWebsite.url" target="_blank" class="cursor-pointer transition-all hover:shadow-md"
+					>
 					<!-- Image -->
 					<div v-if="websiteDetails?.metadata?.image"
 						class="w-full my-4 h-36 mb-2 overflow-hidden rounded-lg">
@@ -1147,12 +1843,12 @@
 					</div>
 
 					<!-- Title -->
-					<div class="font-semibold text-sm" :class="isDarkMode ? 'text-gray-800' : 'text-gray-700'">
+					<div class="font-semibold text-sm" :style="{ color: currentTheme.colors.textSecondary }">
 						{{ websiteDetails?.metadata?.title || selectedWebsite.domain }}
 					</div>
 
 					<!-- Description -->
-					<div class="text-xs mt-1 line-clamp-2" :class="isDarkMode ? 'text-gray-700' : 'text-gray-700'">
+					<div class="text-xs mt-1 line-clamp-2" :style="{ color: currentTheme.colors.textSecondary }">
 						{{ websiteDetails?.metadata?.description || "No description available" }}
 					</div>
 
@@ -1164,7 +1860,26 @@
 				</a>
 
 
-				<a :href="selectedWebsite.url" target="_blank"
+				<button v-if="selectedWebsite.is_note && !isReadOnlySharedView"
+					@click="openNoteEditor({ id: selectedWebsite.websiteId, text: selectedWebsite.note_text })"
+					class="inline-flex items-center gap-2 px-4 py-2 rounded-xl font-medium transition-all bg-[#212121] hover:bg-black text-white">
+					✏️ Edit Note
+				</button>
+				<!-- is_note but read-only - no fallback action, NOT the "Visit
+					 Website" link below (a note's url is always null too, same
+					 broken-link risk as the is_file case just below). -->
+				<div v-else-if="selectedWebsite.is_note"></div>
+				<button v-else-if="selectedWebsite.is_file && (remoteGraphRole !== 'guest' || sharePublicLinkAllowsDownloads)"
+					@click="downloadFile(selectedWebsite.file_id)"
+					class="inline-flex items-center gap-2 px-4 py-2 rounded-xl font-medium transition-all bg-[#212121] hover:bg-black text-white">
+					📄 View File
+				</button>
+				<!-- is_file but downloads are disabled for this guest - no fallback
+					 action at all, NOT the "Visit Website" link below (selectedWebsite.
+					 url is null for a file node, so that link would silently go
+					 nowhere if it were allowed to fall through here). -->
+				<div v-else-if="selectedWebsite.is_file"></div>
+				<a v-else :href="selectedWebsite.url" target="_blank"
 					class="inline-flex items-center gap-2 px-4 py-2 rounded-xl font-medium transition-all bg-[#212121] hover:bg-black text-white">
 					🔗 Visit Website
 				</a>
@@ -1189,7 +1904,7 @@
 						<h3 class="text-2xl font-bold" :style="{ color: currentTheme.colors.text }">
 							Discover Similar Websites
 						</h3>
-						<p class="text-sm mt-1" :style="{ color: currentTheme.colors.textSecondary }">
+						<p v-if="!needsSearchConsent" class="text-sm mt-1 capitalize" :style="{ color: currentTheme.colors.textSecondary }">
 							Found {{ similarWebsites.length }} websites related to
 							<strong>{{ explodedNode?.topic }}</strong>
 						</p>
@@ -1204,7 +1919,31 @@
 					</button>
 				</div>
 
-				<div v-if="isLoadingSimilar" class="flex flex-col items-center justify-center py-16">
+				<div v-if="needsSearchConsent" class="py-6">
+					<p class="mb-3" :style="{ color: currentTheme.colors.text }">
+						To find similar pages, Rocus sends this cluster's topic
+						(<strong>{{ explodedNode?.topic }}</strong>) to rocus.io, which looks it up with our search
+						provider (Serper). Nothing else about your saved pages is sent.
+					</p>
+					<p class="text-sm mb-6" :style="{ color: currentTheme.colors.textSecondary }">
+						"Always allow" also looks up related links for each page you save from now on. You can turn
+						this off any time in Settings → Web suggestions.
+					</p>
+					<div class="flex flex-wrap gap-3">
+						<button @click="searchOnce"
+							class="px-4 py-2 rounded-lg text-sm font-semibold border"
+							:style="{ color: currentTheme.colors.text, borderColor: currentTheme.colors.border }">
+							Search once
+						</button>
+						<button @click="allowWebSuggestionsAndSearch"
+							class="px-4 py-2 rounded-lg text-sm font-semibold text-white"
+							style="background-color: #4A90E2;">
+							Always allow
+						</button>
+					</div>
+				</div>
+
+				<div v-else-if="isLoadingSimilar" class="flex flex-col items-center justify-center py-16">
 					<div class="w-12 h-12 border-4 border-t-[#4A90E2] rounded-full animate-spin mb-4"
 						:style="{ borderColor: currentTheme.colors.border, borderTopColor: currentTheme.colors.primary }">
 					</div>
@@ -1235,7 +1974,7 @@
 							</h4>
 
 							<p class="text-xs mt-1 truncate text-[#4A90E2]">
-								{{ website.domain || new URL(website.url).hostname }}
+								{{ website.domain || hostnameFor(website.url) }}
 							</p>
 
 							<p class="text-sm mt-2 line-clamp-2" :style="{ color: currentTheme.colors.textSecondary }">
@@ -1281,7 +2020,7 @@
 			<span>New clusters detected! Updating graph...</span>
 		</div>
 
-		<div class="fixed bottom-8 left-8 z-[1000] px-4 py-2 backdrop-blur-xl rounded-xl text-xs border" :style="{
+		<div v-if="!isCoarsePointer" class="fixed bottom-8 left-8 z-[1000] px-4 py-2 backdrop-blur-xl rounded-xl text-xs border" :style="{
 			backgroundColor: currentTheme.isDark ? 'rgba(0,0,0,0.8)' : 'rgba(255,255,255,0.8)',
 			color: currentTheme.colors.textSecondary,
 			borderColor: currentTheme.colors.border
@@ -1289,13 +2028,13 @@
 			Mouse wheel to zoom • Click and drag to pan • Click clusters to explode
 		</div>
 
-		<button @click="showVersionHistory = true"
+		<button v-if="!isCoarsePointer" @click="showVersionHistory = true"
 			class="fixed bottom-8 right-24 z-[1000] px-3 py-2 rounded-lg text-xs font-mono transition-all" :style="{
 				backgroundColor: currentTheme.colors.surface,
 				color: currentTheme.colors.textSecondary,
 				border: `1px solid ${currentTheme.colors.border}`
 			}">
-			v1.0.1
+			v1.2.0
 		</button>
 
 		<!-- <button @click="startTutorial"
@@ -1551,16 +2290,12 @@
 
 				<!-- Action Buttons -->
 				<div class="flex gap-3">
-					<button v-if="compatibilityResults.overall === 'success'" @click="() => {
-						showCompatibilityCheck = false;
-						localStorage.setItem('rocus-compatibility-checked', 'true');
-					}" class="flex-1 px-6 py-3 rounded-xl font-medium transition-all bg-green-500 hover:bg-green-600 text-white">
+					<button v-if="compatibilityResults.overall === 'success'" @click="dismissCompatibilityCheck"
+						class="flex-1 px-6 py-3 rounded-xl font-medium transition-all bg-green-500 hover:bg-green-600 text-white">
 						✓ Continue to Rocus
 					</button>
-					<button v-else-if="compatibilityResults.overall === 'error'" @click="() => {
-						showCompatibilityCheck = false;
-						localStorage.setItem('rocus-compatibility-checked', 'true');
-					}" class="flex-1 px-6 py-3 rounded-xl font-medium transition-all" :style="{
+					<button v-else-if="compatibilityResults.overall === 'error'" @click="dismissCompatibilityCheck"
+						class="flex-1 px-6 py-3 rounded-xl font-medium transition-all" :style="{
 						backgroundColor: currentTheme.colors.background,
 						color: currentTheme.colors.text
 					}">
@@ -1660,6 +2395,34 @@
 						{{ tutorialSteps[tutorialStep]?.description }}
 					</p>
 
+					<!-- Extension detection status - only rendered on the "Browser
+						 Extension" step (action === 'checkExtension'), driven by a real
+						 ping/pong to the extension's published Chrome/Firefox ID (see
+						 detectRocusExtension() in useTutorial.js), not a guess. -->
+					<div v-if="tutorialSteps[tutorialStep]?.action === 'checkExtension'" class="mb-6 -mt-3">
+						<div v-if="extensionDetected === null" class="flex items-center gap-2 text-xs"
+							:style="{ color: currentTheme.colors.textSecondary }">
+							<svg class="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+									d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+							</svg>
+							Checking for the extension...
+						</div>
+						<div v-else-if="extensionDetected" class="flex items-center gap-2 text-xs font-medium text-emerald-600">
+							<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+							</svg>
+							Extension detected - you're all set!
+						</div>
+						<div v-else class="rounded-xl px-3 py-2.5 text-xs"
+							:style="{ backgroundColor: withAlpha('#f59e0b', 0.12), color: currentTheme.colors.text }">
+							You don't have the extension yet - it's required to save websites into Rocus.
+							<a :href="extensionStoreUrl" target="_blank" rel="noopener" class="font-semibold underline">
+								Install it here
+							</a>
+						</div>
+					</div>
+
 					<!-- Navigation Buttons -->
 					<div class="flex gap-3">
 						<button v-if="tutorialStep > 0" @click="previousTutorialStep"
@@ -1687,6 +2450,66 @@
 			</div>
 		</div>
 
+		<!-- "What's New" - a one-time, per-version splash (see checkShowWhatsNew()
+			 in useVersionHistory.js) for anyone who hasn't dismissed the current
+			 version's entry yet, new signup or five-year returning user alike.
+			 Reuses the same versionHistory data as the full Version History
+			 modal below, just scoped to versionHistory[0] and framed as an
+			 announcement rather than a browsable log. -->
+		<div v-if="showWhatsNew" @click="dismissWhatsNew"
+			class="fixed inset-0 bg-black/50 backdrop-blur-sm z-[2100] flex items-center justify-center p-4 animate-fadeIn">
+			<div @click.stop
+				class="border rounded-3xl p-8 w-full max-w-lg shadow-2xl animate-scaleIn max-h-[80vh] overflow-y-auto"
+				:style="{ backgroundColor: currentTheme.colors.surface, borderColor: currentTheme.colors.border }">
+				<div class="flex items-start gap-3 mb-6">
+					<div class="w-11 h-11 rounded-full flex items-center justify-center shrink-0"
+						:style="{ backgroundColor: withAlpha(currentTheme.colors.primary, 0.12) }">
+						<svg class="w-6 h-6" :style="{ color: currentTheme.colors.primary }" fill="none"
+							stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+								d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.196-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.783-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
+						</svg>
+					</div>
+					<div>
+						<h3 class="text-xl font-bold" :style="{ color: currentTheme.colors.text }">
+							What's New in {{ versionHistory[0]?.version }}
+						</h3>
+						<p class="text-sm mt-0.5" :style="{ color: currentTheme.colors.textSecondary }">
+							{{ versionHistory[0]?.date }}
+						</p>
+					</div>
+				</div>
+
+				<div class="space-y-4 mb-6">
+					<div v-if="versionHistory[0]?.features.length">
+						<p class="text-sm font-semibold mb-2" :style="{ color: currentTheme.colors.text }">Features</p>
+						<ul class="space-y-1">
+							<li v-for="feature in versionHistory[0].features" :key="feature"
+								class="text-sm flex items-start gap-2" :style="{ color: currentTheme.colors.textSecondary }">
+								<span class="text-green-500">•</span>
+								<span>{{ feature }}</span>
+							</li>
+						</ul>
+					</div>
+					<div v-if="versionHistory[0]?.improvements.length">
+						<p class="text-sm font-semibold mb-2" :style="{ color: currentTheme.colors.text }">Improvements</p>
+						<ul class="space-y-1">
+							<li v-for="item in versionHistory[0].improvements" :key="item"
+								class="text-sm flex items-start gap-2" :style="{ color: currentTheme.colors.textSecondary }">
+								<span class="text-blue-500">•</span>
+								<span>{{ item }}</span>
+							</li>
+						</ul>
+					</div>
+				</div>
+
+				<button @click="dismissWhatsNew" class="w-full py-2.5 rounded-xl font-semibold text-sm transition-transform hover:scale-[1.02]"
+					:style="{ backgroundColor: currentTheme.colors.primary, color: '#fff' }">
+					Got it
+				</button>
+			</div>
+		</div>
+
 		<div v-if="showVersionHistory" @click="showVersionHistory = false"
 			class="fixed inset-0 bg-black/50 backdrop-blur-sm z-[2000] flex items-center justify-center p-4 animate-fadeIn">
 			<div @click.stop
@@ -1702,7 +2525,7 @@
 							Version History
 						</h3>
 						<p class="text-sm mt-1" :style="{ color: currentTheme.colors.textSecondary }">
-							Current version: v1.0.1 (Beta)
+							Current version: v1.2.0 (Beta)
 						</p>
 					</div>
 					<button @click="showVersionHistory = false" class="p-2 rounded-xl transition-all">
@@ -1835,3566 +2658,597 @@
 				</div>
 			</div>
 		</div>
+
 	</div>
+	<PremiumUpsell />
+	<RocusDialog />
+
+	<!-- Shown when a /shared/:graphId load fails, instead of silently leaving
+		 the page looking like an empty, freshly-installed Rocus with no nodes
+		 and no explanation. -->
+	<div v-if="sharedGraphLoadError"
+		class="fixed inset-0 z-[1700] flex items-center justify-center"
+		:style="{ backgroundColor: currentTheme.colors.background }">
+		<div class="max-w-md text-center px-6">
+			<div class="text-lg font-semibold mb-2" :style="{ color: currentTheme.colors.text }">Can't open this graph</div>
+			<p class="text-sm" :style="{ color: currentTheme.colors.textSecondary }">{{ sharedGraphLoadError }}</p>
+			<a v-if="sharedGraphNeedsSignIn" :href="signInUrl()" class="inline-block mt-4 text-sm font-medium px-4 py-2 rounded-xl"
+				:style="{ backgroundColor: currentTheme.colors.primary, color: '#fff' }">Sign In</a>
+			<a v-else href="/dashboard" class="inline-block mt-4 text-sm font-medium px-4 py-2 rounded-xl"
+				:style="{ backgroundColor: currentTheme.colors.primary, color: '#fff' }">Go to your own Rocus</a>
+		</div>
+	</div>
+
+	<!-- Themed share toast (unlike the older showNewDataNotification toast above,
+		 this one uses currentTheme.colors rather than a hardcoded blue gradient,
+		 per the "fits the exact theme" request) -->
+	<Transition enter-active-class="animate-slideInUp" leave-active-class="transition-opacity duration-300" leave-to-class="opacity-0">
+		<div v-if="showShareToast"
+			class="fixed bottom-28 left-1/2 -translate-x-1/2 z-[1650] px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 font-semibold"
+			:style="{ backgroundColor: shareToastType === 'error' ? '#dc2626' : currentTheme.colors.primary, color: '#fff' }">
+			<div class="w-6 h-6 rounded-full flex items-center justify-center" :style="{ backgroundColor: withAlpha('#ffffff', 0.2) }">
+				<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+						d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+				</svg>
+			</div>
+			<span>{{ shareToastMessage }}</span>
+		</div>
+	</Transition>
+
+	<!-- Quick-add routing prompt: shown at most once per shared graph, the
+		 first time a browser-extension quick-add happens while it's open -
+		 see maybeShowQuickAddRoutingPrompt() in useSharing.js. -->
+	<div v-if="showQuickAddRoutingPrompt"
+		class="fixed bottom-6 left-1/2 -translate-x-1/2 z-[1650] flex items-center gap-3 px-5 py-3 rounded-2xl shadow-2xl animate-fadeIn max-w-md"
+		:style="{ backgroundColor: currentTheme.colors.surface, border: `1px solid ${currentTheme.colors.border}` }">
+		<span class="text-sm" :style="{ color: currentTheme.colors.text }">Route new quick-adds into this shared graph?</span>
+		<div class="flex items-center gap-2 shrink-0">
+			<button @click="declineQuickAddRouting" class="text-sm font-medium px-3 py-1.5 rounded-xl"
+				:style="{ color: currentTheme.colors.textSecondary }">No</button>
+			<button @click="acceptQuickAddRouting" class="text-sm font-medium px-3 py-1.5 rounded-xl"
+				:style="{ backgroundColor: currentTheme.colors.primary, color: '#fff' }">Yes</button>
+		</div>
+	</div>
+
+	<!-- Primary viral surface: a guest gets the full graph for free, no signup -
+		 the CTA is the only thing gated, per plan doc "Viral surface" -->
+	<div v-if="remoteGraphRole === 'guest' && !remoteGraphFrozen"
+		class="fixed bottom-6 left-1/2 -translate-x-1/2 z-[1600] flex items-center gap-3 rounded-2xl shadow-2xl animate-fadeIn max-w-[calc(100vw-2rem)]"
+		:class="isCoarsePointer ? 'pl-3 pr-2 py-2' : 'pl-4 pr-3 py-3'"
+		:style="{ backgroundColor: currentTheme.colors.surface, border: `1px solid ${currentTheme.colors.border}` }">
+		<div class="w-9 h-9 rounded-full flex items-center justify-center shrink-0"
+			:style="{ backgroundColor: withAlpha(currentTheme.colors.primary, 0.12) }">
+			<svg class="w-5 h-5" :style="{ color: currentTheme.colors.primary }" fill="none"
+				stroke="currentColor" viewBox="0 0 24 24">
+				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+					d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
+			</svg>
+		</div>
+		<div v-if="!isCoarsePointer" class="leading-tight">
+			<div class="text-sm font-semibold" :style="{ color: currentTheme.colors.text }">Like this graph?</div>
+			<div class="text-xs" :style="{ color: currentTheme.colors.textSecondary }">Make your own editable copy</div>
+		</div>
+		<button @click="forkSharedGraph" class="font-semibold rounded-xl shrink-0 transition-transform hover:scale-105"
+			:class="isCoarsePointer ? 'text-sm px-3 py-2' : 'text-sm px-4 py-2.5'"
+			:style="{ backgroundColor: currentTheme.colors.primary, color: '#fff' }">
+			{{ isCoarsePointer ? 'Fork' : 'Fork into your own Rocus' }}
+		</button>
+	</div>
+
 
 </template>
 
 <script setup>
 import {
 	ref,
-	reactive,
+	computed,
 	onMounted,
 	onBeforeUnmount,
 	watch,
-	onUnmounted,
-	computed,
 } from "vue";
-import * as d3 from "d3";
-import { pipeline, env } from "@xenova/transformers";
-import { CreateMLCEngine, prebuiltAppConfig } from "@mlc-ai/web-llm";
 import { useAnalytics } from '../composables/useAnalytics';
+import { useSeoMeta } from '../composables/useSeoMeta';
+import rocusIconUrl from './images/RocusIcon.png';
+import PremiumUpsell from './PremiumUpsell.vue';
+import WaitlistEmailCapture from './WaitlistEmailCapture.vue';
+import FirstRunChoice from './FirstRunChoice.vue';
+import RocusDialog from './RocusDialog.vue';
+import { rocusConfirm } from '../composables/useRocusDialog';
+import { signInUrl } from '../composables/graphNode/usePremium';
+import { API_BASE } from './constants/config';
 
-const MODEL_CDN_BASE = 'https://models.rocus.io';
+import { formatDate, withAlpha } from '../composables/graphNode/utils';
 
-const availableModels = ref([
-	{
-		id: 'Qwen2.5-0.5B-Rocus',
-		name: 'Fast (0.5B)',
-		description: 'Runs on all devices, basic summaries',
-		size: '~350MB',
-		speed: 'Very Fast',
-		quality: 'Basic',
-		url: `${MODEL_CDN_BASE}/Qwen2.5-0.5B-Instruct-q4f32_1-MLC`, // base URL
-		wasm: `${MODEL_CDN_BASE}/Qwen2.5-0.5B-Instruct-q4f32_1-MLC/Qwen2-0.5B-Instruct-q4f32_1-ctx4k_cs1k-webgpu.wasm`,
-		config: `${MODEL_CDN_BASE}/Qwen2.5-0.5B-Instruct-q4f32_1-MLC/mlc-chat-config.json`
-	},
-]);
+import {
+	showBanner,
+	promptConsent,
+	accept,
+	decline,
+	toggleAnalytics,
+} from '../composables/graphNode/useAnalyticsBanner';
 
-const selectedModel = ref('Qwen2.5-0.5B-Rocus');
-const engine = ref(null);
-const modelLoadingProgress = ref(0);
+import {
+	showCompatibilityCheck,
+	compatibilityResults,
+	checkSystemCompatibility,
+	runCompatibilityCheckIfNeeded,
+	notifyCompatibilityCheckDismissed,
+} from '../composables/graphNode/useCompatibilityCheck';
 
-const { analyticsConsent, setConsent, checkConsent, trackEvent } = useAnalytics();
-const showBanner = ref(false);
-function toggleAnalytics() {
-	setConsent(!analyticsConsent.value);
-}
+import { platform, detectPlatform, initDB, checkAndRepairDatabase } from '../composables/graphNode/useDatabase';
 
-function promptConsent() {
-	const consent = localStorage.getItem('rocus-analytics-consent');
-	if (consent === null) {
-		setTimeout(() => {
-			showBanner.value = true;
-		}, 5000);
+import {
+	themes,
+	currentTheme,
+	isDarkMode,
+	showThemes,
+	toggleThemes,
+	closeThemes,
+	previewTheme,
+	applyTheme,
+	applyThemeColors,
+	loadThemePreference,
+	toggleDarkMode,
+	updateTheme,
+} from '../composables/graphNode/useThemes';
+
+import {
+	searchInput,
+	matchCount,
+	isSearchFocused,
+	searchInputRef,
+	performSearch,
+	clearSearch,
+	focusSearch,
+	handleSearchBlur,
+	handleClickOutside,
+	handleKeyDown,
+	showShortcutsPanel,
+	openShortcutsPanel,
+	closeShortcutsPanel,
+} from '../composables/graphNode/useSearch';
+
+import {
+	albums,
+	showAlbumsDropdown,
+	showAlbumModal,
+	editingAlbum,
+	albumForm,
+	iconOptions,
+	iconUrls,
+	getIconUrl,
+	toggleAlbumsDropdown,
+	selectAlbum,
+	createNewAlbum,
+	editAlbum,
+	saveAlbum,
+	deleteAlbum,
+	closeAlbumModal,
+} from '../composables/graphNode/useAlbums';
+
+import {
+	availableModels,
+	selectedModel,
+	modelLoading,
+	loadingMessage,
+	downloadProgress,
+	error,
+	showModelStatus,
+	toggleModelStatus,
+	closeModelStatus,
+	embeddingModel,
+	summarizationModel,
+	processingQueue,
+	processedCount,
+	isProcessing,
+	showNewDataNotification,
+	queueProgress,
+	ensureModelsLoaded,
+	clearModelCache,
+	processingMode,
+	setProcessingMode,
+} from '../composables/graphNode/useAIModels';
+
+import {
+	showDiscoverModal,
+	isLoadingSimilar,
+	similarWebsites,
+	closeDiscoverModal,
+	openExternalLink,
+	needsSearchConsent,
+	searchOnce,
+	allowWebSuggestionsAndSearch,
+	webSuggestionsEnabled,
+	setWebSuggestionsEnabled,
+} from '../composables/graphNode/useDiscover';
+
+// `URL` isn't in Vue's template-expression global allowlist, so calling
+// `new URL(...)` directly in a template throws "Property 'URL' was accessed
+// during render but is not defined on instance" - a real, unhandled render
+// error (not just a console warning) on every Discover-results render for a
+// Google-search result missing `domain` (the normal case - Serper API
+// results only ever carry `url`/`title`). Wrapping it in a plain script
+// function sidesteps the restriction entirely (script code isn't subject to
+// the template compiler's global-resolution rules) and guards against a
+// malformed url from an external API crashing this instead of just falling
+// back to showing the raw string.
+function hostnameFor(url) {
+	try {
+		return new URL(url).hostname;
+	} catch {
+		return url || '';
 	}
 }
 
-function accept() {
-	setConsent(true);
-	showBanner.value = false;
+import {
+	tutorialActive,
+	tutorialStep,
+	tutorialHighlightRect,
+	tutorialSteps,
+	startTutorial,
+	startTutorialEmpty,
+	nextTutorialStep,
+	previousTutorialStep,
+	skipTutorial,
+	updateTutorialHighlight,
+	extensionDetected,
+	extensionStoreUrl,
+} from '../composables/graphNode/useTutorial';
+
+import {
+	importFileInput,
+	exportAllData,
+	triggerImport,
+	handleImport,
+} from '../composables/graphNode/useImportExport';
+
+import {
+	showRenameModal,
+	renameInput,
+	renameCluster,
+	closeRenameModal,
+	confirmRename,
+	showAddWebsites,
+	selectedWebsitesToAdd,
+	availableWebsites,
+	showAddWebsitesModal,
+	closeAddWebsitesModal,
+	toggleWebsiteSelection,
+	confirmAddWebsites,
+	showRemoveWebsites,
+	selectedWebsitesToRemove,
+	showRemoveWebsitesModal,
+	closeRemoveWebsitesModal,
+	toggleRemoveSelection,
+	confirmRemoveWebsites,
+	deleteCluster,
+	showDeleteClusterModal,
+	closeDeleteClusterModal,
+	confirmDeleteCluster,
+	showAddToAlbumModal,
+	selectedAlbumForCluster,
+	showAddToAlbumModalFunction,
+	closeAddToAlbumModal,
+	confirmAddToAlbum,
+	showAddConnection,
+	showRemoveConnection,
+	selectedConnectionCluster,
+	selectedConnectionToRemove,
+	connectionSearchTerm,
+	availableClustersForConnection,
+	connectedClusters,
+	showAddConnectionModal,
+	closeAddConnectionModal,
+	showRemoveConnectionModal,
+	closeRemoveConnectionModal,
+	confirmAddConnection,
+	confirmRemoveConnection,
+	showWebsiteEditModal,
+	websiteTitleInput,
+	editWebsiteTitle,
+	closeWebsiteEditModal,
+	confirmWebsiteEdit,
+} from '../composables/graphNode/useClusterActions';
+
+import {
+	graphContainer,
+	tooltip,
+	isLoading,
+	explodedNode,
+	selectedWebsite,
+	stickyNoteStyle,
+	websiteDetails,
+	showConnections,
+	contextCluster,
+	showContextMenu,
+	contextMenuStyle,
+	showWebsiteContextMenu,
+	websites,
+	settings,
+	graphData,
+	graphIsEmpty,
+	currentAlbum,
+	dropdownMode,
+	setDropdownMode,
+	currentHistoryDay,
+	loadFromIndexedDB,
+	collapseNode,
+	initializeGraph,
+	isReadOnlySharedView,
+	resetView,
+	focusDeepLinkedCluster,
+	toggleConnections,
+	handleBackgroundClick,
+	closeStickyNote,
+	startDraggingSticky,
+	deleteWebsite,
+	refreshData,
+	updateNodeSizes,
+	updateConnections,
+	handleResize,
+} from '../composables/graphNode/useGraphEngine';
+
+import { showVersionHistory, versionHistory, showWhatsNew, checkShowWhatsNew, dismissWhatsNew } from '../composables/graphNode/useVersionHistory';
+
+import { historyDays, selectHistoryDay, formatDayLabel } from '../composables/graphNode/useHistory';
+
+import {
+	showNoteModal,
+	editingNoteId,
+	noteForm,
+	showAddNotePrompt,
+	addNotePromptStyle,
+	showAddTypeMenu,
+	addTypeMenuStyle,
+	openAddTypeMenu,
+	closeAddTypeMenu,
+	handleGraphLeftClick,
+	handleGraphRightClick,
+	confirmAddNoteFromPrompt,
+	closeNoteModal,
+	saveNote,
+	openNoteEditor,
+	noteSuggestions,
+	selectedSuggestionClusterId,
+	toggleSuggestion,
+	NOTES_HUB_SENTINEL,
+} from '../composables/graphNode/useNotes';
+
+import {
+	showDropOverlay,
+	handleDragEnter,
+	handleDragOver,
+	handleDragLeave,
+	handleDrop,
+	showUploadsPanel,
+	toggleUploadsPanel,
+	uploadedFilesWithTopics,
+	filesByTopic,
+	downloadFile,
+	addFileInput,
+	triggerAddFilePicker,
+	handleAddFileSelected,
+} from '../composables/graphNode/useFileUpload';
+
+import { useRoute } from 'vue-router';
+import { store } from '../router/store';
+import { remoteGraphId, remoteGraphRole, remoteGraphFrozen, remoteGraphTheme, activeShareGraphId, isSharedGraphContext, isCoarsePointer } from '../composables/graphNode/useGraphEngine';
+import {
+	isSharePanelOpen,
+	activeShareUrl,
+	shareMembers,
+	shareOwnerName,
+	shareOwnerPictureUrl,
+	shareOwnerIdentityKey,
+	onlineIdentityKeys,
+	sharePublicLinkEnabled,
+	sharePublicLinkAllowsDownloads,
+	shareBusy,
+	shareError,
+	shareCurrentGraph,
+	inviteCollaborator,
+	updateCollaboratorPermission,
+	revokeCollaborator,
+	togglePublicLink,
+	toggleGuestDownloads,
+	closeSharePanel,
+	joinSharedGraph,
+	forkSharedGraph,
+	sharedGraphLoadError,
+	sharedGraphNeedsSignIn,
+	showShareToast,
+	shareToastMessage,
+	shareToastType,
+	flashShareToast,
+	confirmShare,
+	notifyLinkCopied,
+	canShareCurrentSelection,
+	shareTargetHasFiles,
+	initLocalOwnerSync,
+	quickAddRoutesHere,
+	setQuickAddRouting,
+	showQuickAddRoutingPrompt,
+	sharedWithMeGraphs,
+	myActivelySharedAlbums,
+	fetchMySharedGraphs,
+	activelyOwnedSharedGraphIds,
+	disconnectSharedGraphSocket,
+} from '../composables/graphNode/useSharing';
+
+const { analyticsConsent, trackEvent } = useAnalytics();
+
+// ==============================================
+// SHARING (glue for useSharing.js - see plan doc "Rocus Sharing & Multiplayer")
+// ==============================================
+const route = useRoute();
+const inviteEmailInput = ref('');
+const invitePermissionInput = ref('view');
+
+// Lazily loads the "Shared with me" / "Shared" dropdown sections only when
+// the dropdown is actually opened, matching the existing toggleUploadsPanel
+// -> fetchUploadedFiles() pattern rather than fetching on every page load.
+function handleToggleAlbumsDropdown() {
+	toggleAlbumsDropdown();
+	if (showAlbumsDropdown.value) fetchMySharedGraphs();
 }
 
-function decline() {
-	setConsent(false);
-	showBanner.value = false;
+function openSharedWithMeGraph(graphId) {
+	window.location.href = `/shared/${graphId}`;
 }
 
-// configuring transformers.js (embeddings)
-env.allowLocalModels = false;
-env.useBrowserCache = true;
+// Badge next to the logo: "is this graph shared, and with whom." Covers both
+// ways of currently looking at a shared graph - the owner's own /dashboard
+// with an actively-shared album selected (activeShareGraphId, set by
+// useSharing.js's local-owner sync watcher), or actually viewing it via
+// /shared/:graphId (remoteGraphId). Membership (shareMembers) is only ever
+// fetched for non-guest roles server-side already, so a guest naturally
+// never sees it here either - matches the existing privacy rule that a
+// guest sees only the sharer's name, never other collaborators' identities.
+const isCurrentGraphShared = computed(() => isSharedGraphContext());
 
-const modelLoading = ref(false);
-const loadingMessage = ref("");
-const downloadProgress = ref(0);
-const error = ref("");
-const platform = ref("");
-const searchInput = ref('');
-const matchCount = ref(0);
-const isSearchFocused = ref(false);
-const searchInputRef = ref(null);
-const showThemes = ref(false);
-const showAddToAlbumModal = ref(false);
-const selectedAlbumForCluster = ref(null);
-
-const showWebsiteContextMenu = ref(false);
-const websiteContextNode = ref(null);
-const showWebsiteEditModal = ref(false);
-const websiteTitleInput = ref('');
-
-const currentTheme = ref({
-	id: 'default-light',
-	name: 'Default Light',
-	isDark: false,
-	colors: {
-		background: '#f4f4f4',
-		surface: '#ffffff',
-		primary: '#4A90E2',
-		secondary: '#357ABD',
-		accent: '#4A90E2',
-		node: '#f4f4f4',
-		nodeStroke: '#d1d5db',
-		text: '#000000',
-		textSecondary: '#6b7280',
-		border: '#e5e7eb'
-	}
-});
-
-const themeClasses = computed(() => ({
-	surface: currentTheme.value.isDark ? 'bg-black' : 'bg-white',
-	surfaceHover: currentTheme.value.isDark ? 'hover:bg-gray-900' : 'hover:bg-gray-50',
-	border: currentTheme.value.isDark ? 'border-gray-800' : 'border-gray-200',
-	text: currentTheme.value.isDark ? 'text-white' : 'text-gray-900',
-	textSecondary: currentTheme.value.isDark ? 'text-gray-400' : 'text-gray-600',
-	buttonBg: currentTheme.value.isDark ? 'bg-black' : 'bg-white',
-	buttonHover: currentTheme.value.isDark ? 'hover:bg-[#212121]' : 'hover:bg-gray-100',
-}));
-
-const themes = [
+// Content for the "/" tips panel - a "how this app works" quick reference,
+// not a keybinding cheatsheet (Escape is genuinely the only real keyboard
+// shortcut today). Icon paths are copied from their existing buttons
+// elsewhere in this file (reset/refresh FABs, the "+" add-content prompt,
+// the share icon, the search icon) rather than introducing any new icon
+// system - this project has no icon library dependency.
+const shortcutSections = [
 	{
-		id: 'default-light',
-		name: 'Rocus Light',
-		description: 'Clean and minimal',
-		isDark: false,
-		preview: ['#f4f4f4', '#4A90E2', '#ffffff', '#e5e7eb'],
-		colors: {
-			background: '#f4f4f4',
-			surface: '#ffffff',
-			primary: '#4A90E2',
-			secondary: '#357ABD',
-			accent: '#4A90E2',
-			node: '#f4f4f4',
-			nodeStroke: '#d1d5db',
-			text: '#000000',
-			textSecondary: '#6b7280',
-			border: '#e5e7eb'
-		}
+		title: 'Navigation & View',
+		icon: 'M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4',
+		tips: [
+			'Scroll or pinch to zoom',
+			'Click and drag empty space to pan',
+			'Click a cluster to explode it into its websites',
+			'Click the ✕ (bottom-right) to collapse it back',
+			'Reset / Refresh buttons (bottom-right) recenter or reload the graph',
+		],
 	},
 	{
-		id: 'default-dark',
-		name: 'Rocus Dark',
-		description: 'Easy on the eyes',
-		isDark: true,
-		preview: ['#212121', '#374151', '#4A90E2', '#1f2937'],
-		colors: {
-			background: '#212121',
-			surface: '#000000',
-			primary: '#4A90E2',
-			secondary: '#357ABD',
-			accent: '#4A90E2',
-			node: '#374151',
-			nodeStroke: '#4b5563',
-			text: '#ffffff',
-			textSecondary: '#9ca3af',
-			border: '#374151'
-		}
+		title: 'Search',
+		icon: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z',
+		tips: [
+			'Type to filter clusters, websites, and domains — also searches summaries and descriptions',
+			'Esc clears search, or closes this panel',
+			'/ opens this panel, whenever you\'re not already typing elsewhere',
+		],
 	},
 	{
-		id: 'hangle',
-		name: 'Hangle',
-		description: 'https://hangle-geo.com',
-		isDark: false,
-		preview: ['#8fca5c', '#3ab3da', '#854f2b', '#ffffff'],
-		colors: {
-			background: '#8fca5c',
-			surface: '#3ab3da',
-			primary: '#854f2b',
-			secondary: '#ffffff',
-			accent: '#3ab3da',
-			node: '#ffffff',
-			nodeStroke: '#854f2b',
-			text: '#ffffff',
-			textSecondary: '#ffffff',
-			border: '#854f2b'
-		}
+		title: 'Adding Content',
+		icon: 'M12 4v16m8-8H4',
+		tips: [
+			'Right-click empty canvas, then + to add a Note or upload a File',
+		],
 	},
 	{
-		id: 'scramble',
-		name: 'Anagram Scramble',
-		description: 'https://anagram-scramble.com',
-		isDark: false,
-		preview: ['#013b3f', '#ffae42', '#ffffe5', '#4d7cc3'],
-		colors: {
-			background: '#013b3f',
-			surface: '#4d7cc3',
-			primary: '#ffae42',
-			secondary: '#ffffe5',
-			accent: '#ffae42',
-			node: '#ffffe5',
-			nodeStroke: '#4d7cc3',
-			text: '#ffffe5',
-			textSecondary: '#ffae42',
-			border: '#4d7cc3'
-		}
+		title: 'Sharing & Collaboration',
+		icon: 'M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5',
+		tips: [
+			'Click the share icon to generate a link for the current Album',
+			'Invite collaborators by email with View or Edit access',
+			'A colored dot on a node shows who added it, once shared',
+			'Guests and View-only collaborators can look but not edit',
+		],
 	},
-	{
-		id: 'didi',
-		name: 'Didi Greedy',
-		description: 'Colorful and Wonderful',
-		isDark: true,
-		preview: ['#00A766', '#FF9FBF', '#2582B8', '#FFBC00'],
-		colors: {
-			background: '#00A766',      // green - main background
-			surface: '#FFBC00',         // white - cards/panels
-			primary: '#2582B8',         // orange - main interactive elements
-			secondary: '#FF6C1F',       // blue - secondary elements
-			accent: '#FFBC00',          // yellow - highlights
-			node: '#FF6C1F',            // pink - the graph nodes
-			nodeStroke: '#FF9FBF',      // blue - node borders
-			text: '#FFFFFF',            // white - main text on green
-			textSecondary: '#E0F2EC',   // very light green - secondary text
-			border: '#FFBC00'           // yellow - borders
-		}
-	},
-	{
-		id: 'girly-pop',
-		name: 'Girly Pop',
-		description: 'Pink dreams and sparkles',
-		isDark: false,
-		preview: ['#FFE5F1', '#FF69B4', '#FFB6D9', '#FFF0F5'],
-		colors: {
-			background: '#FFF0F5',
-			surface: '#FFE5F1',
-			primary: '#FF69B4',
-			secondary: '#FFB6D9',
-			accent: '#FF1493',
-			node: '#FFE5F1',
-			nodeStroke: '#FFB6D9',
-			text: '#C71585',
-			textSecondary: '#DB7093',
-			border: '#FFB6D9'
-		}
-	},
-	{
-		id: 'popped-out-80s',
-		name: "Popped Out 80's",
-		description: 'Neon nights',
-		isDark: true,
-		preview: ['#1A1A2E', '#FF006E', '#00F5FF', '#FFBE0B'],
-		colors: {
-			background: '#1A1A2E',
-			surface: '#16213E',
-			primary: '#FF006E',
-			secondary: '#00F5FF',
-			accent: '#FFBE0B',
-			node: '#0F3460',
-			nodeStroke: '#533483',
-			text: '#FF006E',
-			textSecondary: '#00F5FF',
-			border: '#533483'
-		}
-	},
-	{
-		id: 'pink-lemonade',
-		name: 'Pink Lemonade',
-		description: 'Sweet and tangy',
-		isDark: false,
-		preview: ['#FFF8E7', '#FF6B9D', '#FFC6D9', '#FFFACD'],
-		colors: {
-			background: '#FFF8E7',
-			surface: '#FFFACD',
-			primary: '#FF6B9D',
-			secondary: '#FFC6D9',
-			accent: '#FFB347',
-			node: '#FFF0F5',
-			nodeStroke: '#FFB6C1',
-			text: '#D63384',
-			textSecondary: '#FF69B4',
-			border: '#FFB6C1'
-		}
-	},
-	{
-		id: 'taro-bubble-tea',
-		name: 'Taro Bubble Tea',
-		description: 'Creamy purple goodness',
-		isDark: false,
-		preview: ['#F5F0FF', '#9B7EBD', '#C8B6E2', '#E5D4FF'],
-		colors: {
-			background: '#F5F0FF',
-			surface: '#E5D4FF',
-			primary: '#9B7EBD',
-			secondary: '#C8B6E2',
-			accent: '#7C5295',
-			node: '#E5D4FF',
-			nodeStroke: '#C8B6E2',
-			text: '#5A3E7B',
-			textSecondary: '#8B6EA8',
-			border: '#C8B6E2'
-		}
-	},
-	{
-		id: 'base-model-white-f150',
-		name: 'Base Model White 2008 4.6L F150 Supercrew',
-		description: 'Lé Truck',
-		isDark: false,
-		preview: ['#F8F9FA', '#003478', '#FFFFFF', '#C0C0C0'],
-		colors: {
-			background: '#F8F9FA',
-			surface: '#FFFFFF',
-			primary: '#003478',
-			secondary: '#0066CC',
-			accent: '#C0C0C0',
-			node: '#FFFFFF',
-			nodeStroke: '#D3D3D3',
-			text: '#2C3E50',
-			textSecondary: '#5A6C7D',
-			border: '#BDBDBD'
-		}
-	},
-	{
-		id: 'nyc',
-		name: 'NYC',
-		description: 'Empire State of mind',
-		isDark: true,
-		preview: ['#1C1C1E', '#FFD700', '#B8860B', '#2F2F2F'],
-		colors: {
-			background: '#1C1C1E',
-			surface: '#2F2F2F',
-			primary: '#FFD700',
-			secondary: '#FFA500',
-			accent: '#B8860B',
-			node: '#3A3A3C',
-			nodeStroke: '#48484A',
-			text: '#FFD700',
-			textSecondary: '#C0C0C0',
-			border: '#48484A'
-		}
-	},
-	{
-		id: 'downtown-ramallah-night',
-		name: 'Downtown Ramallah at Night',
-		description: 'Warm vintage moonlight',
-		isDark: true,
-		preview: ['#1A1511', '#E8C547', '#D4A574', '#2C2416'],
-		colors: {
-			background: '#1A1511',
-			surface: '#2C2416',
-			primary: '#E8C547',
-			secondary: '#D4A574',
-			accent: '#F4A460',
-			node: '#3D3020',
-			nodeStroke: '#5C4B2A',
-			text: '#E8C547',
-			textSecondary: '#C9A961',
-			border: '#5C4B2A'
-		}
-	},
-	{
-		id: 'old-city-birzeit',
-		name: 'Birzeit Old City',
-		description: 'Vintage stone, olive trees, and golden sun',
-		isDark: false,
-		preview: ['#E5D8C2', '#6B7A3A', '#D3A74A', '#F2E9D3'],
-		colors: {
-			background: '#F2E9D3',       // sun-washed limestone
-			surface: '#E5D8C2',          // vintage stone wall
-			primary: '#6B7A3A',          // old olive trees
-			secondary: '#8C9B54',        // lighter leaf green
-			accent: '#D3A74A',           // warm golden sun
-			node: '#E5D8C2',             // stone node
-			nodeStroke: '#CBBFA8',       // soft edge like aged stone
-			text: '#3A3A2E',             // deep neutral for readability
-			textSecondary: '#6F6B58',    // muted stone-gray
-			border: '#CBBFA8'            // subtle stone border
-		}
-	},
-	{
-		id: 'burgundy-royale',
-		name: 'Burgundy',
-		description: 'Color of the year award',
-		isDark: true,
-		preview: ['#4A0E1F', '#FFFFFF', '#B43757', '#2E0A15'],
-		colors: {
-			background: '#4A0E1F',
-			surface: '#2E0A15',
-			primary: '#FFFFFF',
-			secondary: '#B43757',
-			accent: '#FFCCD5',
-			node: '#3B0C19',
-			nodeStroke: '#7A1E33',
-			text: '#FFFFFF',
-			textSecondary: '#E6B3C2',
-			border: '#7A1E33'
-		}
-	},
-	{
-		id: 'lake-como',
-		name: 'Lake Como',
-		description: 'Je suis la bas',
-		isDark: false,
-		preview: ['#CFE6FA', '#1F73C8', '#7FB87A', '#F8E7B5'],
-		colors: {
-			background: '#CFE6FA',
-			surface: '#F8F5EC',
-			primary: '#1F73C8',
-			secondary: '#7FB87A',
-			accent: '#F2C94C',
-			node: '#F8F5EC',
-			nodeStroke: '#C7D7E4',
-			text: '#1F2D36',
-			textSecondary: '#54646E',
-			border: '#C7D7E4'
-		}
-	},
-	{
-		id: 'nord',
-		name: 'Nord',
-		description: 'Arctic, north-bluish',
-		isDark: true,
-		preview: ['#2E3440', '#88C0D0', '#5E81AC', '#4C566A'],
-		colors: {
-			background: '#2E3440',
-			surface: '#3B4252',
-			primary: '#88C0D0',
-			secondary: '#5E81AC',
-			accent: '#88C0D0',
-			node: '#4C566A',
-			nodeStroke: '#434C5E',
-			text: '#ECEFF4',
-			textSecondary: '#D8DEE9',
-			border: '#434C5E'
-		}
-	},
-	{
-		id: 'dracula',
-		name: 'Dracula',
-		description: 'Dark theme for vampires',
-		isDark: true,
-		preview: ['#282A36', '#FF79C6', '#BD93F9', '#44475A'],
-		colors: {
-			background: '#282A36',
-			surface: '#1e1f29',
-			primary: '#FF79C6',
-			secondary: '#BD93F9',
-			accent: '#FF79C6',
-			node: '#44475A',
-			nodeStroke: '#6272A4',
-			text: '#F8F8F2',
-			textSecondary: '#C5C8C6',
-			border: '#44475A'
-		}
-	},
-	{
-		id: 'monokai',
-		name: 'Monokai',
-		description: 'Vibrant and colorful',
-		isDark: true,
-		preview: ['#272822', '#F92672', '#A6E22E', '#49483E'],
-		colors: {
-			background: '#272822',
-			surface: '#1e1f1c',
-			primary: '#F92672',
-			secondary: '#A6E22E',
-			accent: '#FD971F',
-			node: '#49483E',
-			nodeStroke: '#75715E',
-			text: '#F8F8F2',
-			textSecondary: '#CFCFC2',
-			border: '#49483E'
-		}
-	},
-	{
-		id: 'gruvbox-light',
-		name: 'Gruvbox Light',
-		description: 'Retro groove, light variant',
-		isDark: false,
-		preview: ['#FBF1C7', '#458588', '#CC241D', '#EBDBB2'],
-		colors: {
-			background: '#FBF1C7',
-			surface: '#F9F5D7',
-			primary: '#458588',
-			secondary: '#CC241D',
-			accent: '#D65D0E',
-			node: '#EBDBB2',
-			nodeStroke: '#D5C4A1',
-			text: '#3C3836',
-			textSecondary: '#665C54',
-			border: '#D5C4A1'
-		}
-	},
-	{
-		id: 'gruvbox-dark',
-		name: 'Gruvbox Dark',
-		description: 'Retro groove, dark variant',
-		isDark: true,
-		preview: ['#282828', '#458588', '#CC241D', '#3C3836'],
-		colors: {
-			background: '#282828',
-			surface: '#1d2021',
-			primary: '#458588',
-			secondary: '#CC241D',
-			accent: '#D65D0E',
-			node: '#3C3836',
-			nodeStroke: '#504945',
-			text: '#EBDBB2',
-			textSecondary: '#BDAE93',
-			border: '#504945'
-		}
-	},
-	{
-		id: 'solarized-light',
-		name: 'Solarized Light',
-		description: 'Precision colors',
-		isDark: false,
-		preview: ['#FDF6E3', '#268BD2', '#DC322F', '#EEE8D5'],
-		colors: {
-			background: '#FDF6E3',
-			surface: '#EEE8D5',
-			primary: '#268BD2',
-			secondary: '#2AA198',
-			accent: '#D33682',
-			node: '#EEE8D5',
-			nodeStroke: '#93A1A1',
-			text: '#657B83',
-			textSecondary: '#839496',
-			border: '#93A1A1'
-		}
-	},
-	{
-		id: 'solarized-dark',
-		name: 'Solarized Dark',
-		description: 'Precision colors for night',
-		isDark: true,
-		preview: ['#002B36', '#268BD2', '#DC322F', '#073642'],
-		colors: {
-			background: '#002B36',
-			surface: '#073642',
-			primary: '#268BD2',
-			secondary: '#2AA198',
-			accent: '#D33682',
-			node: '#073642',
-			nodeStroke: '#586E75',
-			text: '#839496',
-			textSecondary: '#93A1A1',
-			border: '#586E75'
-		}
-	},
-	{
-		id: 'github-light',
-		name: 'GitHub Light',
-		description: 'Clean and professional',
-		isDark: false,
-		preview: ['#FFFFFF', '#0366D6', '#28A745', '#F6F8FA'],
-		colors: {
-			background: '#FFFFFF',
-			surface: '#F6F8FA',
-			primary: '#0366D6',
-			secondary: '#28A745',
-			accent: '#0366D6',
-			node: '#F6F8FA',
-			nodeStroke: '#E1E4E8',
-			text: '#24292E',
-			textSecondary: '#586069',
-			border: '#E1E4E8'
-		}
-	},
-	{
-		id: 'github-dark',
-		name: 'GitHub Dark',
-		description: 'Easy on the eyes, professional',
-		isDark: true,
-		preview: ['#0D1117', '#58A6FF', '#3FB950', '#161B22'],
-		colors: {
-			background: '#0D1117',
-			surface: '#161B22',
-			primary: '#58A6FF',
-			secondary: '#3FB950',
-			accent: '#58A6FF',
-			node: '#161B22',
-			nodeStroke: '#30363D',
-			text: '#C9D1D9',
-			textSecondary: '#8B949E',
-			border: '#30363D'
-		}
-	},
-	{
-		id: 'tokyo-night',
-		name: 'Tokyo Night',
-		description: 'A clean dark theme',
-		isDark: true,
-		preview: ['#1A1B26', '#7AA2F7', '#BB9AF7', '#24283B'],
-		colors: {
-			background: '#1A1B26',
-			surface: '#24283B',
-			primary: '#7AA2F7',
-			secondary: '#BB9AF7',
-			accent: '#7DCFFF',
-			node: '#24283B',
-			nodeStroke: '#414868',
-			text: '#C0CAF5',
-			textSecondary: '#A9B1D6',
-			border: '#414868'
-		}
-	},
-	{
-		id: 'catppuccin-mocha',
-		name: 'Catppuccin Mocha',
-		description: 'Soothing pastel theme',
-		isDark: true,
-		preview: ['#1E1E2E', '#89B4FA', '#F5C2E7', '#313244'],
-		colors: {
-			background: '#1E1E2E',
-			surface: '#181825',
-			primary: '#89B4FA',
-			secondary: '#F5C2E7',
-			accent: '#CBA6F7',
-			node: '#313244',
-			nodeStroke: '#45475A',
-			text: '#CDD6F4',
-			textSecondary: '#BAC2DE',
-			border: '#45475A'
-		}
-	},
-	{
-		id: 'rose-pine',
-		name: 'Rosé Pine',
-		description: 'All natural pine, faux fur and a bit of soho vibes',
-		isDark: true,
-		preview: ['#191724', '#EBBCBA', '#9CCFD8', '#26233A'],
-		colors: {
-			background: '#191724',
-			surface: '#1F1D2E',
-			primary: '#EBBCBA',
-			secondary: '#9CCFD8',
-			accent: '#C4A7E7',
-			node: '#26233A',
-			nodeStroke: '#403D52',
-			text: '#E0DEF4',
-			textSecondary: '#908CAA',
-			border: '#403D52'
-		}
-	},
-	{
-		id: 'everforest',
-		name: 'Everforest',
-		description: 'Comfortable & pleasant',
-		isDark: true,
-		preview: ['#2D353B', '#A7C080', '#D699B6', '#343F44'],
-		colors: {
-			background: '#2D353B',
-			surface: '#232A2E',
-			primary: '#A7C080',
-			secondary: '#7FBBB3',
-			accent: '#D699B6',
-			node: '#343F44',
-			nodeStroke: '#3D484D',
-			text: '#D3C6AA',
-			textSecondary: '#859289',
-			border: '#3D484D'
-		}
-	}
 ];
 
-const clusters = ref({});
-const websites = ref({});
-const embeddings = ref({}); // Store embeddings separately for cosine similarity
+// Who to show in the avatar stack. Guests get nothing here at all (kept as
+// the existing generic "Shared graph" text pill below, unchanged) - never
+// identity-revealing, per the established privacy rule. For everyone else:
+// the owner's own view shows their collaborators (shareMembers); a
+// collaborator's view shows the owner first (shareOwnerName/PictureUrl,
+// only ever populated server-side for non-guest roles) plus any OTHER
+// collaborators, excluding the viewer's own entry - seeing your own email/
+// picture reflected back at you isn't useful information.
+// A stale/expired profile-picture URL (common with Google-provided photos)
+// would otherwise render a broken-image icon with no initial ever shown -
+// once an <img> fails to load, its URL lands here and every avatar spot
+// using that same URL falls back to the initial letter instead.
+const failedAvatarUrls = ref(new Set());
+function markAvatarFailed(url) {
+	if (!url || failedAvatarUrls.value.has(url)) return;
+	failedAvatarUrls.value = new Set(failedAvatarUrls.value).add(url);
+}
 
-const processingQueue = ref([]);
-const processedCount = ref(0);
-const isProcessing = ref(false);
-
-const importFileInput = ref(null); // file import
-const showVersionHistory = ref(false);
-
-const versionHistory = [
-	{
-		version: 'v1.0.1',
-		date: 'December 9th 2025',
-		current: true,
-		features: [
-			'Creating manual connections between clusters',
-			'More comprehensive search that goes through description, metadata, and AI summary',
-		],
-		improvements: [
-			'More themes to choose from',
-		],
-		bugFixes: [
-
-		]
-	},
-	{
-		version: 'v1.0.0',
-		date: 'December 7th 2025',
-		current: false,
-		features: [
-			'AI-powered website clustering with local ML models',
-			'Album organization system for managing clusters',
-			'Theme picker with 15+ beautiful themes',
-			'Real-time search and node highlighting',
-			'Context menu for cluster operations (rename, delete, add/remove websites)',
-			'Import/Export functionality for data backup',
-			'Browser extension for quick website saving',
-			'Similar website discovery using Google Search API',
-		],
-		improvements: [
-			'Smooth node explosion/collapse animations',
-			'Persistent dark mode and theme preferences',
-			'Responsive graph layout with auto-centering',
-			'IndexedDB for local data storage',
-			'Album-based cluster isolation',
-		],
-		bugFixes: [
-			'Fixed node positioning on graph edges',
-			'Fixed theme consistency across interactions',
-			'Fixed album update errors with IndexedDB',
-			'Fixed search highlighting state management',
-		]
-	}
-];
-
-const tutorialActive = ref(false);
-const tutorialStep = ref(0);
-const tutorialHighlightRect = ref({ top: 0, left: 0, width: 0, height: 0 });
-const tutorialDemoCluster = ref(null);
-const showCompatibilityCheck = ref(false);
-const compatibilityResults = ref({
-	webgpu: { status: 'checking', message: '' },
-	memory: { status: 'checking', message: '' },
-	indexeddb: { status: 'checking', message: '' },
-	cache: { status: 'checking', message: '' },
-	overall: 'checking'
-});
-
-// Add new tutorial steps for empty state
-const tutorialStepsEmpty = [
-	{
-		title: 'Welcome to Rocus',
-		description: 'Rocus automatically organizes your saved websites using AI. Let\'s walk through how it works.',
-		highlight: null,
-		action: null
-	},
-	{
-		title: 'AI Models Loading',
-		description: 'Rocus uses local AI models that run in your browser. They download once and work offline. AI runs entirely in your browser. First load may take ~30–60 seconds. The indicator shows green when models are ready to process websites.',
-		highlight: 'model-status',
-		action: null
-	},
-	{
-		title: 'Browser Extension',
-		description: 'Install the Rocus extension to save websites. Click the extension icon, select an album (or quick save), and Rocus will automatically cluster similar content.',
-		highlight: null,
-		action: null
-	},
-	{
-		title: 'Albums System',
-		description: 'Create albums to organize your clusters by topic, project, or any way you like. Click here to switch between albums or create new ones.',
-		highlight: 'albums-dropdown',
-		action: null
-	},
-	{
-		title: 'Your Graph Will Grow',
-		description: 'Once you start saving websites, they\'ll appear here as interactive clusters. Similar websites are automatically grouped together, and you can see connections between topics.',
-		highlight: 'graph-container',
-		action: null
-	},
-	{
-		title: 'Customization',
-		description: 'Click the theme button to choose from 15+ beautiful color schemes. Your preferences are saved automatically for next time.',
-		highlight: 'theme-button',
-		action: null
-	},
-	{
-		title: 'Search & Organize',
-		description: 'Use the search bar to find clusters and websites instantly. Right-click any cluster to rename, add websites, remove items, or discover similar content online.',
-		highlight: 'search-bar',
-		action: null
-	},
-	{
-		title: 'Get Started',
-		description: 'Install the browser extension and start saving websites. Watch as Rocus builds your intelligent knowledge graph automatically!',
-		highlight: null,
-		action: null
-	}
-];
-
-async function checkSystemCompatibility() {
-	compatibilityResults.value = {
-		webgpu: { status: 'checking', message: 'Checking WebGPU support...' },
-		memory: { status: 'checking', message: 'Checking available memory...' },
-		indexeddb: { status: 'checking', message: 'Checking IndexedDB...' },
-		cache: { status: 'checking', message: 'Checking Cache API...' },
-		overall: 'checking'
-	};
-
-	let allPassed = true;
-
-	try {
-		if (!navigator.gpu) {
-			compatibilityResults.value.webgpu = {
-				status: 'error',
-				message: 'WebGPU not supported. Your browser/device doesn\'t support WebGPU.',
-				fix: 'Try Chrome/Edge 113+, or enable chrome://flags/#enable-unsafe-webgpu'
-			};
-			allPassed = false;
-		} else {
-			const adapter = await navigator.gpu.requestAdapter();
-			if (!adapter) {
-				compatibilityResults.value.webgpu = {
-					status: 'error',
-					message: 'WebGPU adapter not available. Hardware may not support it.',
-					fix: 'Update your GPU drivers or try a different browser'
-				};
-				allPassed = false;
-			} else {
-				compatibilityResults.value.webgpu = {
-					status: 'success',
-					message: 'WebGPU supported ✓'
-				};
-			}
-		}
-	} catch (err) {
-		compatibilityResults.value.webgpu = {
-			status: 'error',
-			message: `WebGPU check failed: ${err.message}`,
-			fix: 'Try using Chrome/Edge in incognito mode or update your browser'
-		};
-		allPassed = false;
-	}
-
-	try {
-		if (performance.memory) {
-			const memoryMB = performance.memory.jsHeapSizeLimit / (1024 * 1024);
-			if (memoryMB < 500) {
-				compatibilityResults.value.memory = {
-					status: 'warning',
-					message: `Low memory available: ${Math.round(memoryMB)}MB. May be slow.`,
-					fix: 'Close other tabs or restart your browser'
-				};
-			} else {
-				compatibilityResults.value.memory = {
-					status: 'success',
-					message: `Memory OK: ${Math.round(memoryMB)}MB available ✓`
-				};
-			}
-		} else {
-			compatibilityResults.value.memory = {
-				status: 'success',
-				message: 'Memory check not available (non-Chrome browser) ✓'
-			};
-		}
-	} catch (err) {
-		compatibilityResults.value.memory = {
-			status: 'warning',
-			message: 'Could not check memory'
-		};
-	}
-
-	try {
-		const testDB = await new Promise((resolve, reject) => {
-			const request = indexedDB.open('_rocus_test', 1);
-			request.onsuccess = () => {
-				request.result.close();
-				indexedDB.deleteDatabase('_rocus_test');
-				resolve(true);
-			};
-			request.onerror = () => reject(request.error);
+const sharedAvatars = computed(() => {
+	if (remoteGraphRole.value === 'guest') return [];
+	const selfEmail = store.user?.email || null;
+	const list = [];
+	if (remoteGraphId.value && remoteGraphRole.value !== 'owner' && (shareOwnerName.value || shareOwnerPictureUrl.value)) {
+		list.push({
+			label: shareOwnerName.value || 'Owner',
+			pictureUrl: shareOwnerPictureUrl.value,
+			online: onlineIdentityKeys.value.has(shareOwnerIdentityKey.value),
 		});
-		compatibilityResults.value.indexeddb = {
-			status: 'success',
-			message: 'IndexedDB working ✓'
-		};
-	} catch (err) {
-		compatibilityResults.value.indexeddb = {
-			status: 'error',
-			message: 'IndexedDB unavailable or blocked',
-			fix: 'Enable cookies and site data in browser settings'
-		};
-		allPassed = false;
 	}
-
-	try {
-		if ('caches' in window) {
-			const cache = await caches.open('_rocus_test');
-			await caches.delete('_rocus_test');
-			compatibilityResults.value.cache = {
-				status: 'success',
-				message: 'Cache API working ✓'
-			};
-		} else {
-			compatibilityResults.value.cache = {
-				status: 'warning',
-				message: 'Cache API not available',
-				fix: 'This may affect model loading. Try incognito mode.'
-			};
-		}
-	} catch (err) {
-		if (err.message.includes('Cache') || err.message.includes('quota')) {
-			compatibilityResults.value.cache = {
-				status: 'error',
-				message: 'Cache API error (common Chrome issue)',
-				fix: 'Use incognito mode, or clear site data in Settings → Privacy'
-			};
-		} else {
-			compatibilityResults.value.cache = {
-				status: 'warning',
-				message: `Cache check failed: ${err.message}`,
-				fix: 'Try incognito mode if models fail to load'
-			};
-		}
+	for (const m of shareMembers.value) {
+		if (m.invited_email && m.invited_email === selfEmail) continue;
+		list.push({
+			label: m.invited_email || '?',
+			pictureUrl: m.picture_url || null,
+			online: onlineIdentityKeys.value.has(m.identity_key),
+		});
 	}
-
-	compatibilityResults.value.overall = allPassed ? 'success' : 'error';
-
-	return allPassed;
-}
-
-function startTutorialEmpty() {
-	tutorialActive.value = true;
-	tutorialStep.value = 0;
-	// Use empty state tutorial steps
-	const originalSteps = [...tutorialSteps];
-	tutorialSteps.splice(0, tutorialSteps.length, ...tutorialStepsEmpty);
-
-	// Store original steps to restore later
-	window._originalTutorialSteps = originalSteps;
-
-	updateTutorialHighlight();
-}
-
-const tutorialSteps = [
-	{
-		title: 'Welcome to Rocus',
-		description: 'Rocus automatically organizes your saved websites using AI. Let\'s walk through how it works.',
-		highlight: null,
-		action: null
-	},
-	{
-		title: 'AI Models Loading',
-		description: 'Rocus uses local AI models that run in your browser. They download once and work offline. The indicator shows green when models are ready to process websites.',
-		highlight: 'model-status',
-		action: null
-	},
-	{
-		title: 'Browser Extension',
-		description: 'Install the Rocus extension to save websites. Click the extension icon, select an album (or quick save), and Rocus will automatically cluster similar content.',
-		highlight: null,
-		action: null
-	},
-	{
-		title: 'Albums',
-		description: 'Create albums to organize your clusters by topic, project, or any way you like. Click here to switch between albums or view all clusters at once.',
-		highlight: 'albums-dropdown',
-		action: null
-	},
-	{
-		title: 'Understanding Clusters',
-		description: 'Each circle (node) represents a topic of similar websites. Larger nodes contain more websites. The graph shows how different topics relate to each other.',
-		highlight: 'demo-cluster',
-		action: 'showDemoCluster'
-	},
-	{
-		title: 'Exploring Clusters',
-		description: 'Click any cluster to "explode" it and see the individual websites inside. Try clicking the highlighted cluster now!',
-		highlight: 'demo-cluster',
-		action: 'explodeDemoCluster'
-	},
-	{
-		title: 'Customization',
-		description: 'Click the theme button to choose from 15+ beautiful color schemes. Your preferences are saved automatically for next time.',
-		highlight: 'theme-button',
-		action: null
-	},
-	{
-		title: 'Search & Organize',
-		description: 'Use the search bar to find clusters and websites instantly. Right-click any cluster to rename, add websites, remove items, or discover similar content online.',
-		highlight: 'search-bar',
-		action: null
-	},
-	{
-		title: 'You\'re All Set!',
-		description: 'Start saving websites with the extension and watch Rocus organize them automatically. Your intelligent knowledge graph grows with you!',
-		highlight: null,
-		action: 'cleanup'
-	}
-];
-
-
-
-let embeddingModel = null; // transformers.js embedding model (MiniLM)
-let summarizationModel = null; // will point to the Web-LLM engine (chat-style)
-let db = null;
-
-const SIMILARITY_THRESHOLD = 0.65;
-const LOOSE_SIMILARITY_THRESHOLD = 0.45;
-
-const queueProgress = computed(() => {
-	if (processingQueue.value.length === 0) return 0;
-	return (processedCount.value / processingQueue.value.length) * 100;
+	return list;
 });
 
+// The share icon itself is the trigger - one click both opens the panel and
+// (the first time, for this album) performs the actual share, toast
+// included. The earlier bug wasn't that the icon shares on click - it's
+// that it fired the toast even when nothing had actually changed (e.g.
+// reopening an already-shared panel). Now the toast only fires from
+// confirmShare()'s own success path, so re-clicking to just view an
+// existing share stays silent, and the "All Clusters" case gets its own
+// clear error instead of a generic failure.
+async function handleShareClick() {
+	if (isSharePanelOpen.value) {
+		isSharePanelOpen.value = false;
+		return;
+	}
+	if (activeShareUrl.value) {
+		isSharePanelOpen.value = true;
+		return;
+	}
+	if (!canShareCurrentSelection()) {
+		flashShareToast('Open a specific Album to share it - sharing isn\'t available from All Clusters.', 'error');
+		return;
+	}
+	await confirmShare();
+}
 
-const GOOGLE_SEARCH_API_URL = 'https://rocus.io/api/search';
+async function handleInviteSubmit() {
+	if (!inviteEmailInput.value.trim()) return;
+	const result = await inviteCollaborator(inviteEmailInput.value, invitePermissionInput.value);
+	if (result?.success) inviteEmailInput.value = '';
+}
 
-const graphContainer = ref(null);
-const tooltip = ref(null);
+function copyShareLink() {
+	if (!activeShareUrl.value) return;
+	navigator.clipboard?.writeText(activeShareUrl.value);
+	notifyLinkCopied();
+}
+
+// Quick-add routing popup: both explicit "No" and dismissing without
+// choosing record a permanent false via setQuickAddRouting() - the popup is
+// only ever meant to appear once per shared graph (see
+// maybeShowQuickAddRoutingPrompt()'s "already asked" check), so silently
+// re-prompting after a dismiss would defeat that.
+function acceptQuickAddRouting() {
+	setQuickAddRouting(true);
+	showQuickAddRoutingPrompt.value = false;
+}
+
+function declineQuickAddRouting() {
+	setQuickAddRouting(false);
+	showQuickAddRoutingPrompt.value = false;
+}
+
+// ==============================================
+// SETTINGS MODAL (simple glue - kept here rather than a dedicated composable)
+// ==============================================
 const showSettings = ref(false);
-const isDarkMode = ref(false);
-const selectedWebsite = ref(null);
-const stickyNoteStyle = ref({});
-const isLoading = ref(false);
-const websiteDetails = ref(null);
-const explodedNode = ref(null);
-const showDiscoverModal = ref(false);
-const isLoadingSimilar = ref(false);
-const similarWebsites = ref([]);
-const showContextMenu = ref(false);
-const contextMenuStyle = ref({});
-const contextCluster = ref(null);
-const showRenameModal = ref(false);
-const renameInput = ref('');
-const showAddWebsites = ref(false);
-const showRemoveWebsites = ref(false);
-const selectedWebsitesToAdd = ref([]);
-const selectedWebsitesToRemove = ref([]);
-const showAddConnection = ref(false);
-const showRemoveConnection = ref(false);
-const selectedConnectionCluster = ref(null);
-const selectedConnectionToRemove = ref(null);
-const connectionSearchTerm = ref('');
 
-
-const availableClustersForConnection = computed(() => {
-	if (!contextCluster.value) return [];
-
-	const currentClusterId = contextCluster.value.id;
-	const currentAlbumId = contextCluster.value.album_id;
-
-	// Get all clusters in the same album
-	let available = Object.values(clusters.value).filter(cluster =>
-		cluster.id !== currentClusterId &&
-		cluster.album_id === currentAlbumId
-	);
-
-	// Filter by search term
-	if (connectionSearchTerm.value) {
-		const term = connectionSearchTerm.value.toLowerCase();
-		available = available.filter(cluster =>
-			cluster.topic?.toLowerCase().includes(term)
-		);
-	}
-
-	return available;
-});
-
-// Computed for connected clusters
-const connectedClusters = computed(() => {
-	if (!contextCluster.value) return [];
-
-	const currentClusterId = contextCluster.value.id;
-	const connections = [];
-
-	// Find all manual connections
-	if (clusters.value[currentClusterId]?.manual_connections) {
-		const manualConnections = clusters.value[currentClusterId].manual_connections;
-		for (const targetId of manualConnections) {
-			const targetCluster = clusters.value[targetId];
-			if (targetCluster) {
-				connections.push({
-					id: targetId,
-					topic: targetCluster.topic,
-					similarity: 8.0 // Manual connections shown as 100%
-				});
-			}
-		}
-	}
-
-	// Find existing similarity-based connections
-	if (rawSimilarities[currentClusterId]) {
-		Object.entries(rawSimilarities[currentClusterId]).forEach(([targetId, similarity]) => {
-			if (!connections.find(c => c.id === targetId)) {
-				const targetCluster = clusters.value[targetId];
-				if (targetCluster) {
-					connections.push({
-						id: targetId,
-						topic: targetCluster.topic,
-						similarity: similarity
-					});
-				}
-			}
-		});
-	}
-
-	return connections;
-});
-
-// Modal functions
-function showAddConnectionModal() {
-	showAddConnection.value = true;
-	selectedConnectionCluster.value = null;
-	connectionSearchTerm.value = '';
-	showContextMenu.value = false;
-}
-
-function closeAddConnectionModal() {
-	showAddConnection.value = false;
-	selectedConnectionCluster.value = null;
-	connectionSearchTerm.value = '';
-}
-
-function showRemoveConnectionModal() {
-	showRemoveConnection.value = true;
-	selectedConnectionToRemove.value = null;
-	showContextMenu.value = false;
-}
-
-function closeRemoveConnectionModal() {
-	showRemoveConnection.value = false;
-	selectedConnectionToRemove.value = null;
-}
-
-async function confirmAddConnection() {
-	if (!contextCluster.value || !selectedConnectionCluster.value) return;
-
-	try {
-		const sourceId = contextCluster.value.id;
-		const targetId = selectedConnectionCluster.value;
-
-		trackEvent('manual_connection_added');
-
-		// Initialize manual_connections if not exists
-		if (!clusters.value[sourceId].manual_connections) {
-			clusters.value[sourceId].manual_connections = [];
-		}
-
-		// Add bidirectional connection
-		if (!clusters.value[sourceId].manual_connections.includes(targetId)) {
-			clusters.value[sourceId].manual_connections.push(targetId);
-		}
-
-		if (!clusters.value[targetId].manual_connections) {
-			clusters.value[targetId].manual_connections = [];
-		}
-
-		if (!clusters.value[targetId].manual_connections.includes(sourceId)) {
-			clusters.value[targetId].manual_connections.push(sourceId);
-		}
-
-		// Add to similarities for rendering
-		if (!rawSimilarities[sourceId]) {
-			rawSimilarities[sourceId] = {};
-		}
-		rawSimilarities[sourceId][targetId] = 1.0; // Manual connections = 100% similarity
-
-		if (!rawSimilarities[targetId]) {
-			rawSimilarities[targetId] = {};
-		}
-		rawSimilarities[targetId][sourceId] = 1.0;
-
-		await saveToIndexedDB();
-		await refreshData();
-
-		closeAddConnectionModal();
-		contextCluster.value = null;
-	} catch (error) {
-		console.error('Error adding connection:', error);
-		alert('Failed to add connection');
-	}
-}
-
-async function confirmRemoveConnection() {
-	if (!contextCluster.value || !selectedConnectionToRemove.value) return;
-
-	try {
-		const sourceId = contextCluster.value.id;
-		const targetId = selectedConnectionToRemove.value;
-
-		// Remove from manual connections
-		if (clusters.value[sourceId]?.manual_connections) {
-			const index = clusters.value[sourceId].manual_connections.indexOf(targetId);
-			if (index > -1) {
-				clusters.value[sourceId].manual_connections.splice(index, 1);
-			}
-		}
-
-		if (clusters.value[targetId]?.manual_connections) {
-			const index = clusters.value[targetId].manual_connections.indexOf(sourceId);
-			if (index > -1) {
-				clusters.value[targetId].manual_connections.splice(index, 1);
-			}
-		}
-
-		// Remove from similarities
-		if (rawSimilarities[sourceId]?.[targetId]) {
-			delete rawSimilarities[sourceId][targetId];
-		}
-
-		if (rawSimilarities[targetId]?.[sourceId]) {
-			delete rawSimilarities[targetId][sourceId];
-		}
-
-		await saveToIndexedDB();
-		await refreshData();
-
-		closeRemoveConnectionModal();
-		contextCluster.value = null;
-	} catch (error) {
-		console.error('Error removing connection:', error);
-		alert('Failed to remove connection');
-	}
-}
-
-const availableWebsites = computed(() => {
-	if (!contextCluster.value) return [];
-
-	const currentAlbumId = contextCluster.value.album_id;
-	const clusterWebsiteIds = new Set(contextCluster.value.websites);
-
-	return Object.values(websites.value).filter(website =>
-		website.album_id === currentAlbumId && !clusterWebsiteIds.has(website.id)
-	);
-});
-
-// Albums state
-const albums = ref([]);
-const currentAlbum = ref(null);
-const showAlbumsDropdown = ref(false);
-const showAlbumModal = ref(false);
-const editingAlbum = ref(null);
-const albumForm = reactive({
-	name: "",
-	icon: "RocusFileIcon.png",
-});
-const showModelStatus = ref(false);
-
-const iconOptions = [
-	"RocusFileIcon.png",
-	"RocusFileIconColored.png",
-	"RocusFileIconDark.png",
-];
-
-const iconUrls = iconOptions.map(
-	(icon) => new URL(`./images/${icon}`, import.meta.url).href
-);
-
-function getIconUrl(iconFileName) {
-	if (!iconFileName) return '';
-	if (iconFileName.startsWith('http') || iconFileName.startsWith('data:')) {
-		return iconFileName;
-	}
-	return new URL(`./images/${iconFileName}`, import.meta.url).href;
-}
-// Tutorial functions
-function startTutorial() {
-	tutorialActive.value = true;
-	tutorialStep.value = 0;
-	updateTutorialHighlight();
-}
-
-function nextTutorialStep() {
-	if (tutorialStep.value < tutorialSteps.length - 1) {
-		tutorialStep.value++;
-		updateTutorialHighlight();
-		performTutorialAction();
-	} else {
-		finishTutorial();
-	}
-}
-
-function previousTutorialStep() {
-	if (tutorialStep.value > 0) {
-		tutorialStep.value--;
-		updateTutorialHighlight();
-		performTutorialAction();
-	}
-}
-
-function skipTutorial() {
-	// Cleanup demo cluster
-	if (tutorialDemoCluster.value) {
-		collapseNode();
-		tutorialDemoCluster.value = null;
-	}
-	finishTutorial();
-}
-
-function finishTutorial() {
-	// Cleanup demo cluster
-	if (tutorialDemoCluster.value) {
-		collapseNode();
-		tutorialDemoCluster.value = null;
-	}
-
-	tutorialActive.value = false;
-	tutorialStep.value = 0;
-	tutorialHighlightRect.value = { top: 0, left: 0, width: 0, height: 0 };
-	localStorage.setItem('rocus-tutorial-completed', 'true');
-}
-
-function updateTutorialHighlight() {
-	const step = tutorialSteps[tutorialStep.value];
-
-	if (!step.highlight) {
-		tutorialHighlightRect.value = { top: 0, left: 0, width: 0, height: 0 };
-		return;
-	}
-
-	// Small delay to ensure DOM is ready
-	setTimeout(() => {
-		let element;
-
-		switch (step.highlight) {
-			case 'model-status':
-				// Find the model status button - try multiple selectors
-				const allButtons = document.querySelectorAll('button');
-				// Look for button with computer/monitor icon or loading spinner
-				element = Array.from(allButtons).find(btn => {
-					const svg = btn.querySelector('svg');
-					return svg && (
-						svg.innerHTML.includes('M9.75 17L9 20') || // Computer icon path
-						svg.innerHTML.includes('M4 4v5') // Loading spinner path
-					);
-				});
-				// Fallback: 3rd button in header
-				if (!element) {
-					const buttons = document.querySelectorAll('.flex.items-center.gap-3 button');
-					element = buttons[2];
-				}
-				break;
-
-			case 'albums-dropdown':
-				element = document.querySelector('.flex-1.max-w-2xl .relative button') ||
-					document.querySelector('button[class*="w-full"]');
-				break;
-
-			case 'graph-container':
-				element = document.getElementById('graph-container');
-				break;
-
-			case 'demo-cluster':
-				// Only try to highlight if we have clusters
-				if (tutorialDemoCluster.value && container) {
-					const node = container.select('.nodes')
-						.selectAll('.node')
-						.filter(d => d.id === tutorialDemoCluster.value.id)
-						.node();
-					element = node;
-				}
-
-				// Fallback to graph container if no demo cluster
-				if (!element) {
-					element = document.getElementById('graph-container');
-				}
-				break;
-
-			case 'theme-button':
-				// Theme button is 1st button in header - look for palette icon
-				const headerButtons = document.querySelectorAll('button');
-				element = Array.from(headerButtons).find(btn => {
-					const svg = btn.querySelector('svg');
-					return svg && svg.innerHTML.includes('M7 21a4 4'); // Palette icon path
-				});
-				// Fallback: first button
-				if (!element) {
-					element = document.querySelectorAll('.flex.items-center.gap-3 button')[0];
-				}
-				break;
-
-			case 'search-bar':
-				element = document.querySelector('.fixed.top-24') ||
-					document.querySelector('input[type="text"]');
-				break;
-		}
-
-		if (element) {
-			const rect = element.getBoundingClientRect();
-			tutorialHighlightRect.value = {
-				top: rect.top,
-				left: rect.left,
-				width: rect.width,
-				height: rect.height
-			};
-		} else {
-			// If element not found, clear highlight
-			console.warn(`Tutorial element not found: ${step.highlight}`);
-			tutorialHighlightRect.value = { top: 0, left: 0, width: 0, height: 0 };
-		}
-	}, 100);
-}
-
-function performTutorialAction() {
-	const step = tutorialSteps[tutorialStep.value];
-
-	if (step.action === 'showDemoCluster') {
-		// Check if we have clusters
-		if (graphData?.nodes?.length > 0) {
-			const clusterNodes = graphData.nodes.filter(n => n.type === 'cluster');
-			if (clusterNodes.length > 0) {
-				tutorialDemoCluster.value = clusterNodes[0];
-				updateTutorialHighlight();
-			} else {
-				// No clusters, skip to next step
-				console.log("No clusters available, skipping demo");
-				nextTutorialStep();
-			}
-		} else {
-			// No data at all, skip to next step
-			console.log("No graph data, skipping demo");
-			nextTutorialStep();
-		}
-	} else if (step.action === 'explodeDemoCluster') {
-		// Only explode if we have a demo cluster with websites
-		if (tutorialDemoCluster.value && tutorialDemoCluster.value.websites?.length > 0) {
-			explodeNode(tutorialDemoCluster.value);
-		} else {
-			// Can't demonstrate, skip to next step
-			console.log("No websites to explode, skipping demo");
-			nextTutorialStep();
-		}
-	} else if (step.action === 'cleanup') {
-		// Collapse any exploded node
-		if (tutorialDemoCluster.value) {
-			collapseNode();
-			tutorialDemoCluster.value = null;
-		}
-
-		// Restore original tutorial steps if we used empty state version
-		if (window._originalTutorialSteps) {
-			tutorialSteps.splice(0, tutorialSteps.length, ...window._originalTutorialSteps);
-			delete window._originalTutorialSteps;
-		}
-	}
-}
-
-const showNewDataNotification = ref(false);
-
-function toggleThemes() {
-	showThemes.value = !showThemes.value;
-}
-
-function closeThemes() {
-	showThemes.value = false;
-}
-
-function previewTheme(theme) {
-	// Temporarily apply theme on hover
-	applyThemeColors(theme);
-}
-
-function applyTheme(theme) {
-	currentTheme.value = theme;
-	isDarkMode.value = theme.isDark;
-	localStorage.setItem('theme', theme.id);
-	localStorage.setItem('darkMode', theme.isDark.toString());
-	applyThemeColors(theme);
-	closeThemes();
-}
-
-function applyThemeColors(theme) {
-	if (!theme || !theme.colors) return;
-
-	// Update CSS variables
-	const root = document.documentElement;
-	Object.entries(theme.colors).forEach(([key, value]) => {
-		root.style.setProperty(`--color-${key}`, value);
-	});
-
-	// Update D3 nodes if graph exists
-	if (container) {
-		container
-			.select(".nodes")
-			.selectAll(".node")
-			.transition()
-			.duration(300)
-			.attr("fill", (d) => {
-				if (d.type === "discover") return theme.colors.primary;
-				if (d.type === "website") return theme.colors.node;
-				return theme.colors.node;
-			})
-			.attr("stroke", (d) => {
-				if (d.type === "discover") return theme.colors.secondary;
-				if (d.type === "website") return theme.colors.nodeStroke;
-				return theme.colors.nodeStroke;
-			});
-
-		container
-			.select(".labels")
-			.selectAll(".node-label")
-			.transition()
-			.duration(300)
-			.style("fill", (d) => {
-				if (d.type === "discover") return "#ffffff";
-				return theme.colors.text;
-			});
-
-		// Update links too
-		container
-			.select(".links")
-			.selectAll(".link")
-			.transition()
-			.duration(300)
-			.style("stroke", (d) => {
-				if (d.type === 'discover-link') return theme.colors.nodeStroke;
-				if (d.type === 'website-link') return theme.colors.nodeStroke;
-				return theme.colors.nodeStroke;
-			});
-	}
-}
-
-function loadThemePreference() {
-	const savedThemeId = localStorage.getItem('theme');
-	if (savedThemeId) {
-		const theme = themes.find(t => t.id === savedThemeId);
-		if (theme) {
-			currentTheme.value = theme;
-			isDarkMode.value = theme.isDark;
-			applyThemeColors(theme);
-			return;
-		}
-	}
-
-	// Default theme
-	currentTheme.value = themes[0];
-	applyThemeColors(themes[0]);
-}
-
-async function exportAllData() {
-	try {
-		// Gather all data
-		const exportData = {
-			version: '1.0.0',
-			exportDate: new Date().toISOString(),
-			albums: Object.values(albums.value),
-			clusters: Object.values(clusters.value),
-			websites: Object.values(websites.value),
-			embeddings: embeddings.value,
-			theme: {
-				id: currentTheme.value.id,
-				isDark: currentTheme.value.isDark
-			}
-		};
-
-		// Convert to JSON
-		const jsonString = JSON.stringify(exportData, null, 2);
-		const blob = new Blob([jsonString], { type: 'application/json' });
-
-		// Create download link
-		const url = URL.createObjectURL(blob);
-		const a = document.createElement('a');
-		a.href = url;
-		a.download = `rocus-backup-${new Date().toISOString().split('T')[0]}.rocus`;
-		document.body.appendChild(a);
-		a.click();
-		document.body.removeChild(a);
-		URL.revokeObjectURL(url);
-
-		console.log('✅ Data exported successfully');
-		trackEvent('data_exported');
-	} catch (error) {
-		console.error('❌ Error exporting data:', error);
-		alert('Failed to export data');
-	}
-}
-
-// Trigger file input
-function triggerImport() {
-	importFileInput.value?.click();
-}
-
-// Import function
-async function handleImport(event) {
-	const file = event.target.files?.[0];
-	if (!file) return;
-
-	const confirmed = confirm(
-		'⚠️ Importing will replace ALL current data. Are you sure?\n\nMake sure you have a backup first!'
-	);
-
-	if (!confirmed) {
-		event.target.value = ''; // Reset input
-		return;
-	}
-
-	try {
-		const text = await file.text();
-		const importData = JSON.parse(text);
-
-		// Validate import data
-		if (!importData.version || !importData.albums || !importData.clusters || !importData.websites) {
-			throw new Error('Invalid Rocus file format');
-		}
-
-		isLoading.value = true;
-
-		// Clear existing data
-		albums.value = {};
-		clusters.value = {};
-		websites.value = {};
-		embeddings.value = {};
-
-		// Import albums
-		for (const album of importData.albums) {
-			albums.value[album.id] = album;
-		}
-
-		// Import clusters
-		for (const cluster of importData.clusters) {
-			clusters.value[cluster.id] = cluster;
-		}
-
-		// Import websites
-		for (const website of importData.websites) {
-			websites.value[website.id] = website;
-		}
-
-		// Import embeddings
-		embeddings.value = importData.embeddings || {};
-
-		// Apply theme if included
-		if (importData.theme) {
-			const theme = themes.find(t => t.id === importData.theme.id);
-			if (theme) {
-				applyTheme(theme);
-			}
-		}
-
-		// Save to IndexedDB
-		await saveToIndexedDB();
-		await loadData();
-
-		if (simulation) {
-			simulation.nodes(graphData.nodes);
-			simulation.force('link').links(graphData.links);
-			simulation.alpha(1).restart();
-			renderGraph();
-		}
-
-		isLoading.value = false;
-		event.target.value = ''; // Reset input
-
-		alert('✅ Data imported successfully!');
-		console.log('✅ Import complete');
-
-	} catch (error) {
-		isLoading.value = false;
-		console.error('❌ Error importing data:', error);
-		alert('Failed to import data: ' + error.message);
-		event.target.value = ''; // Reset input
-	}
-}
-
-const settings = reactive({
-	nodeSize: 1.0,
-	animationSpeed: 1.0,
-	similarityThreshold: 0.5,
-});
-
-let graphData;
-let rawClusters = [];
-let rawSimilarities = {};
-let simulation;
-let showConnections = ref(true);
-let searchTerm = "";
-let svg, container, zoom;
-let websiteNodes = [];
-
-// Sticky note dragging
-let isDraggingSticky = false;
-let dragOffsetX = 0;
-let dragOffsetY = 0;
-
-const handleKeyDown = (event) => {
-	if (event.key === 'Escape') {
-		event.preventDefault();
-		if (isSearchFocused.value) {
-			// If already focused, blur and clear
-			searchInputRef.value?.blur();
-			searchInput.value = '';
-			isSearchFocused.value = false;
-		} else {
-			// If not focused, focus the search
-			focusSearch();
-		}
-	}
-};
-
-// Focus search function
-const focusSearch = () => {
-	isSearchFocused.value = true;
-	setTimeout(() => {
-		searchInputRef.value?.focus();
-	}, 0);
-};
-
-// Handle search blur
-const handleSearchBlur = () => {
-	setTimeout(() => {
-		if (searchInput.value === '') {
-			isSearchFocused.value = false;
-		}
-	}, 150);
-};
-
-// Handle click outside
-const handleClickOutside = (event) => {
-	const searchContainer = event.target.closest('.fixed.top-24');
-	if (!searchContainer && isSearchFocused.value && !searchInput.value) {
-		isSearchFocused.value = false;
-	}
-};
-
-// Clear search
-const clearSearch = () => {
-	searchInput.value = '';
-	matchCount.value = 0;
-	performSearch();
-	focusSearch();
-};
-
-async function fetchAlbums() {
-	try {
-		if (!db) return {};
-
-		const tx = db.transaction("albums", "readonly");
-
-		const store = tx.objectStore("albums");
-
-		const request = store.getAll();
-
-		return new Promise((resolve, reject) => {
-			request.onsuccess = () => {
-				const albumsData = {};
-
-				for (const album of request.result) {
-					albumsData[album.id] = album;
-				}
-
-				albums.value = albumsData;
-
-				resolve(albumsData);
-			};
-
-			request.onerror = () => reject(request.error);
-		});
-	} catch (error) {
-		console.error("❌ Error fetching albums:", error);
-
-		return {};
-	}
-}
-
-async function createAlbum(albumData) {
-	try {
-		if (!db) throw new Error("Database not initialized");
-
-		trackEvent('album_created');
-
-		const albumId = generateId();
-
-		const album = {
-			id: albumId,
-
-			...albumData,
-
-			created_at: new Date().toISOString(),
-		};
-
-		const tx = db.transaction("albums", "readwrite");
-
-		const store = tx.objectStore("albums");
-
-		await new Promise((resolve, reject) => {
-			const request = store.put(album);
-
-			request.onsuccess = resolve;
-
-			request.onerror = () => reject(request.error);
-		});
-
-		await fetchAlbums();
-
-		return { success: true, album };
-	} catch (error) {
-		console.error("❌ Error creating album:", error);
-
-		throw error;
-	}
-}
-
-async function updateAlbum(albumId, albumData) {
-	try {
-		if (!db) throw new Error("Database not initialized");
-
-		const tx = db.transaction("albums", "readwrite");
-		const store = tx.objectStore("albums");
-
-		const existingAlbum = await new Promise((resolve, reject) => {
-			const request = store.get(albumId);
-			request.onsuccess = () => resolve(request.result);
-			request.onerror = () => reject(request.error);
-		});
-
-		// Ensure cluster_ids is a plain array, not a proxy
-		const updatedAlbum = {
-			...existingAlbum,
-			name: albumData.name,
-			icon: albumData.icon,
-			cluster_ids: Array.from(albumData.cluster_ids || existingAlbum.cluster_ids || []), // FIX: Convert to plain array
-			id: albumId,
-			updated_at: new Date().toISOString(),
-		};
-
-		await new Promise((resolve, reject) => {
-			const request = store.put(updatedAlbum);
-			request.onsuccess = resolve;
-			request.onerror = () => reject(request.error);
-		});
-
-		await fetchAlbums();
-		return { success: true, album: updatedAlbum };
-	} catch (error) {
-		console.error("❌ Error updating album:", error);
-		throw error;
-	}
-}
-
-async function deleteAlbumById(albumId) {
-	try {
-		if (!db) throw new Error("Database not initialized");
-
-		const tx = db.transaction("albums", "readwrite");
-
-		const store = tx.objectStore("albums");
-
-		await new Promise((resolve, reject) => {
-			const request = store.delete(albumId);
-
-			request.onsuccess = resolve;
-
-			request.onerror = () => reject(request.error);
-		});
-
-		await fetchAlbums();
-
-		if (currentAlbum.value?.id === albumId) {
-			currentAlbum.value = null;
-		}
-
-		return { success: true };
-	} catch (error) {
-		console.error("❌ Error deleting album:", error);
-
-		throw error;
-	}
-}
-
-function toggleAlbumsDropdown() {
-	showAlbumsDropdown.value = !showAlbumsDropdown.value;
-	console.log(showAlbumsDropdown.value);
-}
-
-function selectAlbum(album) {
-	currentAlbum.value = album;
-	showAlbumsDropdown.value = false;
-
-	console.log(albums.value)
-	console.log("Selected album:", album?.name || "All Clusters");
-
-	// Reload everything with new filter
-	loadData().then(() => {
-		if (simulation) {
-			simulation.nodes(graphData.nodes);
-			simulation.force("link").links(graphData.links);
-			simulation.alpha(1).restart();
-			renderGraph();
-		}
-	});
-}
-
-function toggleModelStatus() {
-	showModelStatus.value = !showModelStatus.value;
-}
-
-function closeModelStatus() {
-	showModelStatus.value = false;
-}
-
-// function filterGraphByAlbum() {
-// 	if (!currentAlbum.value) {
-// 		// Show all clusters
-// 		graphData = processApiData(rawClusters, rawSimilarities);
-// 	} else {
-// 		// Filter clusters by album
-// 		const albumClusterIds = currentAlbum.value.cluster_ids || [];
-// 		const filteredClusters = rawClusters.filter((cluster) =>
-// 			albumClusterIds.includes(cluster.cluster_id)
-// 		);
-// 		graphData = processApiData(filteredClusters, rawSimilarities);
-// 	}
-
-// 	if (simulation) {
-// 		simulation.nodes(graphData.nodes);
-// 		simulation.force("link").links(graphData.links);
-// 		simulation.alpha(1).restart();
-// 		renderGraph();
-// 	}
-// }
-
-function showAddToAlbumModalFunction() {
-	selectedAlbumForCluster.value = contextCluster.value?.album_id || null;
-	showAddToAlbumModal.value = true;
-	showContextMenu.value = false;
-}
-
-function closeAddToAlbumModal() {
-	showAddToAlbumModal.value = false;
-	selectedAlbumForCluster.value = null;
-}
-
-async function confirmAddToAlbum() {
-	if (!contextCluster.value || !selectedAlbumForCluster.value) return;
-
-	try {
-		const clusterId = contextCluster.value.id;
-		const albumId = selectedAlbumForCluster.value;
-
-		// Update cluster's album_id
-		clusters.value[clusterId].album_id = albumId;
-
-		// Update all websites in this cluster
-		for (const websiteId of clusters.value[clusterId].websites) {
-			if (websites.value[websiteId]) {
-				websites.value[websiteId].album_id = albumId;
-			}
-		}
-
-		await saveToIndexedDB();
-		await refreshData();
-
-		closeAddToAlbumModal();
-		contextCluster.value = null;
-	} catch (error) {
-		console.error('Error adding cluster to album:', error);
-		alert('Failed to add cluster to album');
-	}
-}
-
-function createNewAlbum() {
-	editingAlbum.value = null;
-	albumForm.name = "";
-	albumForm.icon = "📁";
-	showAlbumModal.value = true;
-	showAlbumsDropdown.value = false;
-}
-
-function editAlbum(album) {
-	editingAlbum.value = album;
-	albumForm.name = album.name;
-	albumForm.icon = album.icon;
-	showAlbumModal.value = true;
-	showAlbumsDropdown.value = false;
-}
-
-async function saveAlbum() {
-	if (!albumForm.name.trim()) return;
-
-	try {
-		const albumData = {
-			name: albumForm.name.trim(),
-			icon: albumForm.icon,
-			cluster_ids: editingAlbum.value?.cluster_ids || [],
-		};
-
-		if (editingAlbum.value) {
-			await updateAlbum(editingAlbum.value.id, albumData);
-		} else {
-			await createAlbum(albumData);
-		}
-
-		closeAlbumModal();
-	} catch (error) {
-		console.error("Error saving album:", error);
-		alert("Failed to save album. Please try again.");
-	}
-}
-
-async function deleteAlbum(album) {
-	if (!confirm(`Are you sure you want to delete "${album.name}"?`)) return;
-
-	try {
-		await deleteAlbumById(album.id);
-	} catch (error) {
-		console.error("Error deleting album:", error);
-		alert("Failed to delete album. Please try again.");
-	}
-}
-
-function closeAlbumModal() {
-	showAlbumModal.value = false;
-	editingAlbum.value = null;
-	albumForm.name = "";
-	albumForm.icon = "📁";
-}
-
-async function fetchClusters() {
-	try {
-		if (!db) return [];
-
-		const tx = db.transaction("clusters", "readonly");
-		const store = tx.objectStore("clusters");
-		const request = store.getAll();
-
-		const selectedAlbumId = currentAlbum.value ? currentAlbum.value.id : null;
-		console.log("Fetching clusters for album ID:", selectedAlbumId);
-
-
-		return new Promise((resolve, reject) => {
-			request.onsuccess = () => {
-
-				const clustersArray = request.result
-
-					.filter(cluster => {
-
-						console.log(
-							"Comparing...",
-							"cluster.album_id =", cluster.album_id,
-							"selectedAlbumId =", selectedAlbumId,
-							"EQUAL?", cluster.album_id === selectedAlbumId
-						);
-
-						if (selectedAlbumId !== null) {
-							return cluster.album_id === selectedAlbumId;
-						}
-						return true; //returns all the clusters if no album is specified
-					})
-					.map(cluster => {
-						const websitesList = cluster.websites
-							.map(id => websites.value[id])
-							.filter(Boolean)
-							.map(website => ({
-								id: website.id,
-								title: website.title,
-								url: website.url,
-								domain: website.domain,
-								processed_at: website.processed_at
-							}));
-
-						return {
-							cluster_id: cluster.id,
-							topic: cluster.topic,
-							website_count: websitesList.length,
-							websites: websitesList,
-							similar_links: cluster.similar_links || {}
-						};
-					});
-
-				resolve(clustersArray);
-			};
-
-			request.onerror = () => reject(request.error);
-		});
-
-
-	} catch (error) {
-		console.error("❌ Error fetching clusters:", error);
-		return [];
-	}
-}
-
-async function fetchSimilarities() {
-	try {
-		if (!db) return {};
-
-		const similarities = {};
-
-		// Get the active album filter
-		const activeAlbumId = currentAlbum.value ? currentAlbum.value.id : null;
-
-		// Only calculate similarities for clusters in the current album view
-		let clusterIds;
-		if (activeAlbumId === null) {
-			// "All Clusters" view - show ALL connections
-			clusterIds = Object.keys(clusters.value);
-		} else {
-			// Specific album - only show connections within that album
-			clusterIds = Object.keys(clusters.value).filter(id => {
-				const cluster = clusters.value[id];
-				return cluster.album_id === activeAlbumId;
-			});
-		}
-
-		// FIRST: Preserve manual connections
-		for (const sourceClusterId of clusterIds) {
-			const sourceCluster = clusters.value[sourceClusterId];
-			if (!sourceCluster) continue;
-
-			similarities[sourceClusterId] = {};
-
-			// Add manual connections with similarity of 1.0
-			if (sourceCluster.manual_connections && sourceCluster.manual_connections.length > 0) {
-				for (const targetId of sourceCluster.manual_connections) {
-					if (clusterIds.includes(targetId)) {
-						similarities[sourceClusterId][targetId] = 1.0;
-					}
-				}
-			}
-		}
-
-		// THEN: Calculate embedding-based similarities
-		for (const sourceClusterId of clusterIds) {
-			const sourceCluster = clusters.value[sourceClusterId];
-			if (!sourceCluster || !sourceCluster.websites.length) continue;
-
-			const sourceWebsiteIds = sourceCluster.websites;
-			const sourceEmbeddings = sourceWebsiteIds
-				.map((id) => embeddings.value[id])
-				.filter(Boolean);
-
-			if (sourceEmbeddings.length === 0) continue;
-
-			const sourceAvgEmbedding = averageEmbeddings(sourceEmbeddings);
-
-			for (const targetClusterId of clusterIds) {
-				if (sourceClusterId === targetClusterId) continue;
-
-				// Skip if manual connection already exists
-				if (similarities[sourceClusterId][targetClusterId]) continue;
-
-				const targetCluster = clusters.value[targetClusterId];
-				if (!targetCluster || !targetCluster.websites.length) continue;
-
-				const targetWebsiteIds = targetCluster.websites;
-				const targetEmbeddings = targetWebsiteIds
-					.map((id) => embeddings.value[id])
-					.filter(Boolean);
-
-				if (targetEmbeddings.length === 0) continue;
-
-				const targetAvgEmbedding = averageEmbeddings(targetEmbeddings);
-				const similarity = cosineSimilarity(sourceAvgEmbedding, targetAvgEmbedding);
-
-				if (similarity >= settings.similarityThreshold) {
-					similarities[sourceClusterId][targetClusterId] = similarity;
-				}
-			}
-		}
-
-		return similarities;
-	} catch (error) {
-		console.error("❌ Error calculating similarities:", error);
-		return {};
-	}
-}
-
-function averageEmbeddings(embeddingsArray) {
-	if (embeddingsArray.length === 0) return [];
-
-	const dim = embeddingsArray[0].length;
-	const avg = new Array(dim).fill(0);
-
-	for (const embedding of embeddingsArray) {
-		for (let i = 0; i < dim; i++) {
-			avg[i] += embedding[i];
-		}
-	}
-
-	for (let i = 0; i < dim; i++) {
-		avg[i] /= embeddingsArray.length;
-	}
-
-	return avg;
-}
-
-async function fetchWebsiteDetails(websiteId) {
-	try {
-		console.log("Fetching website details for:", websiteId);
-
-		if (!db) return null;
-
-		const tx = db.transaction("websites", "readonly");
-
-		const store = tx.objectStore("websites");
-
-		return new Promise((resolve, reject) => {
-			const request = store.get(websiteId);
-
-			request.onsuccess = () => {
-				const website = request.result;
-
-				if (website) {
-					resolve({
-						website: {
-							id: website.id,
-
-							url: website.url,
-
-							title: website.title,
-
-							domain: website.domain,
-
-							ai_summary: website.ai_summary,
-
-							topic: website.topic,
-
-							search_query: website.search_query,
-
-							processed_at: website.processed_at,
-
-							metadata: website.metadata,
-						},
-					});
-				} else {
-					resolve(null);
-				}
-			};
-
-			request.onerror = () => reject(request.error);
-		});
-	} catch (error) {
-		console.error("❌ Error fetching website details:", error);
-
-		return null;
-	}
-}
-
-
-async function googleSearch(query, numResults = 10) {
-	if (!query || !query.trim()) {
-		console.warn("Empty search query");
-		return [];
-	}
-
-	try {
-		console.log(`🔍 Searching Google via backend API for: '${query}'`);
-
-		// Call your Node.js backend instead of Cloudflare Worker
-		const url = new URL(GOOGLE_SEARCH_API_URL);
-		url.searchParams.set('q', query);
-		url.searchParams.set('num', numResults.toString());
-
-		const response = await fetch(url.toString(), {
-			method: 'GET',
-			headers: {
-				'Content-Type': 'application/json',
-			},
-			credentials: 'include' // Include credentials for CORS
-		});
-
-		if (!response.ok) {
-			const errorData = await response.json().catch(() => ({}));
-
-			// Handle rate limiting
-			if (response.status === 429) {
-				console.warn('⚠️ Rate limit exceeded. Please try again later.');
-				throw new Error('Rate limit exceeded. Please try again in 15 minutes.');
-			}
-
-			throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
-		}
-
-		const data = await response.json();
-
-		if (!data.success || !data.results) {
-			throw new Error('Invalid response from search API');
-		}
-
-		console.log(`✅ Found ${data.results.length} search results`);
-		return data.results;
-
-	} catch (error) {
-		console.error(`⚠️ Google search error for query '${query}':`, error);
-
-		// You can throw the error to handle it in the calling code
-		// or return empty array as before
-		if (error.message.includes('Rate limit')) {
-			throw error; // Propagate rate limit errors
-		}
-
-		return [];
-	}
-}
-
-async function addSimilarLinksToCluster(clusterId) {
-	const cluster = clusters.value[clusterId];
-	if (!cluster) return;
-
-	// Initialize similar_links if not present
-	if (!cluster.similar_links) {
-		cluster.similar_links = {};
-	}
-
-	const websiteIds = cluster.websites || [];
-
-	// Get existing URLs in cluster to avoid duplicates
-	const existingUrls = new Set();
-	for (const wid of websiteIds) {
-		const website = websites.value[wid];
-		if (website && website.url) {
-			existingUrls.add(website.url);
-		}
-	}
-
-	// Search for each website's query
-	for (const wid of websiteIds) {
-		const website = websites.value[wid];
-		if (!website) continue;
-
-		const searchQuery = website.search_query || website.topic || website.title;
-
-		// Skip if we already have results for this website
-		if (!searchQuery || cluster.similar_links[wid]) continue;
-
-		console.log(`🔍 Searching similar links for website: ${website.title}`);
-
-		// Search Google
-		const searchResults = await googleSearch(searchQuery, 10);
-
-		// Filter out URLs already in cluster
-		const newLinks = searchResults.filter(result =>
-			result.url && !existingUrls.has(result.url)
-		);
-
-		if (newLinks.length > 0) {
-			cluster.similar_links[wid] = newLinks;
-			console.log(`🔗 Found ${newLinks.length} similar links for website ${wid}`);
-		}
-	}
-
-	// Save to IndexedDB
-	await saveToIndexedDB();
-}
-
-async function searchSimilarWebsites(query) {
-	try {
-		console.log("📡 Searching for similar websites:", query);
-
-		if (!explodedNode.value) return [];
-
-		const clusterId = explodedNode.value.id;
-		const cluster = clusters.value[clusterId];
-
-		// Ensure similar links are populated for this cluster
-		await addSimilarLinksToCluster(clusterId);
-
-		// Collect all similar links from the cluster
-		const allSimilarLinks = [];
-		const seenUrls = new Set();
-
-		if (cluster.similar_links) {
-			for (const [websiteId, links] of Object.entries(cluster.similar_links)) {
-				for (const link of links) {
-					if (!seenUrls.has(link.url)) {
-						seenUrls.add(link.url);
-						allSimilarLinks.push(link);
-					}
-				}
-			}
-		}
-
-		// If we don't have enough results, do a fresh Google search
-		if (allSimilarLinks.length < 5) {
-			console.log("🔍 Not enough cached results, performing fresh search");
-			const freshResults = await googleSearch(query, 10);
-
-			// Get existing cluster URLs
-			const clusterUrls = new Set(
-				cluster.websites.map(wid => websites.value[wid]?.url).filter(Boolean)
-			);
-
-			for (const result of freshResults) {
-				if (!seenUrls.has(result.url) && !clusterUrls.has(result.url)) {
-					seenUrls.add(result.url);
-					allSimilarLinks.push(result);
-				}
-			}
-		}
-
-		// Sort by relevance (you could implement scoring here)
-		// For now, just limit to top 10
-		return allSimilarLinks.slice(0, 10);
-
-	} catch (error) {
-		console.error("❌ Error searching similar websites:", error);
-		return [];
-	}
-}
-
-function formatDate(dateString) {
-	if (!dateString) return "N/A";
-	const date = new Date(dateString);
-	return date.toLocaleDateString();
-}
-
-function performSearch() {
-	const term = searchInput.value.toLowerCase().trim();
-	searchTerm = term;
-
-	if (!term) {
-		clearSearchHighlights();
-		matchCount.value = 0;
-		return;
-	}
-
-	// Deep search: clusters + websites + metadata + summaries
-	const matchingNodes = graphData.nodes.filter(node => {
-		if (node.type === 'cluster') {
-			// Search cluster topic
-			if (node.topic?.toLowerCase().includes(term)) return true;
-
-			// Search within cluster's websites
-			return node.websites?.some(website => {
-				const title = website.title?.toLowerCase() || '';
-				const url = website.url?.toLowerCase() || '';
-				const domain = website.domain?.toLowerCase() || '';
-
-				// Get full website data for deep search
-				const fullWebsite = websites.value[website.id];
-				if (fullWebsite) {
-					const summary = fullWebsite.ai_summary?.toLowerCase() || '';
-					const description = fullWebsite.metadata?.description?.toLowerCase() || '';
-					const keywords = fullWebsite.metadata?.keywords?.toLowerCase() || '';
-
-					return title.includes(term) ||
-						url.includes(term) ||
-						domain.includes(term) ||
-						summary.includes(term) ||
-						description.includes(term) ||
-						keywords.includes(term);
-				}
-
-				return title.includes(term) || url.includes(term) || domain.includes(term);
-			});
-		}
-
-		if (node.type === 'website') {
-			const title = node.title?.toLowerCase() || '';
-			const url = node.url?.toLowerCase() || '';
-			const domain = node.domain?.toLowerCase() || '';
-
-			// Get full website data
-			const fullWebsite = websites.value[node.websiteId];
-			if (fullWebsite) {
-				const summary = fullWebsite.ai_summary?.toLowerCase() || '';
-				const description = fullWebsite.metadata?.description?.toLowerCase() || '';
-				const keywords = fullWebsite.metadata?.keywords?.toLowerCase() || '';
-
-				return title.includes(term) ||
-					url.includes(term) ||
-					domain.includes(term) ||
-					summary.includes(term) ||
-					description.includes(term) ||
-					keywords.includes(term);
-			}
-
-			return title.includes(term) || url.includes(term) || domain.includes(term);
-		}
-
-		return false;
-	});
-
-	matchCount.value = matchingNodes.length;
-	highlightSearchResults(matchingNodes);
-
-	// Auto-zoom to first match
-	if (matchingNodes.length > 0 && svg && zoom && graphContainer.value) {
-		const firstMatch = matchingNodes[0];
-		const width = graphContainer.value.clientWidth;
-		const height = graphContainer.value.clientHeight;
-
-		svg.transition()
-			.duration(1000 / settings.animationSpeed)
-			.call(
-				zoom.transform,
-				d3.zoomIdentity
-					.translate(width / 2, height / 2)
-					.scale(1.2)
-					.translate(-firstMatch.x, -firstMatch.y)
-			);
-	}
-}
-
-function highlightSearchResults(matchingNodes) {
-	if (!container) return;
-
-	const matchingIds = new Set(matchingNodes.map(d => d.id));
-
-	container.select('.nodes')
-		.selectAll('.node')
-		.style('opacity', d => matchingIds.has(d.id) ? 1 : 0.3)
-		.attr('stroke-width', d => matchingIds.has(d.id) ? 4 : 2);
-
-	container.select('.labels')
-		.selectAll('.node-label')
-		.style('opacity', d => matchingIds.has(d.id) ? 1 : 0.3)
-		.style('font-weight', d => matchingIds.has(d.id) ? 'bold' : '500');
-}
-
-function clearSearchHighlights() {
-	if (!container) return;
-
-	container.select('.nodes')
-		.selectAll('.node')
-		.style('opacity', 1)
-		.attr('stroke-width', 2);
-
-	container.select('.labels')
-		.selectAll('.node-label')
-		.style('opacity', 1)
-		.style('font-weight', '500');
-}
-
-// function clearSearch() {
-// 	searchInput.value = '';
-// 	searchTerm = '';
-// 	matchCount.value = 0;
-// 	clearSearchHighlights();
-// }
-
-function openExternalLink(url) {
-	window.open(url, "_blank", "noopener,noreferrer");
-}
-
-function processApiData(clustersData, similarities) {
-	console.log("Processing Cluster data:", { clustersData, similarities });
-
-	const nodes = clustersData.map((cluster, index) => {
-		const baseSize = Math.max(15, Math.min(40, cluster.website_count * 8 + 15));
-
-		return {
-			id: cluster.cluster_id,
-
-			cluster_id: cluster.cluster_id,
-
-			topic: cluster.topic,
-
-			website_count: cluster.website_count,
-
-			websites: cluster.websites || [],
-
-			similar_links: cluster.similar_links || [],
-
-			size: baseSize,
-
-			baseSize: baseSize,
-
-			type: "cluster",
-
-			x: Math.cos((index * 2 * Math.PI) / clustersData.length) * 300,
-
-			y: Math.sin((index * 2 * Math.PI) / clustersData.length) * 300,
-
-			metadata: {
-				description: `Cluster containing ${cluster.website_count} websites about ${cluster.topic}`,
-
-				tags: ["cluster", cluster.topic.toLowerCase().replace(/\s+/g, "-")],
-			},
-		};
-	});
-
-	const links = [];
-
-	Object.entries(similarities).forEach(([sourceId, targets]) => {
-		Object.entries(targets).forEach(([targetId, similarity]) => {
-			if (
-				similarity >= settings.similarityThreshold &&
-				!links.some(
-					(l) =>
-						(l.source === sourceId && l.target === targetId) ||
-						(l.source === targetId && l.target === sourceId)
-				)
-			) {
-				links.push({
-					source: sourceId,
-
-					target: targetId,
-
-					similarity: similarity,
-
-					strength: similarity,
-
-					type: "cluster-link",
-				});
-			}
-		});
-	});
-
-	console.log("✅ Processed data:", {
-		nodeCount: nodes.length,
-
-		linkCount: links.length,
-	});
-
-	return { nodes, links };
-}
-
-async function loadData() {
-	isLoading.value = true;
-
-	try {
-		console.log("🔄 Loading data from IndexedDB...");
-
-		// First load websites and embeddings
-		await loadFromIndexedDB();
-
-		// Then fetch processed clusters (already filtered by album in fetchClusters)
-		const [clustersData, albumsData] = await Promise.all([
-			fetchClusters(), // This is already filtered by currentAlbum
-			fetchAlbums(),
-		]);
-
-		console.log("📊 Data loaded:", {
-			clusterCount: clustersData.length,
-			albumCount: Object.keys(albumsData).length,
-			currentAlbum: currentAlbum.value?.name || 'All Clusters'
-		});
-
-		// UPDATE rawClusters with filtered data
-		rawClusters = clustersData;
-
-		// Calculate similarities ONLY for the filtered clusters
-		const similarities = await fetchSimilarities();
-		rawSimilarities = similarities;
-
-		console.log("Similarities calculated:", Object.keys(similarities).length);
-
-		// Process the filtered data into graph format
-		graphData = processApiData(clustersData, similarities);
-
-		if (graphData.nodes.length === 0) {
-			console.warn("⚠️ No clusters found for this album, showing empty state");
-			graphData = { nodes: [], links: [] };
-		} else {
-			console.log("✅ Graph data ready:", graphData);
-		}
-	} catch (error) {
-		console.error("❌ Error loading data:", error);
-		graphData = { nodes: [], links: [] };
-	} finally {
-		isLoading.value = false;
-	}
-}
-function generatePlaceholderData() {
-	console.log("🔄 Generating placeholder data...");
-	const categories = [
-		"Ideas",
-		"Concepts",
-		"Projects",
-		"Notes",
-		"Research",
-		"Tasks",
-	];
-	const nodes = [];
-	const nodeCount = 6;
-
-	const nodeNames = [
-		"Machine Learning",
-		"Artificial Intelligence",
-		"Data Science",
-		"Web Development",
-		"Cloud Computing",
-		"Cybersecurity",
-	];
-
-	for (let i = 0; i < nodeCount; i++) {
-		const category = categories[Math.floor(Math.random() * categories.length)];
-		const baseSize = Math.random() * 15 + 15;
-		nodes.push({
-			id: `placeholder-${i}`,
-			cluster_id: `placeholder-${i}`,
-			topic: nodeNames[i] || `Cluster ${i + 1}`,
-			website_count: Math.floor(Math.random() * 5) + 1,
-			websites: [],
-			similar_links: [],
-			size: baseSize,
-			baseSize: baseSize,
-			type: "cluster",
-			x: Math.cos((i * 2 * Math.PI) / nodeCount) * 200,
-			y: Math.sin((i * 2 * Math.PI) / nodeCount) * 200,
-			metadata: {
-				description: `Placeholder cluster for ${nodeNames[i] || "various topics"
-					}`,
-				tags: [category.toLowerCase(), "placeholder"],
-			},
-		});
-	}
-
-	const links = [];
-	for (let i = 0; i < nodeCount - 1; i++) {
-		if (Math.random() < 0.6) {
-			links.push({
-				source: nodes[i].id,
-				target: nodes[i + 1].id,
-				similarity: 0.5 + Math.random() * 0.3,
-				strength: 0.5,
-				type: "cluster-link",
-			});
-		}
-	}
-
-	return { nodes, links };
-}
-
-async function refreshData() {
-	console.log("🔄 Refreshing data...");
-	selectedWebsite.value = null;
-	explodedNode.value = null;
-	await loadData();
-	if (simulation) {
-		simulation.nodes(graphData.nodes);
-		simulation.force("link").links(graphData.links);
-		simulation.alpha(1).restart();
-		renderGraph();
-	}
-}
-
-function addProcessingPlaceholder(data) {
-	if (!graphData || !simulation) return { id: null };
-	const nodeId = `processing-${generateId()}`;
-	const width = graphContainer.value?.clientWidth || 800;
-	const height = graphContainer.value?.clientHeight || 600;
-	const node = {
-		id: nodeId,
-		title: (data.metadata?.title || data.url || 'New website').substring(0, 25),
-		size: 18,
-		baseSize: 18,
-		type: 'processing',
-		x: width / 2 + (Math.random() - 0.5) * 300,
-		y: height / 2 + (Math.random() - 0.5) * 300,
-		vx: 0,
-		vy: 0,
-	};
-	graphData.nodes.push(node);
-	simulation.nodes(graphData.nodes);
-	simulation.alpha(0.3).restart();
-	renderGraph();
-	return node;
-}
-
-function removeProcessingPlaceholder(nodeId) {
-	if (!nodeId || !graphData) return;
-	graphData.nodes = graphData.nodes.filter(n => n.id !== nodeId);
-	if (simulation) simulation.nodes(graphData.nodes);
-	renderGraph();
-}
-
-function updateConnections() {
-	if (rawClusters.length > 0) {
-		filterGraphByAlbum();
-	}
-}
-
-function explodeNode(clusterNode) {
-	trackEvent('cluster_exploded', {
-		website_count: clusterNode.websites.length
-	});
-	if (explodedNode.value && explodedNode.value.id !== clusterNode.id) {
-		collapseNode();
-		setTimeout(() => {
-			performExplosion(clusterNode);
-		}, 100);
-	} else if (explodedNode.value && explodedNode.value.id === clusterNode.id) {
-		collapseNode();
-	} else {
-		performExplosion(clusterNode);
-	}
-}
-
-function performExplosion(clusterNode) {
-	explodedNode.value = clusterNode;
-	const centerX = clusterNode.x;
-	const centerY = clusterNode.y;
-
-	// Lock cluster position ONLY
-	clusterNode.fx = centerX;
-	clusterNode.fy = centerY;
-
-	const radius = 80;
-	websiteNodes = [];
-	const totalNodes = clusterNode.websites.length + 1;
-	const angleStep = (2 * Math.PI) / totalNodes;
-
-	clusterNode.websites.forEach((website, index) => {
-		const angle = angleStep * index;
-		const websiteNode = {
-			id: `website-${website.id}`,
-			websiteId: website.id,
-			title: website.title,
-			url: website.url,
-			domain: website.domain,
-			processed_at: website.processed_at,
-			size: 10,
-			baseSize: 10,
-			type: "website",
-			parentCluster: clusterNode.id,
-			x: centerX, // Start at center
-			y: centerY,
-			vx: 0, // ADD: reset velocity
-			vy: 0, // ADD: reset velocity
-			fx: centerX + Math.cos(angle) * radius,
-			fy: centerY + Math.sin(angle) * radius,
-		};
-		websiteNodes.push(websiteNode);
-		graphData.nodes.push(websiteNode);
-
-		graphData.links.push({
-			source: clusterNode.id,
-			target: websiteNode.id,
-			type: "website-link",
-		});
-	});
-
-	const discoverAngle = angleStep * clusterNode.websites.length;
-	const discoverNode = {
-		id: `discover-${clusterNode.id}`,
-		title: "Discover Similar",
-		size: 14,
-		baseSize: 14,
-		type: "discover",
-		parentCluster: clusterNode.id,
-		x: centerX,
-		y: centerY,
-		vx: 0, // ADD: reset velocity
-		vy: 0, // ADD: reset velocity
-		fx: centerX + Math.cos(discoverAngle) * radius,
-		fy: centerY + Math.sin(discoverAngle) * radius,
-	};
-	websiteNodes.push(discoverNode);
-	graphData.nodes.push(discoverNode);
-
-	graphData.links.push({
-		source: clusterNode.id,
-		target: discoverNode.id,
-		type: "discover-link",
-	});
-
-	simulation.nodes(graphData.nodes);
-	simulation.force("link").links(graphData.links);
-	simulation.alpha(0.3).restart();
-
-	renderGraph();
-
-	// Release positions after animation
-	setTimeout(() => {
-		websiteNodes.forEach((node) => {
-			const d3Node = graphData.nodes.find((n) => n.id === node.id);
-			if (d3Node) {
-				d3Node.fx = null;
-				d3Node.fy = null;
-			}
-		});
-		clusterNode.fx = null;
-		clusterNode.fy = null;
-	}, 500);
-}
-
-
-function collapseNode() {
-	if (!explodedNode.value) return;
-
-	const centerX = explodedNode.value.x;
-	const centerY = explodedNode.value.y;
-
-	// Immediately remove nodes and links (no animation needed for switch)
-	graphData.nodes = graphData.nodes.filter(
-		(node) => node.type !== "website" && node.type !== "discover"
-	);
-
-	graphData.links = graphData.links.filter(
-		(link) => link.type !== "website-link" && link.type !== "discover-link"
-	);
-
-	// Release the exploded cluster's fixed position
-	if (explodedNode.value) {
-		explodedNode.value.fx = null;
-		explodedNode.value.fy = null;
-	}
-
-	websiteNodes = [];
-	explodedNode.value = null;
-	selectedWebsite.value = null;
-
-	// Update simulation
-	simulation.nodes(graphData.nodes);
-	simulation.force("link").links(graphData.links);
-
-	renderGraph();
-}
-
-
-async function handleDiscoverClick() {
-	if (!explodedNode.value) return;
-
-	showDiscoverModal.value = true;
-	isLoadingSimilar.value = true;
-	similarWebsites.value = [];
-
-	trackEvent('discover_similar_clicked', {
-		website_count: explodedNode.value.websites.length
-	});
-
-	try {
-		const results = await searchSimilarWebsites(explodedNode.value.topic);
-		similarWebsites.value = results;
-	} catch (error) {
-		console.error("Error loading similar websites:", error);
-	} finally {
-		isLoadingSimilar.value = false;
-	}
-}
-
-function startDraggingSticky(e) {
-	isDraggingSticky = true;
-	const stickyEl = e.currentTarget.parentElement;
-	const rect = stickyEl.getBoundingClientRect();
-	dragOffsetX = e.clientX - rect.left;
-	dragOffsetY = e.clientY - rect.top;
-	document.addEventListener("mousemove", handleStickyDrag);
-	document.addEventListener("mouseup", stopStickyDrag);
-}
-
-function handleStickyDrag(e) {
-	if (!isDraggingSticky) return;
-	stickyNoteStyle.value = {
-		left: e.clientX - dragOffsetX + "px",
-		top: e.clientY - dragOffsetY + "px",
-	};
-}
-
-function stopStickyDrag() {
-	isDraggingSticky = false;
-	document.removeEventListener("mousemove", handleStickyDrag);
-	document.removeEventListener("mouseup", stopStickyDrag);
-}
-
-async function initializeGraph() {
-	const width = graphContainer.value.clientWidth;
-	const height = graphContainer.value.clientHeight;
-
-	await loadData();
-
-	svg = d3
-		.select(graphContainer.value)
-		.append("svg")
-		.attr("width", width)
-		.attr("height", height)
-		.style("overflow", "visible");
-
-	container = svg.append("g");
-
-	zoom = d3
-		.zoom()
-		.scaleExtent([0.2, 3])
-		.on("zoom", (event) => {
-			container.attr("transform", event.transform);
-		});
-
-	svg.call(zoom);
-
-	simulation = d3
-		.forceSimulation(graphData.nodes)
-		.force(
-			"link",
-			d3
-				.forceLink(graphData.links)
-				.id((d) => d.id)
-				.distance((d) => (d.type === "website-link" ? 80 : 200))
-				.strength(0.03)
-		)
-		.force("charge", d3.forceManyBody().strength(-200))
-		.force("center", d3.forceCenter(width / 2, height / 2))
-		.force(
-			"collision",
-			d3.forceCollide().radius((d) => d.size * settings.nodeSize + 15)
-		)
-		.force("x", d3.forceX(width / 2).strength(0.02))
-		.force("y", d3.forceY(height / 2).strength(0.02));
-
-	renderGraph();
-
-	setTimeout(() => {
-		centerView();
-	}, 1000);
-}
-
-function centerView() {
-	if (!svg || !container || !graphContainer.value) return;
-
-	const width = graphContainer.value.clientWidth;
-	const height = graphContainer.value.clientHeight;
-	const bounds = container.node().getBBox();
-
-	if (bounds.width > 0 && bounds.height > 0) {
-		const fullWidth = bounds.width;
-		const fullHeight = bounds.height;
-		const midX = bounds.x + fullWidth / 2;
-		const midY = bounds.y + fullHeight / 2;
-
-		const scale = Math.min(width / fullWidth, height / fullHeight) * 0.7;
-		const translate = [width / 2 - scale * midX, height / 2 - scale * midY];
-
-		svg
-			.transition()
-			.duration(1500)
-			.call(
-				zoom.transform,
-				d3.zoomIdentity.translate(translate[0], translate[1]).scale(scale)
-			);
-	}
-}
-
-function renderGraph() {
-	container.selectAll(".links").data([null]).join("g").attr("class", "links");
-	container.selectAll(".nodes").data([null]).join("g").attr("class", "nodes");
-	container.selectAll(".labels").data([null]).join("g").attr("class", "labels");
-
-	const linkGroup = container.select(".links");
-	const nodeGroup = container.select(".nodes");
-	const labelGroup = container.select(".labels");
-
-	const links = linkGroup
-		.selectAll(".link")
-		.data(
-			graphData.links,
-			(d) => `${d.source.id || d.source}-${d.target.id || d.target}`
-		)
-		.join("line")
-		.attr("class", (d) => `link ${d.type}`)
-		.style("opacity", (d) => {
-			if (d.type === "website-link" || d.type === "discover-link") return 0.6;
-			return showConnections.value ? 0.4 : 0;
-		})
-		.style("stroke-width", (d) => {
-			if (d.type === "website-link" || d.type === "discover-link") return 1.5;
-			return Math.max(1, (d.similarity || 0.5) * 4);
-		})
-		.style("stroke", (d) => {
-			if (d.type === "discover-link") return "#95a5a6";
-			if (d.type === "website-link") return "#adb5bd";
-			return "#adb5bd";
-		});
-
-	const nodes = nodeGroup
-		.selectAll(".node")
-		.data(graphData.nodes, (d) => d.id)
-		.join("circle")
-		.attr("class", (d) => `node ${d.type}`)
-		.attr("data-id", (d) => d.id)
-		.attr("r", (d) => d.size * settings.nodeSize)
-		.attr("fill", (d) => {
-			if (d.type === "discover") return currentTheme.value.colors.primary;
-			if (d.type === "processing") return currentTheme.value.colors.secondary;
-			if (d.type === "website") return currentTheme.value.colors.node;
-			return currentTheme.value.colors.node;
-		})
-		.attr("stroke", (d) => {
-			if (d.type === "discover") return currentTheme.value.colors.secondary;
-			if (d.type === "processing") return currentTheme.value.colors.nodeStroke;
-			if (d.type === "website") return currentTheme.value.colors.nodeStroke;
-			return currentTheme.value.colors.nodeStroke;
-		})
-		.attr("stroke-width", 2)
-		.call(drag(simulation));
-
-	const labels = labelGroup
-		.selectAll(".node-label")
-		.data(graphData.nodes, (d) => d.id)
-		.join("text")
-		.attr("class", "node-label")
-		.text((d) => {
-			if (d.type === "processing") return "Processing...";
-			if (d.type === "website")
-				return d.title.substring(0, 20) + (d.title.length > 20 ? "..." : "");
-			if (d.type === "discover") return "";
-			return d.topic;
-		})
-		.style("font-size", (d) => {
-			if (d.type === "website") return "8px";
-			if (d.type === "processing") return "9px";
-			if (d.type === "discover") return "18px";
-			return Math.max(10, (d.size * settings.nodeSize) / 3.5) + "px";
-		})
-		.style("fill", (d) => {
-			if (d.type === "discover") return "#ffffff";
-			return currentTheme.value.colors.text;
-		})
-		.style("font-weight", (d) => (d.type === "discover" ? "400" : "500"))
-		.style('text-anchor', 'middle');
-
-	nodes
-		.on("mouseover", handleNodeMouseOver)
-		.on("mouseout", handleNodeMouseOut)
-		.on("click", handleNodeClick)
-		.on('contextmenu', handleNodeRightClick);
-
-	simulation.on("tick", () => {
-		links
-			.attr("x1", (d) => d.source.x)
-			.attr("y1", (d) => d.source.y)
-			.attr("x2", (d) => d.target.x)
-			.attr("y2", (d) => d.target.y);
-
-		nodes.attr("cx", (d) => d.x).attr("cy", (d) => d.y);
-
-		labels
-			.attr('x', d => d.x)
-			.attr('y', d => {
-				// All node types should have text below
-				return d.y + (d.size * settings.nodeSize) + 18;
-			});
-	});
-}
-
-function drag(simulation) {
-	function dragstarted(event, d) {
-		if (!event.active) simulation.alphaTarget(0.3).restart();
-		d.fx = d.x;
-		d.fy = d.y;
-	}
-
-	function dragged(event, d) {
-		d.fx = event.x;
-		d.fy = event.y;
-	}
-
-	function dragended(event, d) {
-		if (!event.active) simulation.alphaTarget(0);
-		d.fx = null;
-		d.fy = null;
-	}
-
-	return d3
-		.drag()
-		.on("start", dragstarted)
-		.on("drag", dragged)
-		.on("end", dragended);
-}
-
-// ==============================================
-// EVENT HANDLERS
-// ==============================================
-function handleNodeMouseOver(event, d) {
-	const tooltipEl = d3.select(tooltip.value);
-	tooltipEl
-		.transition()
-		.duration(200 / settings.animationSpeed)
-		.style("opacity", 1);
-
-	let tooltipContent = "";
-	if (d.type === "cluster") {
-		tooltipContent = `<strong>${d.topic}</strong><br>Websites: ${d.website_count}<br>Click to explode`;
-	} else if (d.type === "website") {
-		tooltipContent = `<strong>${d.title}</strong><br>${d.domain}<br>Click for details`;
-	} else if (d.type === "discover") {
-		tooltipContent = `<strong>Discover Similar</strong><br>Find related websites`;
-	} else if (d.type === "processing") {
-		tooltipContent = `<strong>Processing…</strong><br>${d.title}`;
-	}
-
-	tooltipEl
-		.html(tooltipContent)
-		.style("left", event.pageX + 15 + "px")
-		.style("top", event.pageY - 10 + "px");
-
-	if (d.type === "cluster") {
-		highlightConnections(d);
-	}
-}
-
-function handleNodeMouseOut() {
-	d3.select(tooltip.value)
-		.transition()
-		.duration(200 / settings.animationSpeed)
-		.style("opacity", 0);
-	clearHighlights();
-}
-
-async function handleNodeClick(event, d) {
-	event.stopPropagation();
-
-	if (d.type === 'processing') return;
-
-	if (d.type === "cluster") {
-		explodeNode(d);
-	} else if (d.type === "website") {
-		await showWebsiteDetails(event, d);
-	} else if (d.type === "discover") {
-		await handleDiscoverClick();
-	}
-}
-
-async function showWebsiteDetails(event, websiteNode) {
-	selectedWebsite.value = websiteNode;
-	websiteDetails.value = null;
-	console.log("Showing details for website:", websiteNode);
-
-	const containerRect = graphContainer.value.getBoundingClientRect();
-	const nodeScreenX = event.pageX - containerRect.left;
-	const nodeScreenY = event.pageY - containerRect.top;
-
-	const stickyWidth = 300;
-	const stickyHeight = 280;
-
-	let left = nodeScreenX + 20;
-	let top = nodeScreenY - stickyHeight / 2;
-
-	if (left + stickyWidth > containerRect.width) {
-		left = nodeScreenX - stickyWidth - 20;
-	}
-	if (top < 20) top = 20;
-	if (top + stickyHeight > containerRect.height - 20) {
-		top = containerRect.height - stickyHeight - 20;
-	}
-
-	stickyNoteStyle.value = {
-		left: left + "px",
-		top: top + "px",
-	};
-
-	try {
-		const result = await fetchWebsiteDetails(websiteNode.websiteId);
-
-		if (result && result.website) {
-			websiteDetails.value = result.website;
-		}
-	} catch (error) {
-		console.error("Error loading website details:", error);
-	}
-}
-
-function handleBackgroundClick() {
-	selectedWebsite.value = null;
-	showAlbumsDropdown.value = false;
-	closeContextMenu();
-	showWebsiteContextMenu.value = false;
-}
-
-function closeStickyNote() {
-	selectedWebsite.value = null;
-	websiteDetails.value = null;
-}
-
-function closeDiscoverModal() {
-	showDiscoverModal.value = false;
-	similarWebsites.value = [];
-}
-
-function handleNodeRightClick(event, d) {
-	event.preventDefault();
-	event.stopPropagation();
-
-	if (d.type === 'cluster') {
-		contextCluster.value = clusters.value[d.id];
-		contextMenuStyle.value = { left: event.pageX + 'px', top: event.pageY + 'px' };
-		showContextMenu.value = true;
-		showWebsiteContextMenu.value = false;
-	} else if (d.type === 'website') {
-		websiteContextNode.value = d;
-		contextMenuStyle.value = { left: event.pageX + 'px', top: event.pageY + 'px' };
-		showWebsiteContextMenu.value = true;
-		showContextMenu.value = false;
-	}
-}
-
-function closeContextMenu() {
-	showContextMenu.value = false;
-	contextCluster.value = null;
-}
-
-// Rename Functions
-function editWebsiteTitle() {
-	if (!websiteContextNode.value) return;
-	websiteTitleInput.value = websiteContextNode.value.title;
-	showWebsiteEditModal.value = true;
-	showWebsiteContextMenu.value = false;
-}
-
-function closeWebsiteEditModal() {
-	showWebsiteEditModal.value = false;
-	websiteTitleInput.value = '';
-	websiteContextNode.value = null;
-}
-
-async function confirmWebsiteEdit() {
-	if (!websiteTitleInput.value.trim() || !websiteContextNode.value) return;
-	const websiteId = websiteContextNode.value.websiteId;
-	const newTitle = websiteTitleInput.value.trim();
-	if (websites.value[websiteId]) {
-		websites.value[websiteId].title = newTitle;
-		await saveToIndexedDB();
-		await refreshData();
-	}
-	closeWebsiteEditModal();
-}
-
-function renameCluster() {
-	renameInput.value = contextCluster.value.topic;
-	showRenameModal.value = true;
-	showContextMenu.value = false;
-}
-
-function closeRenameModal() {
-	showRenameModal.value = false;
-	renameInput.value = '';
-}
-
-async function confirmRename() {
-	if (!renameInput.value.trim() || !contextCluster.value) return;
-
-	try {
-		const clusterId = contextCluster.value.id;
-		clusters.value[clusterId].topic = renameInput.value.trim();
-
-		await saveToIndexedDB();
-		await refreshData();
-
-		closeRenameModal();
-		contextCluster.value = null;
-	} catch (error) {
-		console.error('Error renaming cluster:', error);
-		alert('Failed to rename cluster');
-	}
-}
-
-// Add Websites Functions
-function showAddWebsitesModal() {
-	selectedWebsitesToAdd.value = [];
-	showAddWebsites.value = true;
-	showContextMenu.value = false;
-}
-
-function closeAddWebsitesModal() {
-	showAddWebsites.value = false;
-	selectedWebsitesToAdd.value = [];
-}
-
-function toggleWebsiteSelection(websiteId) {
-	const index = selectedWebsitesToAdd.value.indexOf(websiteId);
-	if (index > -1) {
-		selectedWebsitesToAdd.value.splice(index, 1);
-	} else {
-		selectedWebsitesToAdd.value.push(websiteId);
-	}
-}
-
-async function confirmAddWebsites() {
-	if (!contextCluster.value || selectedWebsitesToAdd.value.length === 0) return;
-
-	try {
-		const clusterId = contextCluster.value.id;
-
-		for (const websiteId of selectedWebsitesToAdd.value) {
-			if (!clusters.value[clusterId].websites.includes(websiteId)) {
-				clusters.value[clusterId].websites.push(websiteId);
-				websites.value[websiteId].cluster_id = clusterId;
-			}
-		}
-
-		await saveToIndexedDB();
-		await refreshData();
-
-		closeAddWebsitesModal();
-		contextCluster.value = null;
-	} catch (error) {
-		console.error('Error adding websites:', error);
-		alert('Failed to add websites');
-	}
-}
-
-// Remove Websites Functions
-function showRemoveWebsitesModal() {
-	selectedWebsitesToRemove.value = [];
-	showRemoveWebsites.value = true;
-	showContextMenu.value = false;
-}
-
-function closeRemoveWebsitesModal() {
-	showRemoveWebsites.value = false;
-	selectedWebsitesToRemove.value = [];
-}
-
-function toggleRemoveSelection(websiteId) {
-	const index = selectedWebsitesToRemove.value.indexOf(websiteId);
-	if (index > -1) {
-		selectedWebsitesToRemove.value.splice(index, 1);
-	} else {
-		selectedWebsitesToRemove.value.push(websiteId);
-	}
-}
-
-async function confirmRemoveWebsites(deleteEntirely = false) {
-	if (!contextCluster.value || selectedWebsitesToRemove.value.length === 0) return;
-
-	const action = deleteEntirely ? 'delete' : 'remove';
-	const confirmed = confirm(
-		`Are you sure you want to ${action} ${selectedWebsitesToRemove.value.length} website(s)? ${deleteEntirely ? 'This will permanently delete them.' : 'They will be removed from this cluster only.'
-		}`
-	);
-
-	if (!confirmed) return;
-
-	try {
-		const clusterId = contextCluster.value.id;
-
-		for (const websiteId of selectedWebsitesToRemove.value) {
-			const index = clusters.value[clusterId].websites.indexOf(websiteId);
-			if (index > -1) {
-				clusters.value[clusterId].websites.splice(index, 1);
-			}
-
-			if (deleteEntirely) {
-				// Delete website entirely from all clusters and embeddings
-				delete websites.value[websiteId];
-				delete embeddings.value[websiteId];
-
-				// Remove from other clusters too
-				for (const cluster of Object.values(clusters.value)) {
-					const idx = cluster.websites.indexOf(websiteId);
-					if (idx > -1) {
-						cluster.websites.splice(idx, 1);
-					}
-				}
-			} else {
-				// Just remove cluster reference
-				if (websites.value[websiteId]) {
-					delete websites.value[websiteId].cluster_id;
-				}
-			}
-		}
-
-		// Delete cluster if empty
-		if (clusters.value[clusterId].websites.length === 0) {
-			delete clusters.value[clusterId];
-		}
-
-		await saveToIndexedDB();
-		await refreshData();
-
-		closeRemoveWebsitesModal();
-		contextCluster.value = null;
-	} catch (error) {
-		console.error('Error removing websites:', error);
-		alert('Failed to remove websites');
-	}
-}
-
-// Delete Cluster
-async function deleteCluster() {
-	if (!contextCluster.value) return;
-
-	const confirmed = confirm(`Delete cluster "${contextCluster.value.topic}"? This will not delete the websites.`);
-	if (!confirmed) return;
-
-	try {
-		const clusterId = contextCluster.value.id;
-
-		// Remove cluster reference from websites
-		for (const websiteId of clusters.value[clusterId].websites) {
-			if (websites.value[websiteId]) {
-				delete websites.value[websiteId].cluster_id;
-			}
-		}
-
-		delete clusters.value[clusterId];
-
-		await saveToIndexedDB();
-		await refreshData();
-
-		showContextMenu.value = false;
-		contextCluster.value = null;
-	} catch (error) {
-		console.error('Error deleting cluster:', error);
-		alert('Failed to delete cluster');
-	}
-}
-
-function handleProfileClick() {
-	alert("Profile functionality would be implemented here");
-}
-
-
-function highlightConnections(node) {
-	const connectedNodeIds = new Set();
-	const connectedLinks = new Set();
-
-	graphData.links.forEach((link) => {
-		const sourceId = link.source.id || link.source;
-		const targetId = link.target.id || link.target;
-
-		if (sourceId === node.id && link.type === "cluster-link") {
-			connectedNodeIds.add(targetId);
-			connectedLinks.add(link);
-		} else if (targetId === node.id && link.type === "cluster-link") {
-			connectedNodeIds.add(sourceId);
-			connectedLinks.add(link);
-		}
-	});
-
-	// Highlight connected nodes
-	container.select('.nodes')
-		.selectAll('.node')
-		.style('opacity', d =>
-			d.id === node.id || connectedNodeIds.has(d.id) ? 1 : 0.4
-		)
-		.attr("stroke", d =>
-			d.id === node.id || connectedNodeIds.has(d.id) ? currentTheme.value.colors.primary : null
-		)
-		.attr('stroke-width', d =>
-			d.id === node.id || connectedNodeIds.has(d.id) ? 3 : 2
-		);
-
-	// Highlight connected links
-	container.select('.links')
-		.selectAll('.link')
-		.style('opacity', d => connectedLinks.has(d) ? 0.8 : 0.2)
-		.style('stroke', d => connectedLinks.has(d) ? '#4A90E2' : null)
-		.style('stroke-width', d => connectedLinks.has(d) ? 3 : null);
-}
-
-function clearHighlights() {
-	if (!container) return;
-
-	// Don't clear search highlights if there's an active search
-	if (!searchTerm) {
-		container.select('.nodes')
-			.selectAll('.node')
-			.style('opacity', 1)
-			.attr('stroke-width', 2);
-
-		container.select('.labels')
-			.selectAll('.node-label')
-			.style('opacity', 1)
-			.style('font-weight', '500');
-	} else {
-		// Restore search highlight state
-		const term = searchTerm.toLowerCase();
-		container.select('.nodes')
-			.selectAll('.node')
-			.style('opacity', d => {
-				const matches = d.type === 'cluster'
-					? d.topic?.toLowerCase().includes(term)
-					: d.title?.toLowerCase().includes(term);
-				return matches ? 1 : 0.3;
-			});
-	}
-
-	// Always clear connection highlights
-	container.select('.nodes')
-		.selectAll('.node')
-		.attr("stroke", d => {
-			if (d.type === 'discover') return currentTheme.value.colors.secondary;
-			if (d.type === 'website') return currentTheme.value.colors.nodeStroke;
-			return currentTheme.value.colors.nodeStroke;
-		})
-		.attr('stroke-width', 2);
-
-	container.select('.links')
-		.selectAll('.link')
-		.style('opacity', d => {
-			if (d.type === 'website-link' || d.type === 'discover-link') return 0.6;
-			return showConnections.value ? 0.4 : 0;
-		})
-		.style("stroke", d => {
-			if (d.type === 'discover-link') return currentTheme.value.colors.nodeStroke;
-			if (d.type === 'website-link') return currentTheme.value.colors.nodeStroke;
-			return currentTheme.value.colors.nodeStroke;
-		})
-		.style('stroke-width', d => {
-			if (d.type === 'website-link' || d.type === 'discover-link') return 1.5;
-			return Math.max(1, (d.similarity || 0.5) * 4);
-		});
-}
-
-// ==============================================
-// SETTINGS FUNCTIONS
-// ==============================================
 function toggleSettings() {
 	showSettings.value = !showSettings.value;
 }
@@ -5403,56 +3257,80 @@ function closeSettings() {
 	showSettings.value = false;
 }
 
-function loadDarkModePreference() {
-	const saved = localStorage.getItem('darkMode');
-	if (saved !== null) {
-		isDarkMode.value = saved === 'true';
-		updateTheme();
-	}
+function dismissCompatibilityCheck() {
+	notifyCompatibilityCheckDismissed();
 }
 
-function toggleDarkMode() {
-	// Find the opposite theme (light <-> dark)
-	const newTheme = currentTheme.value.isDark
-		? themes.find(t => t.id === 'default-light')
-		: themes.find(t => t.id === 'default-dark');
+// The embedding model (needed for both modes) loads briefly on every mount,
+// but the header icon should only visibly spin for local mode, where the
+// much heavier local WebLLM download is what's actually worth surfacing.
+// Commercial-mode users see "ready" immediately rather than a loading flash
+// for work they're not waiting on.
+const showModelLoadingIndicator = computed(
+	() => modelLoading.value && processingMode.value === 'local'
+);
 
-	if (newTheme) {
-		applyTheme(newTheme);
-	}
+// CSS custom properties for the History/Albums dropdown's badge chips (see
+// .cal-chip/.globe-chip below) - every color is pulled from currentTheme so
+// the badges re-skin with the theme automatically instead of being
+// hardcoded. Calendar chip accents off primary, globe chip off secondary,
+// so the two badges read as distinct without introducing a third color.
+const badgeVars = computed(() => {
+	const c = currentTheme.value.colors;
+	return {
+		'--chip-surface': c.surface,
+		'--chip-border': c.border,
+		'--chip-text': c.text,
+		'--chip-primary': c.primary,
+		'--chip-secondary': c.secondary,
+		'--chip-primary-tint': withAlpha(c.primary, 0.16),
+		'--chip-primary-tint-strong': withAlpha(c.primary, 0.4),
+		'--chip-secondary-tint-strong': withAlpha(c.secondary, 0.45),
+	};
+});
+
+// currentHistoryDay (and each history list row's day.key) is a 'YYYY-MM-DD'
+// key (see useGraphEngine.js's dayKeyFromISO) - parsing that directly as a
+// bare date string gets read as UTC midnight by Date(), which can display a
+// day early/late depending on the viewer's timezone offset, so it's pinned
+// to local noon first.
+function computeDayBadge(raw) {
+	if (!raw) return { month: '', day: '' };
+	const d = new Date(/^\d{4}-\d{2}-\d{2}$/.test(raw) ? `${raw}T12:00:00` : raw);
+	if (isNaN(d)) return { month: '', day: '' };
+	return {
+		month: d.toLocaleString('en-US', { month: 'short' }).toUpperCase(),
+		day: String(d.getDate()),
+	};
 }
 
-function updateTheme() {
-	if (!currentTheme.value || !container) return;
+const historyBadge = computed(() => computeDayBadge(currentHistoryDay.value));
 
-	applyThemeColors(currentTheme.value);
+// Works for any selected website-shaped record - a regular website, an
+// uploaded file, or a note - deleteWebsite() already handles cluster
+// cleanup uniformly regardless of what's stored on the record.
+async function deleteSelectedWebsite() {
+	if (!selectedWebsite.value) return;
+	const label = selectedWebsite.value.is_note ? 'this note' : `"${selectedWebsite.value.title}"`;
+	if (!(await rocusConfirm(`Delete ${label}? This can't be undone.`, { title: 'Delete', confirmText: 'Delete', danger: true }))) return;
+
+	// deleteWebsite() already refreshes correctly on its own now (choosing
+	// between refreshData()/refreshRemoteGraphView() based on whether this
+	// is a remote/collaborator view) - an unconditional refreshData() here
+	// afterward would re-break that for a remote viewer by reading this
+	// browser's own irrelevant local IndexedDB right after the correct
+	// refresh already ran.
+	await deleteWebsite(selectedWebsite.value.websiteId);
+	closeStickyNote();
 }
 
-function updateNodeSizes() {
-	container
-		.select(".nodes")
-		.selectAll(".node")
-		.transition()
-		.duration(300 / settings.animationSpeed)
-		.attr("r", (d) => d.baseSize * settings.nodeSize);
-
-	container
-		.select(".labels")
-		.selectAll(".node-label")
-		.transition()
-		.duration(300 / settings.animationSpeed)
-		.style("font-size", (d) => {
-			if (d.type === "website") return "8px";
-			if (d.type === "discover") return "18px";
-			return Math.max(10, (d.baseSize * settings.nodeSize) / 3.5) + "px";
-		});
-
-	if (simulation) {
-		simulation.force(
-			"collision",
-			d3.forceCollide().radius((d) => d.baseSize * settings.nodeSize + 15)
-		);
-		simulation.alpha(0.3).restart();
+// "All Clusters" is shared between the Albums and History views of the
+// switcher dropdown, so it needs to clear whichever filter is active.
+function selectAllClusters() {
+	if (dropdownMode.value === 'history') {
+		selectHistoryDay(null);
+	} else {
+		selectAlbum(null);
 	}
 }
 
@@ -5466,815 +3344,231 @@ function resetSettings() {
 	updateConnections();
 }
 
-function resetView() {
-	centerView();
-}
-
-function toggleConnections() {
-	container
-		.select(".links")
-		.selectAll(".link.cluster-link")
-		.transition()
-		.duration(500 / settings.animationSpeed)
-		.style("opacity", showConnections.value ? 0.4 : 0);
-}
-
-function detectPlatform() {
-	const userAgent = navigator.userAgent.toLowerCase();
-	if (userAgent.includes("linux")) return "Linux";
-	if (userAgent.includes("mac")) return "macOS";
-	if (userAgent.includes("win")) return "Windows";
-	return "Unknown";
-}
-
-function initDB() {
-	return new Promise((resolve, reject) => {
-		const request = indexedDB.open("FunkyAIDB", 2);
-
-		request.onerror = () => reject(request.error);
-		request.onsuccess = () => {
-			db = request.result;
-			resolve(db);
-		};
-
-		request.onupgradeneeded = (event) => {
-			const database = event.target.result;
-
-			if (!database.objectStoreNames.contains("websites")) {
-				database.createObjectStore("websites", { keyPath: "id" });
-			}
-			if (!database.objectStoreNames.contains("clusters")) {
-				database.createObjectStore("clusters", { keyPath: "id" });
-			}
-			if (!database.objectStoreNames.contains("embeddings")) {
-				database.createObjectStore("embeddings", { keyPath: "id" });
-			}
-			if (!database.objectStoreNames.contains("albums")) {
-				database.createObjectStore("albums", { keyPath: "id" });
-			}
-			if (!database.objectStoreNames.contains("queue")) {
-				database.createObjectStore("queue", { keyPath: "id" });
-			}
-		};
-	});
-}
-
-function normalizeTopicTerm(term) {
-	if (!term) return "";
-
-	let normalized = term.toLowerCase().trim();
-
-	if (normalized.endsWith("ies")) {
-		normalized = normalized.slice(0, -3) + "y";
-	} else if (normalized.endsWith("es")) {
-		normalized = normalized.slice(0, -2);
-	} else if (normalized.endsWith("s")) {
-		normalized = normalized.slice(0, -1);
-	}
-
-	normalized = normalized.replace(/(ing|ed|er)$/, "");
-
-	return normalized;
-}
-
-function topicsMatch(topic1, topic2) {
-	if (!topic1 || !topic2) return false;
-
-	const normalize = (s) => {
-		s = s.toLowerCase().trim();
-		s = s.replace(/[^a-z0-9 ]/g, "");
-		if (s.endsWith("s")) s = s.slice(0, -1);
-		return s;
-	};
-
-	const n1 = normalize(topic1);
-	const n2 = normalize(topic2);
-
-	if (n1 === n2) return true;
-
-	const set1 = new Set(n1.split(" "));
-	const set2 = new Set(n2.split(" "));
-	const intersection = [...set1].filter((x) => set2.has(x));
-
-	if (intersection.length > 0) return true;
-
-	const synonyms = {
-		gpu: ["graphics card", "video card"],
-		cpu: ["processor", "chip"],
-		ai: ["artificial intelligence", "machine learning", "ml"],
-		phone: ["mobile", "smartphone"],
-		laptop: ["notebook", "portable computer"],
-	};
-
-	for (const [key, values] of Object.entries(synonyms)) {
-		if (n1 === key && values.includes(n2)) return true;
-		if (n2 === key && values.includes(n1)) return true;
-	}
-
-	return false;
-}
-
-// Cosine similarity
-function cosineSimilarity(vecA, vecB) {
-	const dotProduct = vecA.reduce((sum, a, i) => sum + a * vecB[i], 0);
-	const magnitudeA = Math.sqrt(vecA.reduce((sum, a) => sum + a * a, 0));
-	const magnitudeB = Math.sqrt(vecB.reduce((sum, b) => sum + b * b, 0));
-	return dotProduct / (magnitudeA * magnitudeB);
-}
-
-// Generate embedding (Transformers.js)
-async function generateEmbedding(text) {
-	if (!embeddingModel) return null;
-
-	try {
-		const result = await embeddingModel(text, {
-			pooling: "mean",
-			normalize: true,
-		});
-		// result.data is a TypedArray/ArrayBuffer-like; convert to regular array
-		return Array.from(result.data);
-	} catch (err) {
-		console.error("Error generating embedding:", err);
-		return null;
-	}
-}
-
-async function generateSummaryAndTopic(metadata, content) {
-	// If summarizationModel isn't ready, return fallback
-	if (!summarizationModel) return { summary: "", topic: "", query: "" };
-
-	try {
-		const contentChunk = content.substring(0, 2500);
-
-		// STEP 1: Generate summary first (needed for topic and query)
-		const summaryResult = await summarizationModel.chat.completions.create({
-			messages: [{
-				role: "user",
-				content: `Create a detailed 2-3 sentence summary from this webpage content:
-
-TITLE: ${metadata.title}
-DESCRIPTION: ${metadata.description || ""}
-CONTENT: ${contentChunk}
-
-Write a summary that describes what this page is about, what it offers, and key details. Make it good for semantic search:
-
-Summary:`
-			}],
-			max_tokens: 120,
-			temperature: 0.3,
-		});
-
-		const summary = summaryResult.choices?.[0]?.message?.content?.trim() ?? "";
-		console.log("Summary generated:", summary);
-
-		// STEP 2 & 3: Generate topic and query in parallel (now that summary exists)
-		const [topicResult, queryResult] = await Promise.all([
-			summarizationModel.chat.completions.create({
-				messages: [{
-					role: "user",
-					content: `Generate the main topic of this page using ONLY one or two words
-
-TITLE: ${metadata.title}
-SUMMARY: ${summary}
-
-Main topic:`
-				}],
-				max_tokens: 10,
-				temperature: 0.2,
-			}),
-
-			summarizationModel.chat.completions.create({
-				messages: [{
-					role: "user",
-					content: `Create a Google search query to find this page:
-
-TITLE: ${metadata.title}
-DOMAIN: ${metadata.domain}
-SUMMARY: ${summary}
-
-Search query:`
-				}],
-				max_tokens: 20,
-				temperature: 0.2,
-			})
-		]);
-
-		console.log("Topic and query processing complete");
-
-		// Extract results
-		const topic = topicResult.choices?.[0]?.message?.content?.trim() ?? "";
-		const query = queryResult.choices?.[0]?.message?.content?.trim() ?? "";
-
-		console.log("Final results:", { summary, topic, query });
-
-		// Validate and return with fallbacks
-		return {
-			summary: summary || metadata.description || contentChunk.substring(0, 200),
-			topic: topic || extractTopic(metadata.title, metadata.keywords) || "General",
-			query: query || `${metadata.title} ${metadata.domain}`.trim()
-		};
-
-	} catch (err) {
-		console.error("Error in chained summarization:", err);
-
-		// Fallback to extractive summary
-		return {
-			summary: extractFallbackSummary(content, metadata),
-			topic: extractTopic(metadata.title, metadata.keywords) || "General",
-			query: `${metadata.title || ""} ${metadata.domain || ""}`.trim()
-		};
-	}
-}
-
-// Helper: Extract topic from title
-function extractTopic(title, keywords) {
-	if (!title) return null;
-	const stopWords = new Set(['the', 'a', 'an', 'of', 'in', 'on', 'at', 'to', 'for', 'and', 'or']);
-	return title
-		.toLowerCase()
-		.split(/\W+/)
-		.filter(w => !stopWords.has(w) && w.length > 2)
-		.slice(0, 2)
-		.join(' ');
-}
-
-// Helper: Extractive fallback summary
-function extractFallbackSummary(content, metadata) {
-	if (metadata.description) return metadata.description;
-
-	// Extract first 2-3 meaningful sentences
-	const sentences = content
-		.substring(0, 1000)
-		.split(/[.!?]+/)
-		.map(s => s.trim())
-		.filter(s => s.length > 30 && s.length < 200);
-
-	return sentences.slice(0, 2).join('. ') + '.';
-}
-
-function findSimilarWebsites(targetEmbedding, excludeId = null, albumId = null) {
-	const similarities = [];
-
-	for (const [websiteId, embedding] of Object.entries(embeddings.value)) {
-		if (excludeId && websiteId === excludeId) continue;
-
-		const website = websites.value[websiteId];
-		if (!website || website.album_id !== albumId) continue;
-
-		const similarity = cosineSimilarity(targetEmbedding, embedding);
-		similarities.push({ websiteId, similarity });
-	}
-
-	return similarities.sort((a, b) => b.similarity - a.similarity);
-}
-
-function assignToCluster(websiteId, topic, embedding, searchQuery, albumId = null) {
-	const normalizedTopic = normalizeTopicTerm(topic);
-
-	const similarWebsites = findSimilarWebsites(embedding, websiteId, albumId);
-
-	for (const { websiteId: similarId, similarity } of similarWebsites) {
-		for (const [clusterId, cluster] of Object.entries(clusters.value)) {
-			if (cluster.album_id !== albumId) continue;
-
-			if (cluster.websites.includes(similarId)) {
-				const clusterTopic = cluster.topic;
-
-				if (similarity >= SIMILARITY_THRESHOLD) {
-					if (!cluster.websites.includes(websiteId)) {
-						cluster.websites.push(websiteId);
-					}
-					console.log(`🔗 Added to cluster ${clusterId} in album ${albumId || 'All Clusters'}`);
-
-					return clusterId;
-				}
-
-				if (
-					similarity >= LOOSE_SIMILARITY_THRESHOLD &&
-					topicsMatch(topic, clusterTopic)
-				) {
-					if (!cluster.websites.includes(websiteId)) {
-						cluster.websites.push(websiteId);
-					}
-					console.log(`🔗 Added to cluster ${clusterId} (loose + topic)`);
-					return clusterId;
-				}
-			}
-		}
-	}
-
-	const newClusterId = generateId();
-	clusters.value[newClusterId] = {
-		id: newClusterId,
-		topic: topic,
-		websites: [websiteId],
-		similar_links: {},
-		manual_connections: [],
-		album_id: albumId,
-	};
-
-	console.log(`🆕 Created new cluster: ${newClusterId} in album ${albumId || 'All Clusters'}`);
-	return newClusterId;
-}
-
-
-
-// Process website
-async function processWebsite(data) {
-	if (!embeddingModel || !summarizationModel) {
-		console.error("Models not loaded");
+async function handleProfileClick() {
+	if (!store.user) {
+		window.location.href = signInUrl();
 		return;
 	}
-
-	const placeholderNode = addProcessingPlaceholder(data);
-
-	try {
-		const websiteId = generateId();
-		const metadata = data.metadata || {};
-		const content = data.content || "";
-
-
-
-		console.log(`📝 Processing: ${metadata.title || data.url}`);
-
-		// Generate summary and topic (Web-LLM)
-		const { summary, topic, query } = await generateSummaryAndTopic(
-			metadata,
-			content
-		);
-
-		// Generate embedding from summary (Transformers.js)
-		const embeddingText =
-			summary || `${metadata.title} ${metadata.description || ""}`.trim();
-		const embedding = await generateEmbedding(embeddingText);
-
-		if (!embedding) {
-			console.error("Failed to generate embedding");
-			return;
-		}
-
-		// Store website data
-		websites.value[websiteId] = {
-			id: websiteId,
-			url: data.url,
-			title: metadata.title || data.url,
-			domain: metadata.domain || new URL(data.url).hostname,
-			topic: topic,
-			ai_summary: summary,
-			search_query: query,
-			metadata: metadata,
-			album_id: data.album || null,
-			processed_at: new Date().toISOString(),
-		};
-
-		// Store embedding separately
-		embeddings.value[websiteId] = embedding;
-
-		// Assign to cluster
-		const clusterId = assignToCluster(websiteId, topic, embedding, query, data.album);
-		websites.value[websiteId].cluster_id = clusterId;
-
-		addSimilarLinksToCluster(clusterId).catch(err =>
-			console.error("Error adding similar links:", err)
-		);
-
-		// Save to IndexedDB
-		await saveToIndexedDB();
-
-		removeProcessingPlaceholder(placeholderNode.id);
-
-		showNewDataNotification.value = true;
-
-		setTimeout(() => {
-			showNewDataNotification.value = false;
-		}, 4000);
-
-		trackEvent('website_saved', {
-			has_album: !!data.album
-		});
-
-		await refreshData();
-
-		console.log(`✅ Processed: ${websiteId}`);
-		promptConsent();
-	} catch (err) {
-		console.error("Error processing website:", err);
-		removeProcessingPlaceholder(placeholderNode.id);
+	if (await rocusConfirm(`Sign out of ${store.user.email || 'Rocus'}?`, { title: 'Sign Out', confirmText: 'Sign Out' })) {
+		window.location.href = `${API_BASE}/api/auth/logout`;
 	}
 }
 
-async function processQueue() {
-	if (isProcessing.value || processingQueue.value.length === 0) return;
+// ==============================================
+// FIRST-RUN CHOICE (local vs cloud processing)
+// ==============================================
+// processingMode's own localStorage key (rocus-processing-mode) doubles as
+// the "has this tab ever been asked?" signal - unset means never chosen,
+// same check useAIModels.js itself uses to decide the silent 'commercial'
+// default. Shown before the tutorial/compatibility-check flow below, which
+// gets deferred (see proceedWithOnboarding()) until a choice is made so it
+// never renders stacked underneath this overlay.
+const showFirstRunChoice = ref(localStorage.getItem('rocus-processing-mode') === null);
 
-	isProcessing.value = true;
-	processedCount.value = 0;
-
-	for (const item of processingQueue.value) {
-		await processWebsite(item);
-		processedCount.value++;
-	}
-
-	processingQueue.value = [];
-	processedCount.value = 0;
-	isProcessing.value = false;
-}
-
-// Delete website
-async function deleteWebsite(websiteId) {
-	// Remove from clusters
-	for (const cluster of Object.values(clusters.value)) {
-		const index = cluster.websites.indexOf(websiteId);
-		if (index > -1) {
-			cluster.websites.splice(index, 1);
-
-			// Delete empty clusters
-			if (cluster.websites.length === 0) {
-				delete clusters.value[cluster.id];
-			}
-		}
-	}
-
-	// Remove website and embedding
-	delete websites.value[websiteId];
-	delete embeddings.value[websiteId];
-
-	await saveToIndexedDB();
-	console.log(`🗑️ Deleted website: ${websiteId}`);
-}
-
-async function saveToIndexedDB() {
-	if (!db) return;
-
-	try {
-		const tx = db.transaction(
-			["websites", "clusters", "embeddings"],
-			"readwrite"
-		);
-
-		const websiteStore = tx.objectStore("websites");
-		await new Promise((resolve, reject) => {
-			const r = websiteStore.clear();
-			r.onsuccess = resolve;
-			r.onerror = () => reject(r.error);
-		});
-
-		for (const website of Object.values(websites.value)) {
-			try {
-				// Convert to plain object by JSON serialization or manual copy
-				const plainWebsite = JSON.parse(JSON.stringify(website));
-
-				await new Promise((resolve, reject) => {
-					const r = websiteStore.put(plainWebsite);
-					r.onsuccess = resolve;
-					r.onerror = () => reject(r.error);
-				});
-			} catch (err) {
-				console.error("❌ WEBSITE FAILED:", website, err);
-			}
-		}
-
-		const clusterStore = tx.objectStore("clusters");
-		await new Promise((resolve, reject) => {
-			const r = clusterStore.clear();
-			r.onsuccess = resolve;
-			r.onerror = () => reject(r.error);
-		});
-
-		for (const cluster of Object.values(clusters.value)) {
-			try {
-				// Convert to plain object
-				const plainCluster = JSON.parse(JSON.stringify(cluster));
-
-				await new Promise((resolve, reject) => {
-					const r = clusterStore.put(plainCluster);
-					r.onsuccess = resolve;
-					r.onerror = () => reject(r.error);
-				});
-			} catch (err) {
-				console.error("❌ CLUSTER FAILED:", cluster, err);
-			}
-		}
-
-		const embeddingStore = tx.objectStore("embeddings");
-		await new Promise((resolve, reject) => {
-			const r = embeddingStore.clear();
-			r.onsuccess = resolve;
-			r.onerror = () => reject(r.error);
-		});
-
-		for (const [id, embedding] of Object.entries(embeddings.value)) {
-			try {
-				const plainEmbedding = {
-					id,
-					embedding: Array.from(embedding),
-				};
-				await new Promise((resolve, reject) => {
-					const r = embeddingStore.put(plainEmbedding);
-					r.onsuccess = resolve;
-					r.onerror = () => reject(r.error);
-				});
-			} catch (err) {
-				console.error(`❌ EMBEDDING FAILED [${id}]`, embedding, err);
-			}
-		}
-
-		await new Promise((resolve, reject) => {
-			tx.oncomplete = resolve;
-			tx.onerror = () => reject(tx.error);
-			tx.onabort = () => reject(tx.error || new Error("Transaction aborted"));
-		});
-
-		console.log("✨ IndexedDB Save Complete");
-	} catch (err) {
-		console.error("🔥 FATAL IndexedDB SAVE ERROR:", err);
-	}
-}
-
-async function loadFromIndexedDB() {
-	if (!db) return;
-
-	try {
-		// Load websites
-		const websiteTx = db.transaction("websites", "readonly");
-		const websiteStore = websiteTx.objectStore("websites");
-		const websiteRequest = websiteStore.getAll();
-
-		websiteRequest.onsuccess = () => {
-			for (const website of websiteRequest.result) {
-				websites.value[website.id] = website;
-			}
-		};
-
-		// Load clusters
-		const clusterTx = db.transaction("clusters", "readonly");
-		const clusterStore = clusterTx.objectStore("clusters");
-		const clusterRequest = clusterStore.getAll();
-
-		clusterRequest.onsuccess = () => {
-			for (const cluster of clusterRequest.result) {
-				clusters.value[cluster.id] = cluster;
-			}
-		};
-
-		// Load embeddings
-		const embeddingTx = db.transaction("embeddings", "readonly");
-		const embeddingStore = embeddingTx.objectStore("embeddings");
-		const embeddingRequest = embeddingStore.getAll();
-
-		embeddingRequest.onsuccess = () => {
-			for (const item of embeddingRequest.result) {
-				embeddings.value[item.id] = item.embedding;
-			}
-		};
-
-		console.log("✅ Loaded data from IndexedDB");
-	} catch (err) {
-		console.error("Error loading from IndexedDB:", err);
-	}
-}
-
-async function clearModelCache() {
-	const confirmed = confirm(
-		'Reset AI Model Cache?\n\n' +
-		'This will delete downloaded AI models (~300–700MB) and reload the app.\n\n' +
-		'Your bookmarks, topics, clusters, and albums will NOT be deleted.'
+// The tutorial-start + What's-New sequencing that used to run unconditionally
+// at the end of onMounted's local branch - pulled into its own function so it
+// can also be called from handleFirstRunChoice() once a first-run visitor
+// actually makes a choice, not just from onMounted directly.
+function proceedWithOnboarding() {
+	const tutorialCompleted = localStorage.getItem('rocus-tutorial-completed');
+	// A returning, experienced account has no local memory of that on a
+	// fresh device/browser (empty localStorage) - fall back to server-
+	// backed signals so they don't see the first-run tutorial again.
+	const isExperiencedUser = !!(
+		store.user?.hasPriorUsage ||
+		activelyOwnedSharedGraphIds.value.size > 0 ||
+		sharedWithMeGraphs.value.length > 0
 	);
 
-	if (!confirmed) return;
+	checkShowWhatsNew();
 
-	try {
-		// Delete only WebLLM / MLC IndexedDB databases
-		if (indexedDB.databases) {
-			const databases = await indexedDB.databases();
-			for (const db of databases) {
-				if (
-					db.name &&
-					(
-						db.name.startsWith('webllm/') ||
-						db.name.startsWith('webllm') ||
-						db.name.includes('mlc')
-					)
-				) {
-					console.log('Deleting IndexedDB:', db.name);
-					indexedDB.deleteDatabase(db.name);
+	const maybeStartTutorial = () => {
+		if (!tutorialCompleted && !isExperiencedUser) {
+			setTimeout(() => {
+				if (graphData?.nodes?.length > 0) {
+					startTutorial();
+				} else {
+					startTutorialEmpty();
 				}
-			}
-		}
-
-		// Clear related Cache Storage entries
-		if ('caches' in window) {
-			const keys = await caches.keys();
-			for (const key of keys) {
-				if (key.includes('webllm') || key.includes('mlc')) {
-					console.log('Deleting cache:', key);
-					await caches.delete(key);
-				}
-			}
-		}
-
-		alert('✅ AI model cache cleared.\n\nReloading…');
-		location.reload();
-
-	} catch (err) {
-		console.error('Failed to clear AI cache:', err);
-		alert(
-			'⚠️ Could not fully reset AI cache automatically.\n\n' +
-			'Please clear site data for rocus.io in browser settings.'
-		);
-	}
-}
-
-
-async function loadModels() {
-	modelLoading.value = true;
-	loadingMessage.value = "Loading AI models...";
-	downloadProgress.value = 0;
-
-	try {
-		// transformers.js
-		loadingMessage.value = "Loading embedding model (Transformers.js)...";
-		embeddingModel = await pipeline(
-			"feature-extraction",
-			"Xenova/all-MiniLM-L6-v2",
-			{
-				progress_callback: (progress) => {
-					// keep the first half of the progress for embeddings
-					if (progress.status === "downloading") {
-						downloadProgress.value = Math.round(
-							(progress.loaded / (progress.total || 1)) * 40
-						);
-					}
-				},
-			}
-		);
-
-
-		// Load Web-LLM from self-hosted CDN
-		loadingMessage.value = "Loading AI model from Rocus CDN...";
-		const modelConfig = availableModels.value.find(m => m.id === selectedModel.value);
-		if (!modelConfig) throw new Error('Model configuration not found');
-
-		console.log(`Loading model from: ${modelConfig.url}`);
-
-		const customModelRecord = {
-			model: modelConfig.url,
-			model_id: selectedModel.value,
-			model_lib: modelConfig.wasm,
-		};
-
-		summarizationModel = await CreateMLCEngine(
-			selectedModel.value, // 'Qwen2.5-0.5B-Rocus'
-			{
-				initProgressCallback: (progress) => {
-					if (progress && typeof progress.progress === 'number') {
-						modelLoadingProgress.value = Math.round(progress.progress * 100);
-					}
-					if (progress && progress.text) {
-						loadingMessage.value = progress.text;
-						console.log(`📦 ${progress.text}`);
-					}
-				},
-				appConfig: {
-					useIndexedDBCache: true,
-					model_list: [customModelRecord],
-				},
-				logLevel: 'WARN',
-			}
-		);
-
-		console.log('✅ Model loaded from Rocus CDN');
-
-		// quick sanity test for summarization LLM
-		try {
-			await summarizationModel.chat.completions.create({
-				messages: [{ role: "user", content: "Say hi" }],
-				max_tokens: 5,
-				temperature: 0.4,
-			});
-		} catch (e) {
-			// Non-fatal: keep engine but warn
-			console.warn("Web-LLM sanity test failed (non-fatal)", e);
-		}
-
-		modelLoading.value = false;
-		loadingMessage.value = "";
-		downloadProgress.value = 0;
-		console.log("✅ Models loaded successfully (embeddings + Web-LLM)");
-	} catch (err) {
-		modelLoading.value = false;
-		error.value = err.message || "Failed to load AI models";
-
-		let errorMessage = 'AI Models Failed to Load\n\n';
-
-		if (err.message.includes('QuotaExceededError') || err.message.includes('quota') || err.message.includes('storage')) {
-			errorMessage +=
-				'❌ Problem: Browser storage is full\n\n' +
-				'✅ Quick Fix:\n' +
-				'1. Go to Settings (⚙️ icon)\n' +
-				'2. Click "Clear AI Model Cache"\n' +
-				'3. Models will re-download fresh\n\n' +
-				'Or manually: Chrome Settings → Privacy → Clear browsing data';
-		} else if (err.message.includes('WebGPU not supported')) {
-			errorMessage +=
-				'❌ Problem: Your browser doesn\'t support WebGPU\n\n' +
-				'✅ Solutions:\n' +
-				'1. Update Chrome to version 113+ (Help → About Chrome)\n' +
-				'2. Enable chrome://flags/#enable-unsafe-webgpu\n' +
-				'3. Restart browser after enabling\n\n' +
-				'Older computers (pre-2016) may not support WebGPU.';
-		} else if (err.message.includes('No GPU adapter')) {
-			errorMessage +=
-				'❌ Problem: Hardware doesn\'t support WebGPU\n\n' +
-				'✅ What to try:\n' +
-				'1. Update GPU drivers from manufacturer site\n' +
-				'2. Check chrome://gpu shows "WebGPU: Hardware accelerated"\n' +
-				'3. Try different browser (Edge, Firefox Nightly)\n\n' +
-				'Very old hardware (2015 or older) is a hit or miss.';
-		} else if (err.message.includes('Failed to fetch') || err.message.includes('Network')) {
-			errorMessage +=
-				'❌ Problem: Network or cache error\n\n' +
-				'✅ Solutions:\n' +
-				'1. Try Incognito mode (Ctrl+Shift+N)\n' +
-				'2. Clear cache in Settings\n' +
-				'3. Check internet connection\n' +
-				'4. Disable VPN/ad blockers temporarily';
-		} else {
-			errorMessage +=
-				`❌ Error: ${err.message}\n\n` +
-				'✅ Try this:\n' +
-				'1. Clear AI cache in Settings (⚙️)\n' +
-				'2. Try Incognito mode\n' +
-				'3. Restart browser\n' +
-				'4. Check chrome://gpu for issues';
-		}
-
-
-		error.value = errorMessage;      // set the error text
-		showModelStatus.value = true;    // open the modal
-		modelLoading.value = false;      // stop loading state
-
-		return;
-
-	}
-}
-
-
-// Generate unique ID
-function generateId() {
-	return Date.now().toString(36) + Math.random().toString(36).substr(2);
-}
-
-function setupMessageListener() {
-	const listener = (event) => {
-		const msg = event.data;
-
-		// make sure it's coming from the extension
-		if (!msg || msg.source !== "page-summarizer-extension") return;
-
-		console.log("🎯 Received message:", msg);
-
-		// --- EXISTING HANDLER ---
-		if (msg.type === "PAGE_METADATA" && msg.data) {
-			processingQueue.value.push(msg.data);
-			processQueue();
-		}
-
-		// --- NEW HANDLER: EXTENSION WANTS ALBUMS ---
-		if (msg.type === "REQUEST_ALBUMS") {
-			console.log("📥 Extension requested albums");
-
-			// respond back with albums
-			window.postMessage(
-				{
-					source: "page-summarizer-extension",
-					type: "ALBUMS_RESPONSE",
-					albums: JSON.parse(JSON.stringify(albums.value)) ?? []
-				},
-				"*"
-			);
+			}, 2000);
 		}
 	};
 
-	window.addEventListener("message", listener);
-	return listener;
+	if (showWhatsNew.value) {
+		const unwatchWhatsNew = watch(showWhatsNew, (isShowing) => {
+			if (!isShowing) {
+				unwatchWhatsNew();
+				maybeStartTutorial();
+			}
+		});
+	} else {
+		maybeStartTutorial();
+	}
 }
 
-
-let messageListener = null;
-
-const handleResize = () => {
-	if (svg && graphContainer.value) {
-		const width = graphContainer.value.clientWidth;
-		const height = graphContainer.value.clientHeight;
-		svg.attr("width", width).attr("height", height);
-		selectedWebsite.value = null;
+async function handleFirstRunChoice(mode) {
+	setProcessingMode(mode);
+	showFirstRunChoice.value = false;
+	if (processingMode.value === 'local') {
+		await runCompatibilityCheckIfNeeded();
 	}
-};
+	proceedWithOnboarding();
+}
+
+// ==============================================
+// LIFECYCLE
+// ==============================================
+
+onMounted(async () => {
+	try {
+		window.addEventListener('keydown', handleKeyDown);
+		document.addEventListener('click', handleClickOutside);
+
+		platform.value = detectPlatform();
+
+		console.log("Component mounted, initializing...");
+
+		await initDB();
+		console.log("✅ IndexedDB ready");
+
+		const sharedGraphId = route.params.graphId || null;
+
+		// A shared-graph visitor should see the OWNER's theme (once the payload
+		// carries one - see remoteGraphTheme), not their own dashboard
+		// preference - loading it here first would just cause a visible flash
+		// before the owner's theme takes over below.
+		if (!sharedGraphId) {
+			loadThemePreference();
+		}
+
+		if (sharedGraphId) {
+			// Resolve a pending invite (no-op/silently ignored if this visitor has
+			// no account or no invite waiting under their email) before loading
+			// the graph, so an invited collaborator's permissions are current
+			// from their very first view rather than needing a reload.
+			await joinSharedGraph(sharedGraphId).catch(() => {});
+			// Awaited + caught here (unlike the local-mode branch below, which
+			// fires initializeGraph() without awaiting) specifically so a failed
+			// load (graph not found/expired/access revoked) surfaces the banner
+			// below instead of silently leaving the page looking like an empty,
+			// freshly-installed Rocus with no explanation.
+			try {
+				await initializeGraph(sharedGraphId);
+				// Apply the owner's theme, not the viewer's own - applyThemeColors()
+				// only repaints (unlike applyTheme(), which also persists to
+				// localStorage and would clobber the viewer's own dashboard
+				// preference just from looking at someone else's graph).
+				if (remoteGraphTheme.value?.id) {
+					const ownerTheme = themes.find(t => t.id === remoteGraphTheme.value.id);
+					if (ownerTheme) {
+						currentTheme.value = ownerTheme;
+						isDarkMode.value = ownerTheme.isDark;
+						applyThemeColors(ownerTheme);
+					}
+				} else {
+					loadThemePreference();
+				}
+				useSeoMeta({
+					title: `${shareOwnerName.value ? shareOwnerName.value + "'s " : ""}Knowledge Graph · Rocus`,
+					description: "A knowledge graph shared on Rocus - saved pages, notes, and files, auto-organized by topic.",
+				});
+			} catch (err) {
+				console.error("Failed to load shared graph:", err);
+			}
+			window.addEventListener("resize", handleResize);
+			// The message listener itself is now attached once, for the tab's
+			// whole lifetime, in App.vue - not here. Compatibility check and the
+			// first-run tutorial are both local-single-player concerns -
+			// irrelevant for a quick shared-graph view (guest or collaborator),
+			// so skipped entirely in this branch.
+			// ensureModelsLoaded() loads the embedding pipeline
+			// processWebsite()/processNote() require before they'll do anything
+			// ("Embedding model not loaded") - an edit collaborator needs that
+			// immediately, not just after the local dashboard happens to load it
+			// first. A guest/view-only visitor can never add content though (no
+			// edit capability at all), so there's no reason to spend the
+			// download/init cost on them - isReadOnlySharedView is already
+			// resolved by now since initializeGraph() above was awaited.
+			if (!isReadOnlySharedView.value) {
+				ensureModelsLoaded().catch(err => {
+					console.error("Model loading failed (non-fatal):", err);
+				});
+			}
+		} else {
+			await loadFromIndexedDB();
+
+			// /dashboard?cluster=<id> - the return-triggers extension relay's
+			// deep link (see useReturnTriggers.js). initializeGraph() itself is
+			// deliberately not awaited below (unblocks rendering), so this is a
+			// separate .then() on the same promise rather than inserted
+			// sequentially - doesn't change the existing fire-and-forget timing
+			// for anything else in this branch.
+			const clusterToFocus = route.query.cluster || null;
+			if (clusterToFocus) {
+				initializeGraph().then(() => focusDeepLinkedCluster(clusterToFocus));
+			} else {
+				initializeGraph();
+			}
+			window.addEventListener("resize", handleResize);
+
+			// Covers "already had a shared album selected" if album selection is
+			// ever restored on load in the future - currentAlbum always starts
+			// null today, so this is a no-op in practice; the reactive watcher in
+			// useSharing.js handles every actual album selection from here on.
+			initLocalOwnerSync();
+			// Eager, not lazy - previously only fetched when the Shared dropdown
+			// tab was manually opened (fetchMySharedGraphs()'s own doc comment),
+			// so a returning user on a fresh browser/device saw an empty Shared
+			// tab until they happened to click into it once, even though the
+			// server already has everything needed to populate it immediately.
+			fetchMySharedGraphs();
+
+			// Only run the WebGPU/memory/IndexedDB readiness check for users
+			// actually in local mode - irrelevant for commercial (cloud) mode,
+			// which is the default and never touches the local model. Only
+			// true here if a choice was already made in an earlier session
+			// (processingMode still defaults to 'commercial' while
+			// showFirstRunChoice is up) - handleFirstRunChoice() runs this
+			// same check itself once a first-run visitor actually picks local.
+			if (processingMode.value === 'local') {
+				await runCompatibilityCheckIfNeeded();
+			}
+
+			// Deferred until a choice has been made (handleFirstRunChoice()
+			// calls this itself once it fires) so the tutorial/What's-New
+			// overlays never render stacked underneath the first-run screen.
+			if (!showFirstRunChoice.value) {
+				proceedWithOnboarding();
+			}
+
+			ensureModelsLoaded().catch(err => {
+				console.error("Model loading failed (non-fatal):", err);
+			});
+		}
+	} catch (err) {
+		error.value = `Initialization failed: ${err.message || err}`;
+		console.error("❌ Init error:", err);
+	}
+});
+
+onBeforeUnmount(() => {
+	console.log("👋 Component unmounting, cleaning up...");
+	window.removeEventListener('keydown', handleKeyDown);
+	document.removeEventListener('click', handleClickOutside);
+	window.removeEventListener("resize", handleResize);
+	// Currently masked by every exit from this component being a hard page
+	// navigation (which destroys the whole JS context, socket included) -
+	// cheap insurance the moment any SPA-style exit is ever introduced.
+	disconnectSharedGraphSocket();
+});
 
 // Close dropdowns when clicking outside
 document.addEventListener("click", (e) => {
 	if (!e.target.closest(".albums-dropdown-container")) {
 		showAlbumsDropdown.value = false;
+	}
+	if (!e.target.closest(".uploads-panel-container")) {
+		showUploadsPanel.value = false;
 	}
 });
 
@@ -6291,184 +3585,6 @@ watch(
 		updateTheme();
 	}
 );
-
-async function checkAndRepairDatabase() {
-	try {
-		const testDB = await new Promise((resolve, reject) => {
-			const request = indexedDB.open('_health_check_', 1);
-			request.onsuccess = () => {
-				request.result.close();
-				indexedDB.deleteDatabase('_health_check_');
-				resolve(true);
-			};
-			request.onerror = () => reject(request.error);
-			request.onblocked = () => reject(new Error('IndexedDB blocked'));
-		});
-
-		console.log('✅ IndexedDB health check passed');
-		return true;
-
-	} catch (error) {
-		console.error('❌ IndexedDB corruption detected:', error);
-
-		const shouldReset = confirm(
-			'Database Error Detected\n\n' +
-			'Your browser storage appears corrupted. This happens when:\n' +
-			'• Browser crashed during save\n' +
-			'• Multiple tabs competed for storage\n' +
-			'• Storage quota exceeded\n\n' +
-			'Click OK to reset and fix the issue.\n' +
-			'Click Cancel to try manual fixes first.'
-		);
-
-		if (shouldReset) {
-			await resetDatabase();
-			location.reload();
-		} else {
-			alert(
-				'Manual Fix Instructions:\n\n' +
-				'Windows:\n' +
-				'1. Close ALL browser windows\n' +
-				'2. Delete: %USERPROFILE%\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\IndexedDB\n' +
-				'3. Restart browser\n\n' +
-				'Mac:\n' +
-				'1. Close ALL browser windows\n' +
-				'2. Delete: ~/Library/Application Support/Google/Chrome/Default/IndexedDB\n' +
-				'3. Restart browser\n\n' +
-				'Or use Chrome DevTools:\n' +
-				'F12 → Application → Storage → Clear site data'
-			);
-		}
-
-		return false;
-	}
-}
-
-async function resetDatabase() {
-	try {
-		console.log('Resetting database...');
-
-		// Close all DB connections
-		if (db) {
-			db.close();
-			db = null;
-		}
-
-		// Clear IndexedDB
-		const databases = await indexedDB.databases();
-		for (const dbInfo of databases) {
-			if (dbInfo.name && (dbInfo.name.includes('FunkyAIDB') || dbInfo.name.includes('mlc'))) {
-				await new Promise((resolve, reject) => {
-					const request = indexedDB.deleteDatabase(dbInfo.name);
-					request.onsuccess = () => resolve();
-					request.onerror = () => reject(request.error);
-					request.onblocked = () => {
-						console.warn(`Blocked deleting ${dbInfo.name}, forcing...`);
-						setTimeout(resolve, 1000);
-					};
-				});
-				console.log(`Deleted database: ${dbInfo.name}`);
-			}
-		}
-
-		if ('caches' in window) {
-			const cacheNames = await caches.keys();
-			for (const name of cacheNames) {
-				await caches.delete(name);
-				console.log(`Deleted cache: ${name}`);
-			}
-		}
-
-		localStorage.clear();
-
-		console.log('Database reset complete');
-
-	} catch (error) {
-		console.error('Reset failed:', error);
-		alert('Automatic reset failed. Please manually clear site data:\n\n' +
-			'Chrome DevTools (F12) → Application → Storage → Clear site data');
-	}
-}
-
-onMounted(async () => {
-	try {
-		window.addEventListener('keydown', handleKeyDown);
-		document.addEventListener('click', handleClickOutside);
-
-		platform.value = detectPlatform();
-
-		console.log("Component mounted, initializing...");
-
-		await initDB();
-		loadThemePreference();
-		console.log("✅ IndexedDB ready");
-
-		await loadFromIndexedDB();
-
-		initializeGraph();
-		window.addEventListener("resize", handleResize);
-
-		messageListener = setupMessageListener();
-		console.log("✅ Message listener ready");
-
-		const tutorialCompleted = localStorage.getItem('rocus-tutorial-completed');
-
-		// Check system compatibility first
-		const compatibilityCheckDone = localStorage.getItem('rocus-compatibility-checked');
-		if (!compatibilityCheckDone) {
-			showCompatibilityCheck.value = true;
-			await checkSystemCompatibility();
-
-			// Auto-close if all passed after 3 seconds
-			if (compatibilityResults.value.overall === 'success') {
-				setTimeout(() => {
-					showCompatibilityCheck.value = false;
-					localStorage.setItem('rocus-compatibility-checked', 'true');
-
-					// Start tutorial if not completed
-					if (!tutorialCompleted) {
-						setTimeout(() => {
-							if (graphData?.nodes?.length > 0) {
-								startTutorial();
-							} else {
-								startTutorialEmpty();
-							}
-						}, 500);
-					}
-				}, 3000);
-			}
-		} else if (!tutorialCompleted) {
-			// Skip straight to tutorial if compatibility already checked
-			setTimeout(() => {
-				if (graphData?.nodes?.length > 0) {
-					startTutorial();
-				} else {
-					startTutorialEmpty();
-				}
-			}, 2000);
-		}
-
-		loadModels().catch(err => {
-			console.error("Model loading failed (non-fatal):", err);
-		});
-	} catch (err) {
-		error.value = `Initialization failed: ${err.message || err}`;
-		console.error("❌ Init error:", err);
-	}
-});
-
-onBeforeUnmount(() => {
-	console.log("👋 Component unmounting, cleaning up...");
-	window.removeEventListener('keydown', handleKeyDown);
-	document.removeEventListener('click', handleClickOutside);
-	window.removeEventListener("resize", handleResize);
-});
-
-onUnmounted(() => {
-	if (messageListener) {
-		window.removeEventListener("message", messageListener);
-	}
-});
 
 watch(tutorialActive, (isActive) => {
 	if (isActive) {
@@ -6492,6 +3608,15 @@ watch(tutorialActive, (isActive) => {
 	font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI",
 		sans-serif;
 }
+
+/* d3.zoom()/d3.drag() on #graph-container already handle touch input out of
+   the box - this just stops the browser's own native scroll/pinch-zoom from
+   fighting them for the same gesture. */
+#graph-container,
+#graph-container svg {
+	touch-action: none;
+}
+
 
 /* Custom Slider Styles */
 .slider::-webkit-slider-thumb {
@@ -6577,6 +3702,98 @@ watch(tutorialActive, (isActive) => {
 	animation: slideInUp 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+/* History/Albums dropdown badges - all colors come in via CSS custom
+   properties set from currentTheme (see badgeVars in the script), so these
+   re-skin automatically with every theme instead of being hardcoded. */
+.cal-chip {
+	width: 32px;
+	height: 32px;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	position: relative;
+	overflow: hidden;
+	border-radius: 9px;
+	background: var(--chip-surface);
+	border: 1px solid var(--chip-border);
+	font-feature-settings: "tnum" 1;
+	transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.cal-chip::before {
+	content: "";
+	position: absolute;
+	inset: 0 0 auto 0;
+	height: 11px;
+	background: var(--chip-primary-tint);
+	border-bottom: 1px solid var(--chip-primary-tint-strong);
+}
+
+.cal-chip__m {
+	position: relative;
+	z-index: 1;
+	height: 11px;
+	line-height: 11px;
+	font-size: 6.5px;
+	font-weight: 700;
+	letter-spacing: 0.12em;
+	text-indent: 0.12em;
+	color: var(--chip-primary);
+}
+
+.cal-chip__d {
+	flex: 1;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font-size: 13px;
+	font-weight: 650;
+	line-height: 1;
+	letter-spacing: -0.02em;
+	padding-bottom: 1px;
+	color: var(--chip-text);
+}
+
+.globe-chip {
+	width: 32px;
+	height: 32px;
+	border-radius: 50%;
+	border: 1.25px solid var(--chip-border);
+	position: relative;
+	display: grid;
+	place-items: center;
+	transition: border-color 0.2s ease, transform 0.2s ease;
+}
+
+.globe-chip::before {
+	content: "";
+	position: absolute;
+	left: 1px;
+	right: 1px;
+	top: 50%;
+	height: 1.25px;
+	transform: translateY(-50%);
+	background: var(--chip-secondary-tint-strong);
+}
+
+.globe-chip i {
+	width: 52%;
+	height: 100%;
+	border-radius: 50%;
+	border: 1.25px solid var(--chip-secondary-tint-strong);
+}
+
+.group:hover .cal-chip {
+	border-color: var(--chip-primary);
+	transform: translateY(-1px);
+	box-shadow: 0 2px 8px var(--chip-primary-tint);
+}
+
+.group:hover .globe-chip {
+	border-color: var(--chip-secondary);
+	transform: scale(1.04);
+}
+
 /* D3 Graph Styles */
 :global(.node) {
 	cursor: pointer;
@@ -6616,6 +3833,7 @@ watch(tutorialActive, (isActive) => {
 	font-size: 12px;
 	font-weight: 500;
 	text-anchor: middle;
+	text-transform: capitalize;
 	dominant-baseline: central;
 	pointer-events: none;
 	transition: all 0.3s ease;
@@ -6671,6 +3889,28 @@ watch(tutorialActive, (isActive) => {
 	50% {
 		opacity: 0.35;
 		filter: drop-shadow(0 4px 20px rgba(245, 158, 11, 0.3));
+	}
+}
+
+/* Same pulse idiom as .node.processing above (opacity + drop-shadow), in
+   Rocus blue rather than the "processing" amber - this marks a return-
+   trigger's deep-linked cluster ("this one just grew"), a positive
+   highlight, not a loading/busy state, so it gets its own color. */
+:global(.node.just-grown) {
+	animation: pulse-just-grown 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse-just-grown {
+
+	0%,
+	100% {
+		opacity: 1;
+		filter: drop-shadow(0 2px 12px rgba(74, 144, 226, 0.8));
+	}
+
+	50% {
+		opacity: 0.5;
+		filter: drop-shadow(0 4px 22px rgba(74, 144, 226, 0.4));
 	}
 }
 </style>

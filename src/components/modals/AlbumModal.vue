@@ -1,0 +1,104 @@
+<!--
+Copyright (C) 2025-2026 Othman Ali
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public
+License along with this program. If not, see
+<https://www.gnu.org/licenses/>.
+-->
+<template>
+    <div v-if="show" @click="$emit('close')"
+        class="fixed inset-0 bg-black/50 backdrop-blur-sm z-[2000] flex items-center justify-center p-4 animate-fadeIn">
+        <div @click.stop class="border rounded-3xl p-8 w-full max-w-md shadow-2xl animate-scaleIn" :style="{
+            backgroundColor: currentTheme.colors.surface,
+            borderColor: currentTheme.colors.border
+        }">
+            <h3 class="text-2xl font-bold mb-6" :style="{ color: currentTheme.colors.text }">
+                {{ editingAlbum ? "Edit Album" : "Create New Album" }}
+            </h3>
+
+            <div class="space-y-5">
+                <div>
+                    <label class="block text-sm font-medium mb-2" :style="{ color: currentTheme.colors.textSecondary }">
+                        Album Name
+                    </label>
+                    <input v-model="albumName" type="text" placeholder="My Collection"
+                        class="w-full px-4 py-3 border rounded-xl focus:ring-2 focus:ring-[#4A90E2] focus:border-transparent outline-none transition-all"
+                        :style="{
+                            backgroundColor: currentTheme.colors.background,
+                            borderColor: currentTheme.colors.border,
+                            color: currentTheme.colors.text
+                        }" />
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium mb-2" :style="{ color: currentTheme.colors.textSecondary }">
+                        Icon
+                    </label>
+                    <div class="flex gap-2">
+                        <button v-for="(icon, index) in iconOptions" :key="icon" @click="selectedIcon = icon"
+                            class="p-3 rounded-xl transition-all" :class="{
+                                'bg-[#4A90E2]/20 ring-2 ring-[#4A90E2]': selectedIcon === icon,
+                            }">
+                            <img :src="getIconUrl(icon)" alt="icon" class="w-8 h-8 object-contain" />
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex gap-3 mt-8">
+                <button @click="$emit('close')" class="flex-1 px-6 py-3 rounded-xl font-medium transition-all" :style="{
+                    backgroundColor: currentTheme.colors.background,
+                    color: currentTheme.colors.textSecondary
+                }">
+                    Cancel
+                </button>
+                <button @click="handleSave"
+                    class="flex-1 px-6 py-3 bg-[#4A90E2] text-white rounded-xl font-medium hover:bg-[#357ABD] transition-all shadow-lg shadow-[#4A90E2]/30">
+                    {{ editingAlbum ? "Save" : "Create" }}
+                </button>
+            </div>
+        </div>
+    </div>
+</template>
+
+<script setup>
+import { ref, watch } from 'vue';
+
+const props = defineProps({
+    show: { type: Boolean, required: true },
+    currentTheme: { type: Object, required: true },
+    editingAlbum: { type: Object, default: null },
+    iconOptions: { type: Array, required: true },
+    getIconUrl: { type: Function, required: true }
+});
+
+const emit = defineEmits(['close', 'save']);
+
+const albumName = ref('');
+const selectedIcon = ref(props.iconOptions[0]);
+
+watch(() => props.editingAlbum, (newVal) => {
+    if (newVal) {
+        albumName.value = newVal.name;
+        selectedIcon.value = newVal.icon;
+    } else {
+        albumName.value = '';
+        selectedIcon.value = props.iconOptions[0];
+    }
+}, { immediate: true });
+
+function handleSave() {
+    if (!albumName.value.trim()) return;
+    emit('save', { name: albumName.value.trim(), icon: selectedIcon.value });
+}
+</script>

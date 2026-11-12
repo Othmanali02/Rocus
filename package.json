@@ -2,6 +2,7 @@
 	"name": "graphfrontend",
 	"version": "0.0.0",
 	"private": true,
+	"license": "AGPL-3.0-only",
 	"type": "module",
 	"engines": {
 		"node": "^20.19.0 || >=22.12.0"
@@ -9,7 +10,11 @@
 	"scripts": {
 		"dev": "vite",
 		"build": "vite build",
-		"preview": "vite preview"
+		"preview": "vite preview",
+		"test:export-roundtrip": "node tools/round-trip-test.mjs tools/fixtures/sample-v1.rocus && node tools/round-trip-test.mjs tools/fixtures/sample-v2.rocus && node tools/round-trip-test.mjs tools/fixtures/sample-v3.rocus",
+		"test:export-reader": "node tools/third-party-reader/read-rocus-export.mjs tools/fixtures/sample-v3.rocus",
+		"test:album-precedence": "node tools/test-album-precedence.mjs",
+		"test:export": "npm run test:export-roundtrip && npm run test:export-reader && npm run test:album-precedence"
 	},
 	"dependencies": {
 		"@mlc-ai/web-llm": "^0.2.80",
@@ -21,6 +26,7 @@
 		"d3": "^7.9.0",
 		"graphology": "^0.26.0",
 		"sigma": "^3.0.2",
+		"stemmer": "^2.0.1",
 		"tailwindcss": "^3.4.9",
 		"vue": "^3.5.18",
 		"vue-router": "^4.5.0"

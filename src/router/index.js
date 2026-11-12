@@ -1,12 +1,31 @@
+/*
+ * Copyright (C) 2025-2026 Othman Ali
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as
+ * published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public
+ * License along with this program. If not, see
+ * <https://www.gnu.org/licenses/>.
+ */
+
 import { createRouter, createWebHistory } from "vue-router";
-import { ref } from "vue";
 import GraphNode from "@/components/GraphNode.vue";
 import Landing from "../components/Landing.vue";
-import { store } from "./store";
+import Redirect from "../components/Redirect.vue";
 import PrivacyPolicy from "@/components/PrivacyPolicy.vue";
+import TermsOfService from "@/components/TermsOfService.vue";
+import RefundPolicy from "@/components/RefundPolicy.vue";
 
-// var user = ref(null);
-
+// The dashboard itself is free/open to everyone (no sign-in wall) - signing
+// in only unlocks the Premium Cloud AI toggle inside it. See usePremium.js.
 const router = createRouter({
 	history: createWebHistory(),
 	routes: [
@@ -14,80 +33,43 @@ const router = createRouter({
 			path: "/",
 			name: "Home",
 			component: Landing,
-			// props: () => ({ user: store.user }),
 		},
 		{
 			path: "/privacy",
 			name: "PrivacyPolicy",
 			component: PrivacyPolicy,
-			// props: () => ({ user: store.user }),
+		},
+		{
+			path: "/terms",
+			name: "TermsOfService",
+			component: TermsOfService,
+		},
+		{
+			path: "/refund-policy",
+			name: "RefundPolicy",
+			component: RefundPolicy,
 		},
 		{
 			path: "/dashboard",
 			name: "GraphNode",
 			component: GraphNode,
-			// props: () => ({ user: store.user }),
 		},
-		// {
-		// 	path: "/redirect",
-		// 	name: "Redirect",
-		// 	component: Redirect,
-		// 	props: () => ({ user: store.user }),
-		// },
-		// {
-		// 	path: "/teams/:teamId",
-		// 	name: "TeamDetails",
-		// 	component: TeamDetails,
-		// 	props: (route) => ({
-		// 		user: store.user,
-		// 		...route.params,
-		// 	}),
-		// },
+		{
+			// Same component as the normal dashboard - GraphNode.vue checks
+			// route.params.graphId itself and sources data from the shared-graph
+			// API instead of IndexedDB when present, reusing the entire D3
+			// rendering/interaction layer (explode, website details, file
+			// downloads, etc.) for guests and invited collaborators alike.
+			path: "/shared/:graphId",
+			name: "SharedGraph",
+			component: GraphNode,
+		},
+		{
+			path: "/redirect",
+			name: "Redirect",
+			component: Redirect,
+		},
 	],
 });
-
-// router.beforeEach(async (to, from, next) => {
-// 	if (to.path !== "/redirect" && !store.user) {
-// 		try {
-// 			// check the UUID too not just the token big bro
-// 			const response = await axios.get("http://localhost:5000/auth/user-info", {
-// 				withCredentials: true,
-// 			});
-// 			store.user = response.data;
-// 			console.log(store.user.username);
-// 		} catch (err) {
-// 			if (err.status === 401) {
-// 				console.log("login again");
-// 				window.location.href = "http://localhost:5000/auth/login";
-// 			} else if (err.status === 400) {
-// 				console.log("dw about it twin, just login");
-// 			} else {
-// 				console.error("Error fetching user data:", err);
-// 			}
-// 		}
-// 	}
-
-// 	// if (to.path.includes("/lists/")) {
-// 	// 	const listId = to.params.listId;
-// 	// 	console.log("Checking access for list " + listId);
-
-// 	// 	try {
-// 	// 		const listResponse = await apiService.listStatus(listId);
-// 	// 		console.log("Checking access for list " + listId);
-// 	// 		console.log(listResponse.data);
-
-// 	// 		// checks  if the user is either the owner or if the list is shared with them
-// 	// 		if (!listResponse.data.isOwner && !listResponse.data.isMember) {
-// 	// 			console.log("User is not authorized to view this list");
-// 	// 			return next({ path: "/not-authorized" });
-// 	// 		}
-// 	// 	} catch (err) {
-// 	// 		console.error("Error fetching list data:", err);
-// 	// 		return next({ path: "/error" });
-// 	// 	}
-// 	// }
-
-// 	next();
-// });
 
 export default router;

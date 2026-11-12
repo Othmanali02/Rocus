@@ -1,3 +1,20 @@
+<!--
+Copyright (C) 2025-2026 Othman Ali
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public
+License along with this program. If not, see
+<https://www.gnu.org/licenses/>.
+-->
 <template>
     <div class="min-h-screen p-8 overflow-y-auto" :style="{ backgroundColor: currentTheme.colors.background }">
         <div class="max-w-4xl mx-auto">
@@ -62,14 +79,39 @@
                     </div>
                 </section>
 
+                <!-- Landing Page Visit Analytics -->
+                <section class="mb-8">
+                    <h2 class="text-2xl font-bold mb-4" :style="{ color: currentTheme.colors.text }">
+                        Landing Page Visit Analytics
+                    </h2>
+                    <div :style="{ color: currentTheme.colors.textSecondary }">
+                        <p class="mb-4">Our public marketing pages (rocus.io and pages like it - not the app itself)
+                            automatically collect basic, anonymous visit statistics via Umami for every visitor, so we
+                            know how many people find Rocus and where they came from. This runs regardless of the
+                            in-app "Help Improve Rocus" setting described below - it's separate, and it's limited to:
+                        </p>
+                        <div class="p-4 rounded-xl" :style="{ backgroundColor: currentTheme.colors.background }">
+                            <ul class="list-disc ml-6 space-y-1">
+                                <li>That a page was viewed, and which one</li>
+                                <li>Referrer / traffic source (e.g., "came from Google" or "came from Twitter")</li>
+                                <li>Browser type and screen size</li>
+                                <li>Country-level location - derived from IP, not stored</li>
+                            </ul>
+                        </div>
+                        <p class="mt-4">No cookies, no personal identifiers, and nothing tied back to an individual
+                            visitor - the same privacy-first Umami setup described in the rest of this page.</p>
+                    </div>
+                </section>
+
                 <!-- What We Collect -->
                 <section class="mb-8">
                     <h2 class="text-2xl font-bold mb-4" :style="{ color: currentTheme.colors.text }">
-                        What We Collect (If You Consent)
+                        In-App Usage Analytics (If You Consent)
                     </h2>
                     <div :style="{ color: currentTheme.colors.textSecondary }">
-                        <p class="mb-4">With your explicit consent, we collect anonymous analytics via Umami
-                            (privacy-first, open-source analytics):</p>
+                        <p class="mb-4">Inside the app itself, deeper usage analytics are opt-in only, toggled via
+                            Settings → "Help Improve Rocus" and off by default. With your explicit consent, we collect
+                            anonymous analytics via Umami (privacy-first, open-source analytics):</p>
 
                         <div class="p-4 rounded-xl mb-4" :style="{ backgroundColor: currentTheme.colors.background }">
                             <strong :style="{ color: currentTheme.colors.text }">What We Collect:</strong>
@@ -126,17 +168,28 @@
                         Your AI Processing & Content
                     </h2>
                     <div :style="{ color: currentTheme.colors.textSecondary }">
-                        <p class="mb-3">Rocus runs AI models (Web-LLM, Transformers.js) entirely in your browser using
-                            WebGPU. This means:</p>
-                        <ul class="list-disc ml-6 space-y-1">
-                            <li>Your website content never leaves your device</li>
-                            <li>Summaries and embeddings are generated locally</li>
-                            <li>No external AI APIs are called</li>
-                            <li>Your knowledge graph is stored only in your browser's IndexedDB</li>
+                        <p class="mb-3">Rocus has two processing modes, chosen when you first open the app and
+                            changeable in Settings → AI Processing.</p>
+                        <p class="mb-2"><strong :style="{ color: currentTheme.colors.text }">Local mode:</strong></p>
+                        <ul class="list-disc ml-6 space-y-1 mb-4">
+                            <li>Summaries are generated in your browser by Qwen2.5 (WebLLM, on WebGPU)</li>
+                            <li>Embeddings are generated in your browser by MiniLM (Transformers.js, on WASM)</li>
+                            <li>Your saved pages' content never leaves your device</li>
                         </ul>
-                        <p class="mt-4">The only exception is the optional "Discover Similar Websites" feature, which
-                            calls Google's Custom Search API through a privacy-preserving Cloudflare Worker (your IP is
-                            hidden).</p>
+                        <p class="mb-2"><strong :style="{ color: currentTheme.colors.text }">Cloud mode:</strong></p>
+                        <ul class="list-disc ml-6 space-y-1 mb-4">
+                            <li>The page's title and text are sent through rocus.io to Anthropic (Claude Haiku) to
+                                write the summary. Anthropic does not use it for training.</li>
+                            <li>Embeddings are still generated locally in your browser</li>
+                        </ul>
+                        <p class="mb-3">In both modes your knowledge graph is stored in your browser's IndexedDB.</p>
+                        <p class="mb-3"><strong :style="{ color: currentTheme.colors.text }">Web suggestions
+                            (optional, off by default):</strong> When you turn on Settings → Web suggestions (or
+                            click "Search once" in Discover Similar), the topic or search phrase of a saved page is
+                            sent to rocus.io, which looks it up with our search provider, Serper. Nothing else about
+                            your saved pages is sent.</p>
+                        <p>Sharing a graph or uploading a file also sends that graph or file to rocus.io, because
+                            it has to be stored there for others to see it.</p>
                     </div>
                 </section>
 
@@ -148,7 +201,8 @@
                     <div :style="{ color: currentTheme.colors.textSecondary }">
                         <ul class="space-y-3">
                             <li><strong :style="{ color: currentTheme.colors.text }">Opt Out Anytime:</strong> Go to
-                                Settings → Toggle "Help Improve Rocus"</li>
+                                Settings → Toggle "Help Improve Rocus" to stop in-app usage analytics. (Basic landing
+                                page visit stats, described above, aren't covered by this toggle.)</li>
                             <li><strong :style="{ color: currentTheme.colors.text }">Do Not Track:</strong> We respect
                                 the DNT browser header</li>
                             <li><strong :style="{ color: currentTheme.colors.text }">Export Your Data:</strong> Settings
@@ -177,14 +231,20 @@
                                 Self-hosted, GDPR-compliant analytics. No cookies, no personal data.
                             </li>
                             <li>
-                                <strong :style="{ color: currentTheme.colors.text }">Google Custom Search API
-                                    (optional):</strong>
-                                Only used when you click "Discover Similar" on a cluster. Your IP is hidden by
-                                Cloudflare Worker.
+                                <strong :style="{ color: currentTheme.colors.text }">Anthropic (Cloud mode
+                                    only):</strong>
+                                Writes page summaries when you use Cloud mode. Requests are made by rocus.io, not
+                                your browser.
+                            </li>
+                            <li>
+                                <strong :style="{ color: currentTheme.colors.text }">Serper (optional, off by
+                                    default):</strong>
+                                Web search for "Web suggestions" / Discover Similar. Receives only the search phrase,
+                                sent by rocus.io, not your browser.
                             </li>
                             <li>
                                 <strong :style="{ color: currentTheme.colors.text }">CDNs for AI Models:</strong>
-                                Initial model downloads from HuggingFace/Xenova CDNs. Models are cached locally after
+                                Initial model downloads from Hugging Face (MiniLM) and models.rocus.io (Qwen2.5). Models are cached locally after
                                 first download.
                             </li>
                         </ul>
@@ -212,6 +272,7 @@
 <script setup>
 import { ref, onMounted } from 'vue';
 import themesData from "./themes/themes"
+import { useSeoMeta } from "../composables/useSeoMeta";
 
 const currentTheme = ref({
     id: 'default-light',
@@ -243,6 +304,10 @@ function loadTheme() {
 }
 
 onMounted(() => {
+    useSeoMeta({
+        title: "Rocus Privacy Policy",
+        description: "How Rocus handles your data - local-first by default, open source, and transparent about what stays on your device versus what's processed in the cloud.",
+    });
     loadTheme();
 });
 

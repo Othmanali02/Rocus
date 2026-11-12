@@ -1,15 +1,193 @@
+<!--
+Copyright (C) 2025-2026 Othman Ali
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public
+License along with this program. If not, see
+<https://www.gnu.org/licenses/>.
+-->
 <script setup>
-import { ref, onMounted, onUnmounted, watch } from "vue";
+import { ref, onMounted, onUnmounted } from "vue";
 import { store } from "../router/store";
 import { useAnalytics } from '../composables/useAnalytics';
+import { useSeoMeta } from '../composables/useSeoMeta';
+import { API_BASE } from './constants/config';
+import HeroGraphAnimation from './HeroGraphAnimation.vue';
 
-const { trackEvent, analyticsLoaded, analyticsConsent } = useAnalytics();
+const { loadUmamiUnconditional, trackEventUnconditional } = useAnalytics();
 
 const mobileMenuOpen = ref(false);
 const scrolled = ref(false);
 const isDarkMode = ref(false);
 
+// Simple contact form - spotted-a-bug/reach-out, sent to info@rocus.io via
+// the existing Resend-backed mailer (rocusnodejs/mailer.js).
+const contactForm = ref({ name: "", email: "", message: "" });
+const contactBusy = ref(false);
+const contactStatus = ref(""); // "" | "sent" | "error"
+
+async function submitContactForm() {
+	if (!contactForm.value.name.trim() || !contactForm.value.email.trim() || !contactForm.value.message.trim()) return;
+	contactBusy.value = true;
+	contactStatus.value = "";
+	try {
+		const res = await fetch(`${API_BASE}/api/contact`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(contactForm.value),
+		});
+		if (!res.ok) throw new Error("failed");
+		contactStatus.value = "sent";
+		contactForm.value = { name: "", email: "", message: "" };
+	} catch {
+		contactStatus.value = "error";
+	} finally {
+		contactBusy.value = false;
+	}
+}
+
 const props = defineProps({ user: Object });
+
+// Hero headline A/B variants -------------------------------------------------
+// A random variant is picked fresh on every page load (below), so which one
+// shows changes almost every visit. ?v=3 forces a specific variant (0-based)
+// instead, for QA/demoing a particular one without relying on chance.
+const heroVariants = [
+    {
+        headline: ["You find it. You lose it.", "Never again."],
+        subheadline: "Rocus quietly organizes everything you save, so the thing you found three weeks ago is one search away.",
+    },
+    {
+        headline: ["Stop re-Googling", "things you already found."],
+        subheadline: "Every page, note, and file you save becomes instantly searchable — organized automatically, kept private on your device.",
+    },
+    {
+        headline: ["Your bookmarks are where", "good research goes to die."],
+        subheadline: "Rocus turns the pile you never revisit into a living, searchable map of everything you know.",
+    },
+    {
+        headline: ["Never lose", "a source again."],
+        subheadline: "Save it once and Rocus files it into a searchable knowledge graph for you — no folders, no tagging, no digging.",
+    },
+    {
+        headline: ["The end of", "“where the hell did I see that?”"],
+        subheadline: "Rocus remembers every page and file you save and resurfaces it the moment you need it.",
+    },
+    {
+        headline: ["Everything you've ever saved,", "finally findable."],
+        subheadline: "Rocus organizes your links, notes, and files into one searchable graph — automatically, and entirely on your device.",
+    },
+    {
+        headline: ["You saved it.", "Rocus knows exactly where."],
+        subheadline: "Your research organizes itself into a searchable map while you read — private by default, powerful when you want it.",
+    },
+    {
+        headline: ["Your research, organized", "while you're still reading."],
+        subheadline: "Rocus clusters every page and note you save in real time, so your knowledge builds itself as you work.",
+    },
+    {
+        headline: ["Turn everything you save into", "a memory you can search."],
+        subheadline: "Links, PDFs, notes — Rocus weaves them into one private, searchable knowledge graph you actually come back to.",
+    },
+    {
+        headline: ["Remember everything", "you find online."],
+        subheadline: "Rocus saves, organizes, and resurfaces every page and file — automatically, privately, in one searchable map.",
+    },
+];
+
+function pickHeroVariantIndex() {
+    // URLSearchParams.get() returns null (not undefined) when ?v is absent,
+    // and Number(null) is 0, not NaN - checking for null explicitly first
+    // avoids every param-less visit silently "forcing" variant 0.
+    const raw = new URLSearchParams(window.location.search).get('v');
+    if (raw !== null) {
+        const forced = Number(raw);
+        if (Number.isInteger(forced) && forced >= 0 && forced < heroVariants.length) {
+            return forced; // manual override for QA/demos, e.g. ?v=4
+        }
+    }
+    return Math.floor(Math.random() * heroVariants.length); // fresh pick each visit
+}
+
+const HERO_VARIANT_INDEX = pickHeroVariantIndex();
+const heroVariant = heroVariants[HERO_VARIANT_INDEX] ?? heroVariants[0];
+
+// Headlines vary a lot in length across variants ("Never lose" vs "Turn
+// everything you save into"), and the two lines are hard-split with a <br/>
+// so each one has to fit on a single physical line at desktop/laptop widths
+// or the "2 line" hero breaks. Guessing a font-size from character counts is
+// unreliable (real glyph widths vary by letter/font), so this measures the
+// actual rendered text with Canvas 2D (same font/weight the h1 uses) and
+// picks the largest size, up to the original 72px design ceiling, that
+// still fits both lines - shrinking only the variants that need it. Below
+// 1024px the inline override is cleared entirely; mobile/tablet just wraps
+// normally via the existing responsive Tailwind classes.
+const heroH1 = ref(null);
+const HERO_FONT_MAX_PX = 92;
+const HERO_FONT_MIN_PX = 36;
+let heroFitCanvasCtx = null;
+
+function fitHeroHeadline() {
+    const el = heroH1.value;
+    if (!el) return;
+
+    if (window.innerWidth < 1024) {
+        el.style.fontSize = "";
+        return;
+    }
+
+    const containerWidth = el.clientWidth;
+    if (!containerWidth) return;
+
+    if (!heroFitCanvasCtx) {
+        heroFitCanvasCtx = document.createElement("canvas").getContext("2d");
+    }
+    if (!heroFitCanvasCtx) return; // unsupported - leave Tailwind's static sizing in place
+
+    const computedStyle = window.getComputedStyle(el);
+    heroFitCanvasCtx.font = `${computedStyle.fontWeight} ${HERO_FONT_MAX_PX}px ${computedStyle.fontFamily}`;
+    const longestLineWidth = Math.max(
+        heroFitCanvasCtx.measureText(heroVariant.headline[0]).width,
+        heroFitCanvasCtx.measureText(heroVariant.headline[1]).width
+    );
+
+    let fontSize = HERO_FONT_MAX_PX;
+    if (longestLineWidth > containerWidth) {
+        // Text width scales linearly with font-size for a fixed font/weight,
+        // so this solves for the exact fit in one step instead of guessing -
+        // 0.97 leaves a small safety margin for sub-pixel/kerning rounding.
+        fontSize = Math.max(HERO_FONT_MIN_PX, Math.floor(HERO_FONT_MAX_PX * (containerWidth / longestLineWidth) * 0.97));
+    }
+    el.style.fontSize = `${fontSize}px`;
+}
+
+let heroFitResizeTimer = null;
+const handleHeroFitResize = () => {
+    clearTimeout(heroFitResizeTimer);
+    heroFitResizeTimer = setTimeout(fitHeroHeadline, 100);
+};
+
+onMounted(() => {
+    requestAnimationFrame(fitHeroHeadline); // wait a frame so layout/width is settled
+    if (document.fonts?.ready) {
+        document.fonts.ready.then(fitHeroHeadline); // re-measure once the real webfont has swapped in
+    }
+    window.addEventListener("resize", handleHeroFitResize);
+});
+
+onUnmounted(() => {
+    window.removeEventListener("resize", handleHeroFitResize);
+    clearTimeout(heroFitResizeTimer);
+});
 
 let maxScrollDepth = 0;
 const milestonesTracked = new Set();
@@ -23,27 +201,37 @@ const handleScroll = () => {
 
     [25, 50, 75, 100].forEach((milestone) => {
         if (scrollPercent >= milestone && !milestonesTracked.has(milestone)) {
-            trackEvent('scroll-depth', { depth: milestone + '%' });
+            trackEventUnconditional('scroll-depth', { depth: milestone + '%' });
             milestonesTracked.add(milestone);
         }
     });
 };
 
 const installExtension = () => {
-    trackEvent('install-extension-clicked', { source: 'landing-page' });
-    window.open("https://chrome.google.com/webstore/detail/gpohhaehjannmncapdjlajknkhdcigck", "_blank");
+    trackEventUnconditional('install-extension-clicked', { source: 'landing-page', variant: HERO_VARIANT_INDEX });
+
+    const isFirefox = navigator.userAgent.toLowerCase().includes('firefox');
+
+    const url = isFirefox
+        ? "https://addons.mozilla.org/en-US/firefox/addon/rocus/"
+        : "https://chromewebstore.google.com/detail/rocus/ekhebfoaaokmbhieckfkpapfkiicpbma";
+
+    window.open(url, "_blank");
 };
 
-// Track landing page view and time on page
+// Track landing page view and time on page - basic anonymous visit stats
+// (page view, referrer, time on page), unconditional for every visitor. See
+// the "Landing Page Visit Analytics" section in PrivacyPolicy.vue: this is
+// distinct from the in-app usage tracking the Settings "Help Improve Rocus"
+// toggle gates, which remains fully opt-in.
 const trackLandingPage = () => {
-    if (!analyticsLoaded.value || !analyticsConsent.value) return;
-
-    trackEvent('landing-page-view', { referrer: document.referrer || 'direct' });
+    trackEventUnconditional('landing-page-view', { referrer: document.referrer || 'direct' });
+    trackEventUnconditional('hero-variant-shown', { variant: HERO_VARIANT_INDEX, headline: heroVariant.headline.join(' ') });
 
     const startTime = Date.now();
     const trackTimeOnPage = () => {
         const seconds = Math.round((Date.now() - startTime) / 1000);
-        trackEvent('time-on-landing-page', { seconds });
+        trackEventUnconditional('time-on-landing-page', { seconds });
     };
 
     window.addEventListener('beforeunload', trackTimeOnPage);
@@ -54,21 +242,17 @@ const trackLandingPage = () => {
 };
 
 onMounted(() => {
+    useSeoMeta({
+        title: "Rocus - AI Knowledge Graph & Collaborative Bookmark Manager",
+        description: "Turn saved websites, notes, and files into a living, AI-organized knowledge graph. Collaborate in real time, browse your history by day, and stay private with local, in-browser AI.",
+    });
+
     window.addEventListener("scroll", handleScroll);
 
     console.log(store.user);
 
-    // Wait until analytics is loaded before tracking
-    if (analyticsLoaded.value && analyticsConsent.value) {
-        trackLandingPage();
-    } else {
-        const unwatch = watch([analyticsLoaded, analyticsConsent], ([loaded, consent]) => {
-            if (loaded && consent) {
-                trackLandingPage();
-                unwatch(); // stop watching
-            }
-        });
-    }
+    loadUmamiUnconditional();
+    trackLandingPage();
 });
 
 onUnmounted(() => {
@@ -111,20 +295,20 @@ onUnmounted(() => {
                             <span>Donate</span>
                         </button> -->
                         <div v-if="store.user">
-                            <a href="/profile"
+                            <a href="/dashboard"
                                 class="px-5 py-2 text-[#4A90E2] capitalize border-2 border-[#4A90E2] rounded-lg hover:bg-[#4A90E2] hover:text-white transition-all font-semibold">
-                                {{ store.user.username }}
+                                {{ store.user.name }}
                             </a>
-                            <a v-if="store.user" href="http://localhost:5000/auth/logout"
+                            <a :href="`${API_BASE}/api/auth/logout`"
                                 class="px-5 py-2 mx-3 text-red-500 capitalize border-2 border-red-500 rounded-lg hover:bg-red-500 hover:text-white transition-all font-semibold">
                                 Logout
                             </a>
                         </div>
 
-                        <!-- <a v-else href="http://localhost:5000/auth/login"
+                        <a v-else :href="`${API_BASE}/api/auth/login`"
                             class="px-5 py-2 text-[#4A90E2] border-2 border-[#4A90E2] rounded-lg hover:bg-[#4A90E2] hover:text-white transition-all font-semibold">
                             Sign In
-                        </a> -->
+                        </a>
 
                         <a @click="installExtension"
                             class="px-5 py-2 cursor-pointer bg-[#4A90E2] text-white rounded-lg hover:bg-[#3A7BC8] transition-all font-semibold shadow-lg shadow-[#4A90E2]/30">
@@ -155,76 +339,62 @@ onUnmounted(() => {
                     <!-- <button class="block w-full text-left py-2 text-[#1A1A1A] hover:text-[#4A90E2] font-medium">
                         Donate
                     </button> -->
-                    <!-- <button class="w-full px-4 py-2 text-[#4A90E2] border-2 border-[#4A90E2] rounded-lg font-semibold">
+                    <a v-if="!store.user" :href="`${API_BASE}/api/auth/login`"
+                        class="block w-full px-4 py-2 text-[#4A90E2] border-2 border-[#4A90E2] rounded-lg font-semibold text-center">
                         Sign In
-                    </button> -->
-                    <a href="/dashboard" class="w-full px-4 py-2 bg-[#4A90E2] text-white rounded-lg font-semibold">
+                    </a>
+                    <a @click="installExtension"
+                        class="block w-full px-4 py-2 cursor-pointer bg-[#4A90E2] text-white rounded-lg font-semibold text-center">
                         Install Extension
                     </a>
                 </div>
             </div>
         </nav>
 
-        <section class="pt-32 pb-20 px-4 sm:px-6 lg:px-8 relative overflow-hidden">
+        <section class="pt-32 pb-20 px-4 sm:px-6 lg:px-8 relative overflow-hidden lg:min-h-screen lg:flex lg:items-center">
             <div class="absolute inset-0 bg-gradient-to-br from-[#4A90E2]/5 via-transparent to-[#4A90E2]/10"></div>
 
-            <div class="max-w-7xl mx-auto relative">
-                <div class="text-center max-w-4xl mx-auto mb-16">
-                    <div
-                        class="inline-flex items-center space-x-2 mb-6 px-4 py-2 bg-[#4A90E2]/10 rounded-full border border-[#4A90E2]/20">
-                        <span class="text-[#4A90E2] font-bold text-sm">🔓 Free</span>
-                        <span class="text-[#9A9A9A]">•</span>
-                        <span class="text-[#4A90E2] font-bold text-sm">📖 Open Source</span>
-                        <span class="text-[#9A9A9A]">•</span>
-                        <span class="text-[#4A90E2] font-bold text-sm">💻 Decentralized</span>
+            <div class="w-full max-w-[1600px] mx-auto relative">
+                <div class="grid lg:grid-cols-[1fr_1.15fr] gap-12 xl:gap-16 items-center">
+                    <div class="text-center lg:text-left">
+                        <div
+                            class="inline-flex items-center space-x-2 mb-6 px-4 py-2 bg-[#4A90E2]/10 rounded-full border border-[#4A90E2]/20">
+                            <span class="text-[#4A90E2] font-bold text-sm">Free</span>
+                            <span class="text-[#9A9A9A]">•</span>
+                            <span class="text-[#4A90E2] font-bold text-sm">Open Source</span>
+                            <span class="text-[#9A9A9A]">•</span>
+                            <span class="text-[#4A90E2] font-bold text-sm">Private by default</span>
+                        </div>
+
+                        <h1 ref="heroH1" class="text-5xl sm:text-6xl lg:text-7xl font-bold mb-6 leading-tight">
+                            {{ heroVariant.headline[0] }}<br />
+                            <span class="bg-gradient-to-r from-[#4A90E2] to-[#6AB4F5] bg-clip-text text-transparent">
+                                {{ heroVariant.headline[1] }}
+                            </span>
+                        </h1>
+
+                        <p class="text-xl sm:text-2xl lg:text-3xl text-[#1A1A1A] mb-10 leading-relaxed">
+                            {{ heroVariant.subheadline }}
+                        </p>
+
+                        <div class="flex justify-center lg:justify-start">
+                            <a href="/dashboard"
+                                @click="trackEventUnconditional('launch-app-clicked', { source: 'landing-page', variant: HERO_VARIANT_INDEX })"
+                                class="group px-8 py-4 lg:px-10 lg:py-5 bg-[#4A90E2] text-white rounded-lg text-lg lg:text-xl font-bold hover:bg-[#3A7BC8] transition-all shadow-xl shadow-[#4A90E2]/30 hover:shadow-2xl hover:shadow-[#4A90E2]/40 flex items-center justify-center space-x-2">
+                                <span>Try Rocus</span>
+                                <svg class="w-5 h-5 lg:w-6 lg:h-6 group-hover:translate-x-1 transition-transform" fill="none"
+                                    stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                                </svg>
+                            </a>
+                        </div>
                     </div>
 
-                    <h1 class="text-5xl sm:text-6xl lg:text-7xl font-bold mb-6 leading-tight">
-                        Re-imagining<br />
-                        <span class="bg-gradient-to-r from-[#4A90E2] to-[#6AB4F5] bg-clip-text text-transparent">
-                            Bookmarks and History
-                        </span>
-                    </h1>
-
-                    <p class="text-xl sm:text-2xl text-[#1A1A1A] mb-10 leading-relaxed">
-                        Turn scattered links and searches into a
-                        <span class="text-[#4A90E2] font-semibold">living map of knowledge</span>, instantly revealing
-                        relationships that traditional bookmarks
-                        can't show.
-                    </p>
-
-                    <div class="flex flex-col sm:flex-row gap-4 justify-center">
-                        <a href="/dashboard"
-                            class="group px-8 py-4 bg-[#4A90E2] text-white rounded-lg text-lg font-bold hover:bg-[#3A7BC8] transition-all shadow-xl shadow-[#4A90E2]/30 hover:shadow-2xl hover:shadow-[#4A90E2]/40 flex items-center justify-center space-x-2">
-                            <span>Launch App</span>
-                            <svg class="w-5 h-5 group-hover:translate-x-1 transition-transform" fill="none"
-                                stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                            </svg>
-                        </a>
-                        <a href="https://github.com/Othmanali02/Rocus" target="_blank"
-                            class="px-8 py-4 bg-white text-[#4A90E2] rounded-lg text-lg font-bold hover:bg-gray-50 transition-all border-2 border-[#4A90E2] flex items-center justify-center space-x-2">
-                            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                                <path
-                                    d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z" />
-                            </svg>
-                            <span>View on GitHub</span>
-                        </a>
+                    <div class="relative">
+                        <div class="absolute -inset-10 bg-[#4A90E2]/20 blur-3xl rounded-full -z-10"></div>
+                        <HeroGraphAnimation />
                     </div>
-                </div>
-
-                <div class="relative max-w-5xl mx-auto">
-                    <img src="./images/demo.png" alt="Rocus Demo" class="w-full rounded-2xl shadow-2xl" />
-                    <!-- <div
-                        class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-lg animate-bounce">
-                        <svg class="w-8 h-8 text-[#4A90E2]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.868v4.264a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                    </div> -->
                 </div>
             </div>
         </section>
@@ -295,6 +465,122 @@ onUnmounted(() => {
                             Recommends related links, hidden connections, and trending content
                             based on the user's own map, revealing information they wouldn't
                             discover with standard search.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="py-20 px-4 sm:px-6 lg:px-8 bg-[#f4f4f4]">
+            <div class="max-w-7xl mx-auto">
+                <div class="text-center mb-16">
+                    <h2 class="text-4xl sm:text-5xl font-bold mb-4 text-[#1A1A1A]">
+                        One Graph, <span class="text-[#4A90E2]">Every Feature You Need</span>
+                    </h2>
+                    <p class="text-xl text-[#9A9A9A] max-w-2xl mx-auto">
+                        From your first saved link to a fully collaborative research hub - Rocus
+                        grows with how you work.
+                    </p>
+                </div>
+
+                <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+                    <div
+                        class="group bg-white rounded-2xl p-8 hover:shadow-2xl transition-all hover:-translate-y-2 border-2 border-transparent hover:border-[#4A90E2]/30">
+                        <div
+                            class="w-16 h-16 bg-[#4A90E2] rounded-xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform shadow-lg shadow-[#4A90E2]/30">
+                            <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857m0 0a5.002 5.002 0 00-9.288 0M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                            </svg>
+                        </div>
+                        <h3 class="text-2xl font-bold mb-4 text-[#1A1A1A]">Real-Time Collaboration</h3>
+                        <p class="text-[#9A9A9A] leading-relaxed">
+                            Share any album with a live link. Invite collaborators, watch every
+                            change sync instantly, and see who's online - no more sending
+                            screenshots of your research.
+                        </p>
+                    </div>
+
+                    <div
+                        class="group bg-white rounded-2xl p-8 hover:shadow-2xl transition-all hover:-translate-y-2 border-2 border-transparent hover:border-[#4A90E2]/30">
+                        <div
+                            class="w-16 h-16 bg-[#4A90E2] rounded-xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform shadow-lg shadow-[#4A90E2]/30">
+                            <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                            </svg>
+                        </div>
+                        <h3 class="text-2xl font-bold mb-4 text-[#1A1A1A]">Notes That Cluster Themselves</h3>
+                        <p class="text-[#9A9A9A] leading-relaxed">
+                            Jot down a thought and Rocus automatically connects it to the right
+                            topic in your graph - or drops it in a shared Notes hub if nothing
+                            matches yet.
+                        </p>
+                    </div>
+
+                    <div
+                        class="group bg-white rounded-2xl p-8 hover:shadow-2xl transition-all hover:-translate-y-2 border-2 border-transparent hover:border-[#4A90E2]/30">
+                        <div
+                            class="w-16 h-16 bg-[#4A90E2] rounded-xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform shadow-lg shadow-[#4A90E2]/30">
+                            <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                        </div>
+                        <h3 class="text-2xl font-bold mb-4 text-[#1A1A1A]">Save Any File, Not Just Links</h3>
+                        <p class="text-[#9A9A9A] leading-relaxed">
+                            Upload PDFs and documents alongside your web saves. Rocus extracts
+                            and organizes them into the same knowledge graph - no manual sorting
+                            required.
+                        </p>
+                    </div>
+
+                    <div
+                        class="group bg-white rounded-2xl p-8 hover:shadow-2xl transition-all hover:-translate-y-2 border-2 border-transparent hover:border-[#4A90E2]/30">
+                        <div
+                            class="w-16 h-16 bg-[#4A90E2] rounded-xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform shadow-lg shadow-[#4A90E2]/30">
+                            <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M11 4a2 2 0 114 0v1a1 1 0 001 1h3a1 1 0 011 1v3a1 1 0 01-1 1h-1a2 2 0 100 4h1a1 1 0 011 1v3a1 1 0 01-1 1h-3a1 1 0 01-1-1v-1a2 2 0 10-4 0v1a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 00-1-1H4a2 2 0 110-4h1a1 1 0 001-1V7a1 1 0 011-1h3a1 1 0 001-1V4z" />
+                            </svg>
+                        </div>
+                        <h3 class="text-2xl font-bold mb-4 text-[#1A1A1A]">One-Click Browser Extension</h3>
+                        <p class="text-[#9A9A9A] leading-relaxed">
+                            Save any page in a single click from Chrome or Firefox. Pick an
+                            album, or let quick-add sort it into your graph automatically.
+                        </p>
+                    </div>
+
+                    <div
+                        class="group bg-white rounded-2xl p-8 hover:shadow-2xl transition-all hover:-translate-y-2 border-2 border-transparent hover:border-[#4A90E2]/30">
+                        <div
+                            class="w-16 h-16 bg-[#4A90E2] rounded-xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform shadow-lg shadow-[#4A90E2]/30">
+                            <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                            </svg>
+                        </div>
+                        <h3 class="text-2xl font-bold mb-4 text-[#1A1A1A]">Discover Similar Websites</h3>
+                        <p class="text-[#9A9A9A] leading-relaxed">
+                            One click surfaces related pages and resources you haven't found
+                            yet, powered by the connections already in your own graph.
+                        </p>
+                    </div>
+
+                    <div
+                        class="group bg-white rounded-2xl p-8 hover:shadow-2xl transition-all hover:-translate-y-2 border-2 border-transparent hover:border-[#4A90E2]/30">
+                        <div
+                            class="w-16 h-16 bg-[#4A90E2] rounded-xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform shadow-lg shadow-[#4A90E2]/30">
+                            <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M3 15a4 4 0 004 4h9a5 5 0 001.7-9.7 5 5 0 00-9.6-2.2A4 4 0 003 15z" />
+                            </svg>
+                        </div>
+                        <h3 class="text-2xl font-bold mb-4 text-[#1A1A1A]">Local or Cloud AI - Your Call</h3>
+                        <p class="text-[#9A9A9A] leading-relaxed">
+                            Run the AI entirely in your browser for full privacy, or switch to
+                            faster cloud processing when you need it. Either way, your graph
+                            stays yours.
                         </p>
                     </div>
                 </div>
@@ -386,10 +672,20 @@ onUnmounted(() => {
                                     full control.
                                     <span class="underline">Fast, Safe, and Decentralized.</span>
                                 </p>
-                                <button
-                                    class="bg-white text-[#4A90E2] px-8 py-4 rounded-lg font-bold text-lg hover:bg-gray-100 transition-all shadow-lg">
-                                    Start Using Rocus
-                                </button>
+                                <div class="flex flex-col sm:flex-row gap-4">
+                                    <a href="/dashboard"
+                                        class="inline-block bg-white text-[#4A90E2] px-8 py-4 rounded-lg font-bold text-lg hover:bg-gray-100 transition-all shadow-lg text-center">
+                                        Start Using Rocus
+                                    </a>
+                                    <a href="https://github.com/Othmanali02/Rocus" target="_blank"
+                                        class="inline-flex items-center justify-center space-x-2 border-2 border-white text-white px-8 py-4 rounded-lg font-bold text-lg hover:bg-white/10 transition-all">
+                                        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                                            <path
+                                                d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z" />
+                                        </svg>
+                                        <span>View on GitHub</span>
+                                    </a>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -412,6 +708,34 @@ onUnmounted(() => {
                             d="M13 7l5 5m0 0l-5 5m5-5H6" />
                     </svg>
                 </button> -->
+            </div>
+        </section>
+
+        <section class="py-20 px-4 sm:px-6 lg:px-8 bg-[#f4f4f4]">
+            <div class="max-w-lg mx-auto text-center">
+                <h2 class="text-3xl font-bold text-[#1A1A1A] mb-2">Get in touch</h2>
+                <p class="text-[#9A9A9A] mb-8">Want to say hi? We read every message.</p>
+
+                <form @submit.prevent="submitContactForm" class="space-y-4 text-left">
+                    <input v-model="contactForm.name" type="text" required placeholder="Your name"
+                        class="w-full px-4 py-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-[#4A90E2]" />
+                    <input v-model="contactForm.email" type="email" required placeholder="you@example.com"
+                        class="w-full px-4 py-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-[#4A90E2]" />
+                    <textarea v-model="contactForm.message" required rows="4" placeholder="What's on your mind?"
+                        class="w-full px-4 py-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-[#4A90E2] resize-none"></textarea>
+
+                    <button type="submit" :disabled="contactBusy"
+                        class="w-full px-6 py-3 bg-[#4A90E2] text-white rounded-lg font-bold hover:bg-[#3a7bc8] transition-all disabled:opacity-60 disabled:cursor-not-allowed">
+                        {{ contactBusy ? "Sending…" : "Send message" }}
+                    </button>
+
+                    <p v-if="contactStatus === 'sent'" class="text-center text-sm text-emerald-600 font-medium">
+                        Thanks - we'll get back to you soon.
+                    </p>
+                    <p v-if="contactStatus === 'error'" class="text-center text-sm text-red-500 font-medium">
+                        Something went wrong - try again, or email info@rocus.io directly.
+                    </p>
+                </form>
             </div>
         </section>
 
@@ -446,6 +770,12 @@ onUnmounted(() => {
                         <ul class="space-y-2 text-[#9A9A9A]">
                             <li>
                                 <a href="/privacy" class="hover:text-white transition-colors">Privacy Policy</a>
+                            </li>
+                            <li>
+                                <a href="/terms" class="hover:text-white transition-colors">Terms of Service</a>
+                            </li>
+                            <li>
+                                <a href="/refund-policy" class="hover:text-white transition-colors">Refund Policy</a>
                             </li>
 
                         </ul>

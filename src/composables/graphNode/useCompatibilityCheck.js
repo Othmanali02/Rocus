@@ -1,0 +1,214 @@
+/*
+ * Copyright (C) 2025-2026 Othman Ali
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as
+ * published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public
+ * License along with this program. If not, see
+ * <https://www.gnu.org/licenses/>.
+ */
+
+import { ref } from "vue";
+
+// Browser/hardware compatibility check shown on first run (WebGPU, memory, IndexedDB, Cache API).
+// Module-level singleton: GraphNode.vue only ever mounts once, so state lives at module scope
+// rather than behind a factory function, the same way it lived on the single component instance before.
+
+export const showCompatibilityCheck = ref(false);
+export const compatibilityResults = ref({
+	webgpu: { status: 'checking', message: '' },
+	memory: { status: 'checking', message: '' },
+	indexeddb: { status: 'checking', message: '' },
+	cache: { status: 'checking', message: '' },
+	overall: 'checking'
+});
+
+export async function checkSystemCompatibility() {
+	compatibilityResults.value = {
+		webgpu: { status: 'checking', message: 'Checking WebGPU support...' },
+		memory: { status: 'checking', message: 'Checking available memory...' },
+		indexeddb: { status: 'checking', message: 'Checking IndexedDB...' },
+		cache: { status: 'checking', message: 'Checking Cache API...' },
+		overall: 'checking'
+	};
+
+	let allPassed = true;
+	// Firefox stable ships with no navigator.gpu at all (Nightly has an early,
+	// unstable flag-gated implementation) - the generic Chrome-flag fix text
+	// below is actively wrong there, so it gets its own honest message
+	// instead of implying a quick settings toggle will fix it.
+	const isFirefox = navigator.userAgent.toLowerCase().includes('firefox');
+
+	try {
+		if (!navigator.gpu) {
+			compatibilityResults.value.webgpu = isFirefox
+				? {
+					status: 'error',
+					message: 'WebGPU isn\'t stable in Firefox yet.',
+					fix: 'A CPU fallback for Firefox is in progress. For now, use Chrome or Edge for local mode, or use cloud processing instead.'
+				}
+				: {
+					status: 'error',
+					message: 'WebGPU not supported. Your browser/device doesn\'t support WebGPU.',
+					fix: 'Try Chrome/Edge 113+, or enable chrome://flags/#enable-unsafe-webgpu'
+				};
+			allPassed = false;
+		} else {
+			const adapter = await navigator.gpu.requestAdapter();
+			if (!adapter) {
+				compatibilityResults.value.webgpu = {
+					status: 'error',
+					message: 'WebGPU adapter not available. Hardware may not support it.',
+					fix: 'Update your GPU drivers or try a different browser'
+				};
+				allPassed = false;
+			} else {
+				compatibilityResults.value.webgpu = {
+					status: 'success',
+					message: 'WebGPU supported ✓'
+				};
+			}
+		}
+	} catch (err) {
+		compatibilityResults.value.webgpu = {
+			status: 'error',
+			message: `WebGPU check failed: ${err.message}`,
+			fix: 'Try using Chrome/Edge in incognito mode or update your browser'
+		};
+		allPassed = false;
+	}
+
+	try {
+		if (performance.memory) {
+			const memoryMB = performance.memory.jsHeapSizeLimit / (1024 * 1024);
+			if (memoryMB < 500) {
+				compatibilityResults.value.memory = {
+					status: 'warning',
+					message: `Low memory available: ${Math.round(memoryMB)}MB. May be slow.`,
+					fix: 'Close other tabs or restart your browser'
+				};
+			} else {
+				compatibilityResults.value.memory = {
+					status: 'success',
+					message: `Memory OK: ${Math.round(memoryMB)}MB available ✓`
+				};
+			}
+		} else {
+			compatibilityResults.value.memory = {
+				status: 'success',
+				message: 'Memory check not available (non-Chrome browser) ✓'
+			};
+		}
+	} catch (err) {
+		compatibilityResults.value.memory = {
+			status: 'warning',
+			message: 'Could not check memory'
+		};
+	}
+
+	try {
+		const testDB = await new Promise((resolve, reject) => {
+			const request = indexedDB.open('_rocus_test', 1);
+			request.onsuccess = () => {
+				request.result.close();
+				indexedDB.deleteDatabase('_rocus_test');
+				resolve(true);
+			};
+			request.onerror = () => reject(request.error);
+		});
+		compatibilityResults.value.indexeddb = {
+			status: 'success',
+			message: 'IndexedDB working ✓'
+		};
+	} catch (err) {
+		compatibilityResults.value.indexeddb = {
+			status: 'error',
+			message: 'IndexedDB unavailable or blocked',
+			fix: 'Enable cookies and site data in browser settings'
+		};
+		allPassed = false;
+	}
+
+	try {
+		if ('caches' in window) {
+			const cache = await caches.open('_rocus_test');
+			await caches.delete('_rocus_test');
+			compatibilityResults.value.cache = {
+				status: 'success',
+				message: 'Cache API working ✓'
+			};
+		} else {
+			compatibilityResults.value.cache = {
+				status: 'warning',
+				message: 'Cache API not available',
+				fix: 'This may affect model loading. Try incognito mode.'
+			};
+		}
+	} catch (err) {
+		if (err.message.includes('Cache') || err.message.includes('quota')) {
+			compatibilityResults.value.cache = {
+				status: 'error',
+				message: 'Cache API error (common Chrome issue)',
+				fix: 'Use incognito mode, or clear site data in Settings → Privacy'
+			};
+		} else {
+			compatibilityResults.value.cache = {
+				status: 'warning',
+				message: `Cache check failed: ${err.message}`,
+				fix: 'Try incognito mode if models fail to load'
+			};
+		}
+	}
+
+	compatibilityResults.value.overall = allPassed ? 'success' : 'error';
+
+	return allPassed;
+}
+
+// Only meaningful for local (on-device WebGPU) mode - checking WebGPU/memory
+// readiness makes no sense for a commercial-mode user who never touches the
+// local model. Callers gate on processingMode; this only re-gates on "have we
+// already checked, ever" so it's safe to call every time someone enters local
+// mode without re-showing the modal after the first successful check.
+//
+// Returns a promise that resolves only once the modal is actually dismissed -
+// via the auto-dismiss timer (success case) or the user's own Continue/
+// Continue Anyway click (notifyCompatibilityCheckDismissed, called from
+// GraphNode.vue) - not just once the check finishes running. This lets
+// callers (the guided "switch to local mode" flow in useAIModels.js) wait
+// for the user to actually acknowledge the result before starting the
+// ~350MB model download, instead of firing both at once.
+let dismissResolvers = [];
+
+export async function runCompatibilityCheckIfNeeded() {
+	if (localStorage.getItem('rocus-compatibility-checked')) return true;
+
+	showCompatibilityCheck.value = true;
+	await checkSystemCompatibility();
+
+	if (compatibilityResults.value.overall === 'success') {
+		setTimeout(notifyCompatibilityCheckDismissed, 3000);
+	}
+	// error/warning: waits for the user's explicit Continue Anyway click instead.
+
+	return new Promise((resolve) => {
+		dismissResolvers.push(resolve);
+	});
+}
+
+export function notifyCompatibilityCheckDismissed() {
+	if (!showCompatibilityCheck.value) return;
+	showCompatibilityCheck.value = false;
+	localStorage.setItem('rocus-compatibility-checked', 'true');
+	const resolvers = dismissResolvers;
+	dismissResolvers = [];
+	resolvers.forEach((resolve) => resolve(compatibilityResults.value.overall === 'success'));
+}
