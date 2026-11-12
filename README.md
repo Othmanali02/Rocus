@@ -2,27 +2,27 @@
 
 ![Rocus Logo](./src/components/images/RocusBlue.png)
 
-**Rocus** is an intelligent, AI-powered knowledge graph that automatically organizes your saved websites using local machine learning models. Built with Vue.js, D3.js, and WebGPU-accelerated AI, Rocus runs entirely in your browser—no servers, no cloud, complete privacy.
+**Rocus** is an intelligent, AI-powered knowledge graph that automatically organizes your saved websites using local machine learning models. Built with Vue.js and D3.js, it's local-first: your graph lives in your browser's IndexedDB, and in **Local mode** the AI runs in your browser too. Cloud mode, sharing and web suggestions are optional, and they use the hosted rocus.io backend. See [What leaves your device](#what-leaves-your-device).
 
 ---
 
 ## Features
 
-- **Local AI Processing**: Uses WebGPU-accelerated models that run directly in your browser
+- **Local AI Processing**: An LLM on WebGPU and an embedding model on WASM, both running in your browser (Local mode), or optional Cloud mode for devices without WebGPU
 - **Interactive Knowledge Graph**: Visualize relationships between your saved content with D3.js
 - **Smart Organization**: Automatically clusters similar websites using embeddings and semantic analysis
 - **20+ Themes**: Beautiful, customizable color schemes including "Girly Pop", "Popped Out 80's", and more
 - **Search**: Find anything instantly with semantic search
 - **Extension**: Save websites with one click
-- **Local Storage**: All data stored in IndexedDB—your data never leaves your device
-- **Offline First**: Works completely offline after initial model download
+- **Local Storage**: Your graph is stored in IndexedDB in your browser
+- **Offline First**: Local mode works offline after the first model download
 - **Import/Export**: Backup and restore your entire knowledge graph
 
 ---
 
 ### Prerequisites
 
-**Browser Support**: Rocus requires a modern browser with **WebGPU support**. Check if your browser is supported:
+**Browser Support**: **Local mode** needs a browser with **WebGPU support** for the summarization model. Cloud mode and the embedding model work in any modern browser. Check your browser:
 
 - **Chrome/Edge**: Version 113+ ✅
 - **Firefox**: Version 121+ (experimental) ⚠️
@@ -31,7 +31,7 @@
 **Check WebGPU Support**: Visit [WebGPU Report](https://webgpureport.org/) to verify your browser and GPU compatibility.
 
 **Hardware Requirements**:
-- GPU with WebGPU support (most modern GPUs from 2018+)
+- Local mode: a GPU with WebGPU support (most GPUs from 2018 onwards)
 - Recommended: 8GB+ RAM
 - 2GB free disk space (for model caching)
 
@@ -58,10 +58,10 @@
 
 ### First Launch
 
-On first launch, Rocus will:
-1. Download AI models (~150MB) - this happens once then it is cached on your browser
-2. Cache models in your browser for offline use
-3. Show an interactive tutorial
+On first launch, Rocus asks you to choose **Cloud** or **Local** processing (you can change this later in Settings), then:
+1. Downloads the MiniLM embedding model (both modes) and, in Local mode only, the Qwen2.5 model (~350MB)
+2. Caches the models in your browser so later launches don't download them again
+3. Shows an interactive tutorial
 
 **Note**: Initial model download may take 2-5 minutes depending on your connection.
 
@@ -81,10 +81,14 @@ On first launch, Rocus will:
 │  └──────────────┘  └─────────────┘  └──────────────┘    │
 │                                                         │
 │  ┌──────────────────────────────────────────────────┐   │
-│  │          WebGPU-Accelerated AI Models            │   │
+│  │          Two in-browser ML runtimes              │   │
 │  ├──────────────────────────────────────────────────┤   │
-│  │  • Web-LLM (Qwen2.5-0.5B) - Summarization        │   │
-│  │  • Transformers.js (MiniLM) - Embeddings         │   │
+│  │  • WebLLM on WebGPU                              │   │
+│  │      Qwen2.5-0.5B - summaries + topics           │   │
+│  │      (Local mode only; no CPU/WASM fallback)     │   │
+│  │  • ONNX Runtime Web on WASM                      │   │
+│  │      MiniLM-L6 via Transformers.js 2.17          │   │
+│  │      - embeddings (always, every browser)        │   │
 │  └──────────────────────────────────────────────────┘   │
 │                                                         │
 └─────────────────────────────────────────────────────────┘
@@ -95,21 +99,22 @@ On first launch, Rocus will:
 When you save a website via the browser extension:
 
 1. **Content Extraction**: The extension captures page metadata and text content
-2. **Summarization** ([Web-LLM](https://github.com/mlc-ai/web-llm)): A 0.5B parameter language model (Qwen2.5) running on your GPU generates a 2-3 sentence summary
-3. **Topic Extraction**: The LLM identifies 1-2 word topics describing the content
-4. **Embedding Generation** ([Transformers.js](https://github.com/xenova/transformers.js)): MiniLM-L6 converts the summary into a 384-dimensional vector
+2. **Summarization**: In Local mode, Qwen2.5-0.5B runs on your GPU through [WebLLM](https://github.com/mlc-ai/web-llm) (WebGPU) and writes a 2-3 sentence summary. In Cloud mode, the backend sends the page to Claude Haiku for the summary.
+3. **Topic Extraction**: The same model picks 1-2 word topics for the content
+4. **Embedding Generation**: MiniLM-L6 runs on the CPU through [Transformers.js](https://github.com/xenova/transformers.js) 2.17 (ONNX Runtime Web, WASM backend) and turns the summary into a 384-dimensional vector. This always happens in your browser, in both modes.
 5. **Clustering**: Cosine similarity groups semantically related websites together
 6. **Graph Update**: New nodes and connections are added to your knowledge graph
 
-**All of this happens locally on your machine. No data is sent to external servers.**
+In Local mode, all of this happens on your machine. See [What leaves your device](#what-leaves-your-device) for the exact list of what is sent in each mode.
 
 ### Technology Stack
 
 - **Frontend**: Vue.js 3 (Composition API)
 - **Visualization**: D3.js v7
 - **AI Models**:
-  - [Web-LLM](https://github.com/mlc-ai/web-llm) - WebGPU-accelerated LLM inference
-  - [Transformers.js](https://github.com/xenova/transformers.js) - ONNX Runtime for embeddings
+  - [WebLLM](https://github.com/mlc-ai/web-llm) - LLM inference on WebGPU (Qwen2.5-0.5B)
+  - [Transformers.js](https://github.com/xenova/transformers.js) 2.17 - ONNX Runtime Web (WASM) for MiniLM embeddings
+  - Optional Cloud mode - Claude Haiku via the hosted rocus.io backend
 - **Storage**: IndexedDB with file storage import and export
 - **Styling**: Tailwind CSS
 - **Extension**: Manifest V3 Chrome Extension
@@ -120,13 +125,12 @@ When you save a website via the browser extension:
 
 ### Basic Workflow
 
-1. **Install Browser Extension**: Load the extension from Google Chrome or your favorite browser supporting webgpu
+1. **Install Browser Extension**: Install the Rocus extension for Chrome or Firefox
 2. **Browse the Web**: Navigate to any website you want to save
 3. **Click Extension Icon**: Choose an album or "Quick Save"
 4. **Watch the Magic**: Rocus automatically:
    - Analyzes the content
    - Generates summaries
-   - Finds similar content
    - Creates/updates clusters
    - Updates your knowledge graph
 
@@ -164,31 +168,17 @@ Click the theme button (palette icon) to choose from 15+ themes:
 
 ---
 
-## Configuration
+## Backend
 
-### Environment Variables
-
-For the Google Search API integration (similar websites discovery):
-```env
-GOOGLE_API_KEY=your_google_api_key
-GOOGLE_CX=your_custom_search_engine_id
-```
-
-**Note**: This is optional. Without it, "Discover Similar" uses local embeddings only.
-
-### Cloudflare Worker Setup
-
-For privacy and security, deploy the Google Search proxy as a Cloudflare Worker:
-
-1. Create a Cloudflare Worker from `./worker/google-search-proxy.js`
-2. Add environment variables in Cloudflare Dashboard
-3. Update `GOOGLE_SEARCH_WORKER_URL` in `GraphNode.vue`
+Cloud mode, web suggestions, sharing, file uploads and accounts use the hosted backend at rocus.io. **The backend is not open source.** This repo is the frontend only. If you run it yourself in Local mode, saving, summarizing, clustering, search and import/export all work without the backend.
 
 ---
 
 ## Browser Compatibility
 
-| Browser | Version | WebGPU Support | Status |
+Embeddings and Cloud mode work in any modern browser. The table is about **Local mode**, which needs WebGPU.
+
+| Browser | Version | WebGPU Support | Local mode |
 |---------|---------|----------------|--------|
 | Chrome  | 113+    | ✅ Stable      | ✅ Recommended |
 | Edge    | 113+    | ✅ Stable      | ✅ Recommended |
@@ -202,10 +192,7 @@ For privacy and security, deploy the Google Search proxy as a Cloudflare Worker:
 
 ### Fallbacks
 
-If WebGPU is unavailable:
-- Rocus will attempt to use WASM (slower, but functional)
-- Some features may be degraded
-- You'll see a warning in the console
+WebLLM only runs on WebGPU, so the summarization model has **no WASM fallback**. Without WebGPU, use Cloud mode. Embeddings still run locally on WASM.
 
 ---
 
@@ -213,22 +200,25 @@ If WebGPU is unavailable:
 
 ### Project Structure
 ```
-rocus/
-├── src/
-│   ├── components/
-│   │   ├── GraphNode.vue      # Main graph visualization
-│   │   └── images/            # Assets
-│   ├── App.vue
-│   └── main.js
-├── extension/
-│   ├── manifest.json
-│   ├── popup.html
-│   ├── popup.js
-│   └── content.js
-├── worker/
-│   └── google-search-proxy.js # Cloudflare Worker
-└── README.md
+src/
+├── components/
+│   ├── GraphNode.vue          # Dashboard / graph view
+│   └── ...                    # Modals, landing, policy pages
+├── composables/
+│   ├── graphNode/
+│   │   ├── useAIModels.js     # WebLLM + Transformers.js, Local/Cloud mode
+│   │   ├── useGraphEngine.js  # Graph state, clustering, IndexedDB
+│   │   ├── useDiscover.js     # Opt-in web suggestions
+│   │   ├── useSharing.js      # Shared graphs
+│   │   └── ...
+│   └── useAnalytics.js        # Opt-in Umami analytics
+├── router/
+├── App.vue
+└── main.js
+tools/                          # .rocus export format tests
 ```
+
+The browser extension lives in a separate repo: [rocus-extension](https://github.com/Othmanali02/rocus-extension).
 
 ### Building for Production
 ```bash
@@ -236,12 +226,6 @@ npm run build
 ```
 
 Output will be in `./dist`
-
-### Extension Development
-
-1. Load unpacked extension from `./extension` folder in Chrome
-2. Make changes to extension files
-3. Reload extension in `chrome://extensions`
 
 ---
 
@@ -261,7 +245,7 @@ Contributions are welcome! Please:
 
 This project is licensed under the GNU Affero General Public License v3.0 (AGPL-3.0) - see the [LICENSE](LICENSE) file for details.
 
-Rocus was released under the MIT License until 27 September 2026 and is licensed under AGPL-3.0 thereafter.
+Rocus was released under the MIT License until 26 September 2026 and is licensed under AGPL-3.0 thereafter.
 
 ---
 
@@ -280,15 +264,18 @@ Rocus was released under the MIT License until 27 September 2026 and is licensed
 - **Discussions**: [GitHub Discussions](https://github.com/Othmanali02/rocus/discussions)
 - **Email**: othman.internet@gmail.com (if applicable)
 
-## Privacy
+## What leaves your device
 
-**Rocus is privacy-first by design:**
+| Feature | Default | What is sent, and where |
+|---|---|---|
+| Local mode processing | — | Nothing. The models run in your browser. They are downloaded once: MiniLM from Hugging Face, Qwen2.5 from models.rocus.io. |
+| Cloud mode processing | Chosen at first run | The page's title and text go to rocus.io, then to Anthropic (Claude Haiku) for the summary. Not stored, and not used for training. |
+| Web suggestions / Discover Similar | **Off** | A saved page's topic or search phrase goes to rocus.io, then to Serper (web search). It is only sent after you turn it on in Settings or click "Search once". |
+| Sharing a graph | Off | The shared album's graph data goes to rocus.io, so collaborators can load it. |
+| File uploads | Off | The uploaded file goes to rocus.io for text extraction. |
+| Analytics | **Off (opt-in)** | Anonymous usage events go to self-hosted Umami. See below. |
 
-- ✅ All processing happens locally in your browser
-- ✅ No data sent to external servers (except optional Google Search API)
-- ✅ No tracking, analytics, or telemetry
-- ✅ All data stored in local IndexedDB
-- ✅ Open source - audit the code yourself
+Your graph is always stored in your browser's IndexedDB, and Settings → Export saves all of it.
 
 ## Privacy-First Analytics
 

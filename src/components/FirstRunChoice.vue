@@ -73,7 +73,8 @@ const emit = defineEmits(['choose']);
 
 			<p class="text-xs text-center mt-6 max-w-xl mx-auto" :style="{ color: currentTheme.colors.textSecondary }">
 				In cloud mode, page text is sent to Anthropic for processing - not stored, and not used for
-				training. Local mode sends nothing off your device.
+				training. Local mode sends nothing off your device. Web suggestions (related links found via
+				web search) are off until you turn them on in Settings.
 			</p>
 		</div>
 	</div>

@@ -986,6 +986,27 @@ License along with this program. If not, see
 						</div>
 					</div>
 
+					<div class="h-px" :style="{ backgroundColor: currentTheme.colors.border }"></div>
+
+					<div class="flex items-center justify-between gap-4">
+						<div>
+							<div class="font-medium" :style="{ color: currentTheme.colors.text }">
+								Web suggestions
+							</div>
+							<div class="text-sm" :style="{ color: currentTheme.colors.textSecondary }">
+								Sends each saved page's topic to rocus.io + Serper to suggest related links. Off by
+								default.
+							</div>
+						</div>
+						<button @click="setWebSuggestionsEnabled(!webSuggestionsEnabled)" role="switch"
+							:aria-checked="webSuggestionsEnabled"
+							class="relative w-11 h-6 rounded-full shrink-0 transition-colors duration-200"
+							:style="{ backgroundColor: webSuggestionsEnabled ? '#4A90E2' : currentTheme.colors.border }">
+							<span class="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform duration-200"
+								:style="{ transform: webSuggestionsEnabled ? 'translateX(20px)' : 'translateX(0)' }"></span>
+						</button>
+					</div>
+
 					<!-- In Settings Modal, add after Show Connections -->
 					<div class="h-px" :style="{ backgroundColor: currentTheme.colors.border }"></div>
 
@@ -1883,7 +1904,7 @@ License along with this program. If not, see
 						<h3 class="text-2xl font-bold" :style="{ color: currentTheme.colors.text }">
 							Discover Similar Websites
 						</h3>
-						<p class="text-sm mt-1 capitalize" :style="{ color: currentTheme.colors.textSecondary }">
+						<p v-if="!needsSearchConsent" class="text-sm mt-1 capitalize" :style="{ color: currentTheme.colors.textSecondary }">
 							Found {{ similarWebsites.length }} websites related to
 							<strong>{{ explodedNode?.topic }}</strong>
 						</p>
@@ -1898,7 +1919,31 @@ License along with this program. If not, see
 					</button>
 				</div>
 
-				<div v-if="isLoadingSimilar" class="flex flex-col items-center justify-center py-16">
+				<div v-if="needsSearchConsent" class="py-6">
+					<p class="mb-3" :style="{ color: currentTheme.colors.text }">
+						To find similar pages, Rocus sends this cluster's topic
+						(<strong>{{ explodedNode?.topic }}</strong>) to rocus.io, which looks it up with our search
+						provider (Serper). Nothing else about your saved pages is sent.
+					</p>
+					<p class="text-sm mb-6" :style="{ color: currentTheme.colors.textSecondary }">
+						"Always allow" also looks up related links for each page you save from now on. You can turn
+						this off any time in Settings → Web suggestions.
+					</p>
+					<div class="flex flex-wrap gap-3">
+						<button @click="searchOnce"
+							class="px-4 py-2 rounded-lg text-sm font-semibold border"
+							:style="{ color: currentTheme.colors.text, borderColor: currentTheme.colors.border }">
+							Search once
+						</button>
+						<button @click="allowWebSuggestionsAndSearch"
+							class="px-4 py-2 rounded-lg text-sm font-semibold text-white"
+							style="background-color: #4A90E2;">
+							Always allow
+						</button>
+					</div>
+				</div>
+
+				<div v-else-if="isLoadingSimilar" class="flex flex-col items-center justify-center py-16">
 					<div class="w-12 h-12 border-4 border-t-[#4A90E2] rounded-full animate-spin mb-4"
 						:style="{ borderColor: currentTheme.colors.border, borderTopColor: currentTheme.colors.primary }">
 					</div>
@@ -2811,6 +2856,11 @@ import {
 	similarWebsites,
 	closeDiscoverModal,
 	openExternalLink,
+	needsSearchConsent,
+	searchOnce,
+	allowWebSuggestionsAndSearch,
+	webSuggestionsEnabled,
+	setWebSuggestionsEnabled,
 } from '../composables/graphNode/useDiscover';
 
 // `URL` isn't in Vue's template-expression global allowlist, so calling

@@ -20,30 +20,56 @@ import { ref } from "vue";
 import { explodedNode, clusters, websites, saveToIndexedDB } from "./useGraphEngine";
 import { useAnalytics } from "../useAnalytics";
 
-// "Discover Similar Websites" modal: Google-search-backed related-link
-// lookup for an exploded cluster. Reads explodedNode/clusters/websites from
+// "Discover Similar Websites" modal: web-search-backed related-link lookup
+// for an exploded cluster. Queries go to rocus.io/api/search, which looks
+// them up via Serper. OFF by default - nothing is sent unless the user opts
+// in ("Web suggestions" in Settings) or clicks "Search once" in the modal. Reads explodedNode/clusters/websites from
 // useGraphEngine (safe circular import - useGraphEngine calls
 // handleDiscoverClick() for "discover" node clicks).
 
 const { trackEvent } = useAnalytics();
 
-const GOOGLE_SEARCH_API_URL = 'https://rocus.io/api/search';
+const WEB_SEARCH_API_URL = 'https://rocus.io/api/search';
+const WEB_SUGGESTIONS_KEY = 'rocus-web-suggestions';
+
+function readWebSuggestionsSetting() {
+	try {
+		return localStorage.getItem(WEB_SUGGESTIONS_KEY) === 'on';
+	} catch {
+		return false;
+	}
+}
+
+// Opt-in: when false, no saved-page topic or query ever leaves the device
+// through this module.
+export const webSuggestionsEnabled = ref(readWebSuggestionsSetting());
+
+export function setWebSuggestionsEnabled(enabled) {
+	webSuggestionsEnabled.value = !!enabled;
+	try {
+		localStorage.setItem(WEB_SUGGESTIONS_KEY, enabled ? 'on' : 'off');
+	} catch {
+		// storage unavailable - setting lasts for this session only
+	}
+}
+
+// True while the Discover modal is showing its consent screen.
+export const needsSearchConsent = ref(false);
 
 export const showDiscoverModal = ref(false);
 export const isLoadingSimilar = ref(false);
 export const similarWebsites = ref([]);
 
-export async function googleSearch(query, numResults = 10) {
+export async function webSearch(query, numResults = 10) {
 	if (!query || !query.trim()) {
 		console.warn("Empty search query");
 		return [];
 	}
 
 	try {
-		console.log(`🔍 Searching Google via backend API for: '${query}'`);
+		console.log(`🔍 Web search via backend API for: '${query}'`);
 
-		// Call your Node.js backend instead of Cloudflare Worker
-		const url = new URL(GOOGLE_SEARCH_API_URL);
+		const url = new URL(WEB_SEARCH_API_URL);
 		url.searchParams.set('q', query);
 		url.searchParams.set('num', numResults.toString());
 
@@ -77,7 +103,7 @@ export async function googleSearch(query, numResults = 10) {
 		return data.results;
 
 	} catch (error) {
-		console.error(`⚠️ Google search error for query '${query}':`, error);
+		console.error(`⚠️ Web search error for query '${query}':`, error);
 
 		// You can throw the error to handle it in the calling code
 		// or return empty array as before
@@ -90,6 +116,10 @@ export async function googleSearch(query, numResults = 10) {
 }
 
 export async function addSimilarLinksToCluster(clusterId) {
+	// Privacy gate: called after every save (useAIModels.js) - must be a
+	// no-op unless the user has opted in to web suggestions.
+	if (!webSuggestionsEnabled.value) return;
+
 	const cluster = clusters.value[clusterId];
 	if (!cluster) return;
 
@@ -121,8 +151,7 @@ export async function addSimilarLinksToCluster(clusterId) {
 
 		console.log(`🔍 Searching similar links for website: ${website.title}`);
 
-		// Search Google
-		const searchResults = await googleSearch(searchQuery, 10);
+		const searchResults = await webSearch(searchQuery, 10);
 
 		// Filter out URLs already in cluster
 		const newLinks = searchResults.filter(result =>
@@ -177,10 +206,10 @@ export async function searchSimilarWebsites(query) {
 			}
 		}
 
-		// If we don't have enough results, do a fresh Google search
+		// If we don't have enough results, do a fresh web search
 		if (allSimilarLinks.length < 5) {
 			console.log("🔍 Not enough cached results, performing fresh search");
-			const freshResults = await googleSearch(query, 10);
+			const freshResults = await webSearch(query, 10);
 
 			// Get existing cluster URLs
 			const clusterUrls = new Set(
@@ -209,13 +238,27 @@ export async function handleDiscoverClick() {
 	if (!explodedNode.value) return;
 
 	showDiscoverModal.value = true;
-	isLoadingSimilar.value = true;
 	similarWebsites.value = [];
 
 	trackEvent('discover_similar_clicked', {
 		website_count: explodedNode.value.websites.length
 	});
 
+	if (!webSuggestionsEnabled.value) {
+		// Ask first - the consent screen's buttons call searchOnce() or
+		// allowWebSuggestionsAndSearch().
+		needsSearchConsent.value = true;
+		isLoadingSimilar.value = false;
+		return;
+	}
+
+	await runDiscoverSearch();
+}
+
+async function runDiscoverSearch() {
+	if (!explodedNode.value) return;
+	needsSearchConsent.value = false;
+	isLoadingSimilar.value = true;
 	try {
 		const results = await searchSimilarWebsites(explodedNode.value.topic);
 		similarWebsites.value = results;
@@ -226,8 +269,34 @@ export async function handleDiscoverClick() {
 	}
 }
 
+// One-off search for the cluster topic only - does not enable the per-page
+// background lookups.
+export async function searchOnce() {
+	const node = explodedNode.value;
+	if (!node) return;
+	needsSearchConsent.value = false;
+	isLoadingSimilar.value = true;
+	try {
+		const clusterUrls = new Set(
+			(clusters.value[node.id]?.websites || []).map(wid => websites.value[wid]?.url).filter(Boolean)
+		);
+		const results = await webSearch(node.topic, 10);
+		similarWebsites.value = results.filter(r => r.url && !clusterUrls.has(r.url)).slice(0, 10);
+	} catch (error) {
+		console.error("Error loading similar websites:", error);
+	} finally {
+		isLoadingSimilar.value = false;
+	}
+}
+
+export async function allowWebSuggestionsAndSearch() {
+	setWebSuggestionsEnabled(true);
+	await runDiscoverSearch();
+}
+
 export function closeDiscoverModal() {
 	showDiscoverModal.value = false;
+	needsSearchConsent.value = false;
 	similarWebsites.value = [];
 }
 

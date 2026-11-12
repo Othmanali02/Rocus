@@ -541,6 +541,8 @@ export async function processWebsite(data) {
 			{ id: clusterId, type: "cluster", data: clusters.value[clusterId] },
 		]);
 
+		// No-op unless the user opted in to web suggestions (gate lives in
+		// addSimilarLinksToCluster, useDiscover.js).
 		addSimilarLinksToCluster(clusterId).catch(err =>
 			console.error("Error adding similar links:", err)
 		);

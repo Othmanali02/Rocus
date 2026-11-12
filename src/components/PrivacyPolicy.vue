@@ -168,17 +168,28 @@ License along with this program. If not, see
                         Your AI Processing & Content
                     </h2>
                     <div :style="{ color: currentTheme.colors.textSecondary }">
-                        <p class="mb-3">Rocus runs AI models (Web-LLM, Transformers.js) entirely in your browser using
-                            WebGPU. This means:</p>
-                        <ul class="list-disc ml-6 space-y-1">
-                            <li>Your website content never leaves your device</li>
-                            <li>Summaries and embeddings are generated locally</li>
-                            <li>No external AI APIs are called</li>
-                            <li>Your knowledge graph is stored only in your browser's IndexedDB</li>
+                        <p class="mb-3">Rocus has two processing modes, chosen when you first open the app and
+                            changeable in Settings → AI Processing.</p>
+                        <p class="mb-2"><strong :style="{ color: currentTheme.colors.text }">Local mode:</strong></p>
+                        <ul class="list-disc ml-6 space-y-1 mb-4">
+                            <li>Summaries are generated in your browser by Qwen2.5 (WebLLM, on WebGPU)</li>
+                            <li>Embeddings are generated in your browser by MiniLM (Transformers.js, on WASM)</li>
+                            <li>Your saved pages' content never leaves your device</li>
                         </ul>
-                        <p class="mt-4">The only exception is the optional "Discover Similar Websites" feature, which
-                            calls Google's Custom Search API through a privacy-preserving Cloudflare Worker (your IP is
-                            hidden).</p>
+                        <p class="mb-2"><strong :style="{ color: currentTheme.colors.text }">Cloud mode:</strong></p>
+                        <ul class="list-disc ml-6 space-y-1 mb-4">
+                            <li>The page's title and text are sent through rocus.io to Anthropic (Claude Haiku) to
+                                write the summary. Anthropic does not use it for training.</li>
+                            <li>Embeddings are still generated locally in your browser</li>
+                        </ul>
+                        <p class="mb-3">In both modes your knowledge graph is stored in your browser's IndexedDB.</p>
+                        <p class="mb-3"><strong :style="{ color: currentTheme.colors.text }">Web suggestions
+                            (optional, off by default):</strong> When you turn on Settings → Web suggestions (or
+                            click "Search once" in Discover Similar), the topic or search phrase of a saved page is
+                            sent to rocus.io, which looks it up with our search provider, Serper. Nothing else about
+                            your saved pages is sent.</p>
+                        <p>Sharing a graph or uploading a file also sends that graph or file to rocus.io, because
+                            it has to be stored there for others to see it.</p>
                     </div>
                 </section>
 
@@ -220,14 +231,20 @@ License along with this program. If not, see
                                 Self-hosted, GDPR-compliant analytics. No cookies, no personal data.
                             </li>
                             <li>
-                                <strong :style="{ color: currentTheme.colors.text }">Google Custom Search API
-                                    (optional):</strong>
-                                Only used when you click "Discover Similar" on a cluster. Your IP is hidden by
-                                Cloudflare Worker.
+                                <strong :style="{ color: currentTheme.colors.text }">Anthropic (Cloud mode
+                                    only):</strong>
+                                Writes page summaries when you use Cloud mode. Requests are made by rocus.io, not
+                                your browser.
+                            </li>
+                            <li>
+                                <strong :style="{ color: currentTheme.colors.text }">Serper (optional, off by
+                                    default):</strong>
+                                Web search for "Web suggestions" / Discover Similar. Receives only the search phrase,
+                                sent by rocus.io, not your browser.
                             </li>
                             <li>
                                 <strong :style="{ color: currentTheme.colors.text }">CDNs for AI Models:</strong>
-                                Initial model downloads from HuggingFace/Xenova CDNs. Models are cached locally after
+                                Initial model downloads from Hugging Face (MiniLM) and models.rocus.io (Qwen2.5). Models are cached locally after
                                 first download.
                             </li>
                         </ul>
