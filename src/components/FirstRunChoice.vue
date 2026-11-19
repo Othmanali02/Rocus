@@ -17,6 +17,7 @@ License along with this program. If not, see
 -->
 <script setup>
 import { currentTheme } from '../composables/graphNode/useThemes';
+import { pendingSaveCount } from '../composables/graphNode/useAIModels';
 
 const emit = defineEmits(['choose']);
 </script>
@@ -31,6 +32,10 @@ const emit = defineEmits(['choose']);
 				</h1>
 				<p class="text-sm sm:text-base" :style="{ color: currentTheme.colors.textSecondary }">
 					You can change this later in Settings.
+				</p>
+				<p v-if="pendingSaveCount > 0" class="text-sm mt-3 font-medium" :style="{ color: currentTheme.colors.text }">
+					{{ pendingSaveCount === 1 ? '1 page you saved is' : `${pendingSaveCount} pages you saved are` }}
+					waiting on this device. Nothing has been sent anywhere yet.
 				</p>
 			</div>
 

@@ -91,6 +91,83 @@ export const processingMode = ref(
 	storedProcessingMode === null ? 'commercial' : (storedProcessingMode === 'commercial' ? 'commercial' : 'local')
 );
 
+// True once the user has picked Local or Cloud (the first-run choice, or the
+// Settings toggle). Until then nothing is processed: the silent 'commercial'
+// default above must never send a page to the cloud on its own.
+export function hasChosenProcessingMode() {
+	try {
+		return localStorage.getItem(PROCESSING_MODE_KEY) !== null;
+	} catch {
+		return false;
+	}
+}
+
+// Extension saves that arrive before the first-run choice are kept here, on
+// this device only, and processed once a mode is chosen (drainPendingSaves).
+// Content is trimmed: processing only ever reads the first 2,500 characters.
+const PENDING_SAVES_KEY = 'rocus-pending-saves';
+const PENDING_CONTENT_CHARS = 5000;
+
+function readPendingSaves() {
+	try {
+		const list = JSON.parse(localStorage.getItem(PENDING_SAVES_KEY) || '[]');
+		return Array.isArray(list) ? list : [];
+	} catch {
+		return [];
+	}
+}
+
+function writePendingSaves(list) {
+	if (list.length === 0) localStorage.removeItem(PENDING_SAVES_KEY);
+	else localStorage.setItem(PENDING_SAVES_KEY, JSON.stringify(list));
+	pendingSaveCount.value = list.length;
+}
+
+export const pendingSaveCount = ref(readPendingSaves().length);
+
+// Returns false if the save couldn't be stored (storage full or blocked).
+function holdPendingSave(data) {
+	try {
+		const { extensionRequestId, ...rest } = data;
+		const item = { ...rest, content: (rest.content || '').substring(0, PENDING_CONTENT_CHARS), held_at: new Date().toISOString() };
+		writePendingSaves([...readPendingSaves(), item]);
+		return true;
+	} catch (err) {
+		console.error('Could not hold save until a processing mode is chosen:', err);
+		return false;
+	}
+}
+
+let drainInFlight = null;
+
+// Processes held saves once a mode exists. Waits for the models first: a
+// cold Local-mode download takes longer than processWebsite's own 40 s wait,
+// and a save that hits that timeout is dropped. If loading fails, the saves
+// stay stored for the next attempt.
+export function drainPendingSaves() {
+	if (drainInFlight) return drainInFlight;
+	drainInFlight = (async () => {
+		if (!hasChosenProcessingMode() || readPendingSaves().length === 0) return;
+		try {
+			await ensureModelsLoaded();
+			if (processingMode.value === 'local') await ensureSummarizationModel();
+		} catch (err) {
+			console.error('Held saves kept; models failed to load:', err);
+			return;
+		}
+		if (!embeddingModel || (processingMode.value === 'local' && !summarizationModel)) {
+			console.error('Held saves kept; models not ready');
+			return;
+		}
+		const pending = readPendingSaves();
+		try { writePendingSaves([]); } catch {}
+		console.log(`📥 Processing ${pending.length} save(s) held until a processing mode was chosen`);
+		for (const item of pending) processingQueue.value.push(item);
+		processQueue();
+	})().finally(() => { drainInFlight = null; });
+	return drainInFlight;
+}
+
 export function setProcessingMode(mode) {
 	if (mode !== 'local' && mode !== 'commercial') return;
 	const switchingToLocal = mode === 'local' && processingMode.value !== 'local';
@@ -419,13 +496,14 @@ export function extractFallbackSummary(content, metadata) {
 // REQUEST_ALBUMS -> ALBUMS_RESPONSE pattern) so a hidden background tab
 // opened for a quick-add knows it's safe to close. No-op for the regular
 // manual-popup save flow, which never sets extensionRequestId.
-function notifyExtensionProcessed(data, success) {
+function notifyExtensionProcessed(data, success, extra = {}) {
 	if (!data.extensionRequestId) return;
 	window.postMessage({
 		source: "page-summarizer-extension",
 		type: "PAGE_METADATA_PROCESSED",
 		requestId: data.extensionRequestId,
 		success,
+		...extra,
 	}, "*");
 }
 
@@ -763,6 +841,17 @@ export function setupMessageListener() {
 
 		// --- EXISTING HANDLER ---
 		if (msg.type === "PAGE_METADATA" && msg.data) {
+			// No processing mode chosen yet (brand-new user, often a hidden tab
+			// the extension opened): keep the page on this device and process
+			// it after the first-run choice. Reported as success with
+			// queued: true because the page IS saved; extension 0.0.6 reads
+			// only `success`, so it shows a normal "saved" instead of an error.
+			if (!hasChosenProcessingMode()) {
+				const held = holdPendingSave(msg.data);
+				notifyExtensionProcessed(msg.data, held, held ? { queued: true } : {});
+				return;
+			}
+
 			// Ask (once per shared graph, never silently) whether FUTURE
 			// quick-adds should route into the currently-open shared graph -
 			// this item itself still processes under whatever the existing
@@ -807,6 +896,7 @@ export function setupMessageListener() {
 	};
 
 	window.addEventListener("message", listener);
+	drainPendingSaves();
 	return listener;
 }
 
