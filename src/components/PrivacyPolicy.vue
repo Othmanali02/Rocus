@@ -40,7 +40,7 @@ License along with this program. If not, see
             }">
 
                 <p class="text-sm mb-6" :style="{ color: currentTheme.colors.textSecondary }">
-                    Last updated: December 2025
+                    Last updated: November 2026
                 </p>
 
                 <section class="mb-8">
