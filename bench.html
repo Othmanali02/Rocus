@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Rocus benchmark</title>
+<style>
+	body { font: 14px/1.5 system-ui, sans-serif; max-width: 860px; margin: 24px auto; padding: 0 16px; color: #222; }
+	h1 { font-size: 20px; margin-bottom: 4px; }
+	section { border: 1px solid #ddd; border-radius: 8px; padding: 12px 16px; margin: 12px 0; }
+	h2 { font-size: 15px; margin: 0 0 6px; }
+	p.note { color: #555; margin: 4px 0 8px; }
+	button { font: inherit; padding: 6px 12px; margin: 4px 6px 4px 0; cursor: pointer; }
+	button:disabled { opacity: .5; cursor: default; }
+	input[type=text] { font: inherit; width: 90px; }
+	label.tm { display: inline-block; margin-right: 14px; }
+	pre { background: #f6f6f6; padding: 10px; border-radius: 6px; max-height: 360px; overflow: auto; font-size: 12px; white-space: pre-wrap; }
+	#status { font-weight: 600; }
+</style>
+</head>
+<body>
+<h1>Rocus benchmark</h1>
+<p class="note">Same packages, model files and prompts as the app. Results are kept in this browser (localStorage) across reloads until you clear them. Run it with nothing else heavy open.</p>
+<div id="status">Idle</div>
+
+<section>
+	<h2>0. Machine</h2>
+	<button id="env">Record machine info</button>
+</section>
+
+<section>
+	<h2>1. Model load: cold, then warm</h2>
+	<p class="note">Cold: click "Clear model caches", open DevTools, Network tab, tick "Disable cache", reload, then "Run load". Warm: untick "Disable cache", close DevTools, reload, "Run load" again. Repeat warm once more if you have time. Clearing removes only cached models for this origin, not your Rocus data.</p>
+	<button id="clear">Clear model caches</button>
+	<button id="load">Run load</button>
+	<div>Chrome Task Manager (Shift+Esc), "Memory footprint" column, in MB. Fill "before" just before clicking "Run load", "after load" when it says done, and the last pair after step 2. Then "Save readings".<br>
+		<label class="tm">before: tab <input type="text" id="tm_before_tab"> GPU process <input type="text" id="tm_before_gpu"></label><br>
+		<label class="tm">after load: tab <input type="text" id="tm_loaded_tab"> GPU process <input type="text" id="tm_loaded_gpu"></label><br>
+		<label class="tm">after inference + 10k index: tab <input type="text" id="tm_peak_tab"> GPU process <input type="text" id="tm_peak_gpu"></label>
+		<button id="tm_save">Save readings</button>
+	</div>
+</section>
+
+<section>
+	<h2>2. Per-save cost and the index in play</h2>
+	<p class="note">Needs step 1 in this page load. Runs the exact 3-call summary/topic/query pipeline on 5 pages, embeds them, then builds a 10,000-doc index the way Rocus stores it (deep-reactive Vue ref, plain arrays) and times one similarity scan. Fill the "after inference + 10k index" Task Manager boxes when it finishes.</p>
+	<button id="infer">Run per-save + index</button>
+</section>
+
+<section>
+	<h2>3. WASM vs WebGPU, same machine</h2>
+	<p class="note">MiniLM: the app's Transformers.js 2.17 (WASM only) against Transformers.js 3.8 on WASM and on WebGPU, 100 embeddings each. Optional second button: Qwen2.5-0.5B through Transformers.js on WASM and on WebGPU, which is what a WASM fallback would cost. That downloads roughly another 0.5-1 GB from Hugging Face (my estimate) and can take a while.</p>
+	<button id="minilm">Run MiniLM WASM vs WebGPU</button>
+	<button id="qwenfallback">Run Qwen WASM vs WebGPU (optional, big download)</button>
+</section>
+
+<section>
+	<h2>4. Clustering on real Qwen output</h2>
+	<p class="note">Runs the app's Qwen prompts and MiniLM embedding over 345 labelled news articles (Reuters-21578, 23 topics). Needs step 1 in this page load. Probably 15-30 minutes; it resumes where it stopped if you reload. Keep the tab in the foreground.</p>
+	<button id="corpus">Run labelled corpus</button>
+</section>
+
+<section>
+	<h2>Results</h2>
+	<button id="download">Download results.json</button>
+	<button id="wipe">Clear stored results</button>
+	<pre id="log"></pre>
+</section>
+
+<script type="module" src="/src/bench/bench.js"></script>
+</body>
+</html>

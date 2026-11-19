@@ -30,3 +30,6 @@ coverage
 
 *.tsbuildinfo
 .claude/settings.local.json
+
+# benchmark corpus (Reuters-21578, research-use licence: do not publish)
+public/bench/
