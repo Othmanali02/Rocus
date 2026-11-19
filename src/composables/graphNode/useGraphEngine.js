@@ -16,7 +16,7 @@
  * <https://www.gnu.org/licenses/>.
  */
 
-import { ref, reactive, computed, watch } from "vue";
+import { ref, reactive, computed, watch, toRaw } from "vue";
 import * as d3 from "d3";
 import { db, initDB } from "./useDatabase";
 import { currentTheme } from "./useThemes";
@@ -30,6 +30,7 @@ import {
 	cosineSimilarity,
 	averageEmbeddings,
 	topicsMatch,
+	topicKey,
 	normalizeEmbeddingRecord,
 } from "./utils";
 
@@ -43,8 +44,18 @@ import {
 
 const { trackEvent } = useAnalytics();
 
-const SIMILARITY_THRESHOLD = 0.65;
-const LOOSE_SIMILARITY_THRESHOLD = 0.45;
+// Website/file clustering (assignToCluster). A new page joins the cluster
+// whose CENTROID (mean member embedding) it's most similar to, if that
+// similarity clears CENTROID_THRESHOLD. Otherwise it may still join one of
+// the LOOSE_TOP_K best clusters if similarity clears LOOSE_SIMILARITY_THRESHOLD
+// and the first two words of the topic labels match (topicKey + topicsMatch).
+// Measured on 345 labelled news articles run through the real Qwen pipeline
+// (rocus-handoff/measure/labels.mjs): ARI 0.35 -> 0.42, same 19% wrong-join
+// rate, a quarter fewer pages left alone, vs the previous nearest-member rule
+// (join at >= 0.65 to the single closest page, loose path unbounded).
+const CENTROID_THRESHOLD = 0.55;
+const LOOSE_SIMILARITY_THRESHOLD = 0.4;
+const LOOSE_TOP_K = 3;
 
 // Notes embed their own short, raw, informal text - websites/files embed a
 // rich Claude-generated summary paragraph. That register/length mismatch
@@ -693,53 +704,64 @@ export async function deleteWebsite(websiteId) {
 // ==============================================
 // CLUSTERING
 // ==============================================
-export function findSimilarWebsites(targetEmbedding, excludeId = null, albumId = null) {
-	const similarities = [];
+// Ranks every real topic cluster in the album by cosine similarity between
+// `embedding` and the cluster's centroid (mean member embedding). The Notes
+// hub is skipped: it's only ever reached directly (see
+// findOrCreateNotesCluster), same as rankCandidateClusters does for notes.
+// Reads through toRaw(): this runs on every save and touches every stored
+// vector, and Vue's reactive proxies made the old per-save scan about 13x
+// slower (rocus-handoff bench, 10k items: 2.1 s through the proxy, 0.16 s raw).
+function rankClustersByCentroid(embedding, websiteId, albumId) {
+	const rawClusters = toRaw(clusters.value);
+	const rawEmbeddings = toRaw(embeddings.value);
+	const ranked = [];
 
-	for (const [websiteId, embedding] of Object.entries(embeddings.value)) {
-		if (excludeId && websiteId === excludeId) continue;
+	for (const [clusterId, cluster] of Object.entries(rawClusters)) {
+		if (cluster.album_id !== albumId || cluster.is_notes_cluster) continue;
 
-		const website = websites.value[websiteId];
-		if (!website || website.album_id !== albumId) continue;
+		const members = [];
+		for (const id of cluster.websites) {
+			if (id === websiteId) continue;
+			const v = rawEmbeddings[id]?.v;
+			if (v) members.push(v);
+		}
+		if (members.length === 0) continue;
 
-		const similarity = cosineSimilarity(targetEmbedding, embedding.v);
-		similarities.push({ websiteId, similarity });
+		ranked.push({ clusterId, similarity: cosineSimilarity(embedding, averageEmbeddings(members)) });
 	}
 
-	return similarities.sort((a, b) => b.similarity - a.similarity);
+	return ranked.sort((a, b) => b.similarity - a.similarity);
 }
 
 export function assignToCluster(websiteId, topic, embedding, searchQuery, albumId = null) {
-	const similarWebsites = findSimilarWebsites(embedding, websiteId, albumId);
+	const ranked = rankClustersByCentroid(embedding, websiteId, albumId);
+	let chosenId = null;
 
-	for (const { websiteId: similarId, similarity } of similarWebsites) {
-		for (const [clusterId, cluster] of Object.entries(clusters.value)) {
-			if (cluster.album_id !== albumId) continue;
-
-			if (cluster.websites.includes(similarId)) {
-				const clusterTopic = cluster.topic;
-
-				if (similarity >= SIMILARITY_THRESHOLD) {
-					if (!cluster.websites.includes(websiteId)) {
-						cluster.websites.push(websiteId);
-					}
-					console.log(`🔗 Added to cluster ${clusterId} in album ${albumId || 'All Clusters'}`);
-
-					return clusterId;
-				}
-
-				if (
-					similarity >= LOOSE_SIMILARITY_THRESHOLD &&
-					topicsMatch(topic, clusterTopic)
-				) {
-					if (!cluster.websites.includes(websiteId)) {
-						cluster.websites.push(websiteId);
-					}
-					console.log(`🔗 Added to cluster ${clusterId} (loose + topic)`);
-					return clusterId;
+	if (ranked.length > 0 && ranked[0].similarity >= CENTROID_THRESHOLD) {
+		chosenId = ranked[0].clusterId;
+		console.log(`🔗 Added to cluster ${chosenId} in album ${albumId || 'All Clusters'}`);
+	} else {
+		// Loose path: only the few closest clusters, never the whole album -
+		// the old unbounded scan let its candidate pool grow with N.
+		const key = topicKey(topic);
+		if (key) {
+			for (const { clusterId, similarity } of ranked.slice(0, LOOSE_TOP_K)) {
+				if (similarity < LOOSE_SIMILARITY_THRESHOLD) break;
+				if (topicsMatch(key, topicKey(clusters.value[clusterId].topic))) {
+					chosenId = clusterId;
+					console.log(`🔗 Added to cluster ${chosenId} (loose + topic)`);
+					break;
 				}
 			}
 		}
+	}
+
+	if (chosenId) {
+		const cluster = clusters.value[chosenId];
+		if (!cluster.websites.includes(websiteId)) {
+			cluster.websites.push(websiteId);
+		}
+		return chosenId;
 	}
 
 	const newClusterId = generateId();
@@ -813,7 +835,7 @@ function linkClusterToNotesHub(topicClusterId, albumId) {
 
 // Notes go through the same embedding pipeline as websites, but never spawn
 // their own singleton cluster the way assignToCluster does - a note either
-// joins a real topic cluster it strictly matches (only SIMILARITY_THRESHOLD,
+// joins a real topic cluster it strictly matches (only NOTE_SIMILARITY_THRESHOLD,
 // no loose+topic-match tier, since notes have no Claude-derived topic to
 // loosely match on), or falls into the shared Notes hub.
 // Read-only: ranks every real topic cluster (never the Notes hub itself) in

@@ -201,6 +201,22 @@ function wordsMatch(w1, w2) {
 	return shared >= Math.max(6, 0.75 * Math.min(w1.length, w2.length));
 }
 
+// First two non-stopword words of a topic label, Latin script only. Used by
+// clustering's loose path (assignToCluster). Qwen's labels average about 3
+// words ("Dutch Cocoa Bean Imports") and the extra words caused false matches
+// between unrelated topics: cutting to two halved cross-topic matches (3.5% ->
+// 1.8% of pairs) and cut wrong loose joins, measured in
+// rocus-handoff/measure/labels.mjs. Display labels are left untouched.
+export function topicKey(label) {
+	if (!label) return "";
+	return label
+		.replace(/[^\p{Script=Latin}0-9 '&.-]/gu, " ")
+		.split(/\s+/)
+		.filter((w) => w && !STOPWORDS.has(w.toLowerCase()))
+		.slice(0, 2)
+		.join(" ");
+}
+
 export function topicsMatch(topic1, topic2) {
 	if (!topic1 || !topic2) return false;
 
