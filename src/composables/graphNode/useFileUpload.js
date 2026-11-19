@@ -118,7 +118,11 @@ async function addFileLocally(file) {
 		text = await extractFileText(file);
 	} catch (err) {
 		console.error('Local file read failed:', err);
-		rocusAlert(`Couldn't read "${file.name}". The file may be damaged or password-protected.`);
+		const reason =
+			err?.name === 'PasswordException' ? 'it is password-protected'
+			: err?.name === 'InvalidPDFException' ? "it doesn't look like a valid PDF"
+			: 'something went wrong reading it on this device (details in the browser console)';
+		rocusAlert(`Couldn't read "${file.name}": ${reason}.`);
 		return;
 	} finally {
 		removeProcessingPlaceholder(placeholderNode.id);

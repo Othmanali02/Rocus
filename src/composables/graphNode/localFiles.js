@@ -37,10 +37,19 @@ export async function extractFileText(file) {
 		.slice(0, MAX_CHARS);
 }
 
+// pdf.js parses in a Web Worker. It's bundled through Vite's ?worker import so
+// it ships as a .js file: loading pdf.js's own .mjs worker by URL broke on
+// rocus.io, whose nginx serves .mjs as application/octet-stream with nosniff,
+// so the browser refused to run it and every PDF failed. One worker, reused.
+let pdfWorker = null;
+
 async function extractPdf(file) {
 	const pdfjs = await import("pdfjs-dist");
-	const { default: workerUrl } = await import("pdfjs-dist/build/pdf.worker.min.mjs?url");
-	pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
+	if (!pdfWorker) {
+		const { default: PdfWorker } = await import("pdfjs-dist/build/pdf.worker.min.mjs?worker");
+		pdfWorker = new PdfWorker();
+	}
+	pdfjs.GlobalWorkerOptions.workerPort = pdfWorker;
 
 	const task = pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) });
 	let text = "";
