@@ -597,6 +597,7 @@ export async function processWebsite(data) {
 			processed_at: new Date().toISOString(),
 			is_file: !!data.is_file,
 			file_id: data.file_id || null,
+			local_file_key: data.local_file_key || null,
 			added_by: currentIdentityKey(),
 			added_at: new Date().toISOString(),
 		};

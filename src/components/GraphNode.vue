@@ -1818,7 +1818,7 @@ License along with this program. If not, see
 					 owner has explicitly enabled it for this shared graph's public
 					 link. -->
 				<div v-else-if="selectedWebsite.is_file && (remoteGraphRole !== 'guest' || sharePublicLinkAllowsDownloads)"
-					@click="downloadFile(selectedWebsite.file_id)"
+					@click="downloadFile(selectedWebsite.file_id, selectedWebsite.websiteId)"
 					class="cursor-pointer transition-all hover:shadow-md"
 					>
 					<!-- Title -->
@@ -1870,7 +1870,7 @@ License along with this program. If not, see
 					 broken-link risk as the is_file case just below). -->
 				<div v-else-if="selectedWebsite.is_note"></div>
 				<button v-else-if="selectedWebsite.is_file && (remoteGraphRole !== 'guest' || sharePublicLinkAllowsDownloads)"
-					@click="downloadFile(selectedWebsite.file_id)"
+					@click="downloadFile(selectedWebsite.file_id, selectedWebsite.websiteId)"
 					class="inline-flex items-center gap-2 px-4 py-2 rounded-xl font-medium transition-all bg-[#212121] hover:bg-black text-white">
 					📄 View File
 				</button>

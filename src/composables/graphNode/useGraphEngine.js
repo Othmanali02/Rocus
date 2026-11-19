@@ -19,6 +19,7 @@
 import { ref, reactive, computed, watch } from "vue";
 import * as d3 from "d3";
 import { db, initDB } from "./useDatabase";
+import { deleteLocalFile } from "./localFiles";
 import { currentTheme } from "./useThemes";
 import { searchTerm } from "./useSearch";
 import { handleDiscoverClick } from "./useDiscover";
@@ -631,6 +632,8 @@ export async function deleteWebsite(websiteId) {
 	if (isReadOnlySharedView.value) return;
 
 	const albumId = websites.value[websiteId]?.album_id ?? null;
+	const localFileKey = websites.value[websiteId]?.local_file_key;
+	if (localFileKey) deleteLocalFile(localFileKey);
 	const deletedNodeIds = [websiteId];
 	const updatedClusterIds = [];
 

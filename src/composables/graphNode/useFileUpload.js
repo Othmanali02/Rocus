@@ -20,9 +20,11 @@ import { ref, computed } from 'vue';
 import { store } from '../../router/store';
 import { API_BASE } from '../../components/constants/config';
 import { signUpUrl, openPremiumModal } from './usePremium';
-import { rocusAlert, rocusConfirm } from '../useRocusDialog';
+import { rocusAlert } from '../useRocusDialog';
 import { websites, clusters, addProcessingPlaceholder, removeProcessingPlaceholder, remoteGraphId, activeShareGraphId, effectiveAlbumId, isReadOnlySharedView } from './useGraphEngine';
 import { processWebsite, processingMode } from './useAIModels';
+import { generateId } from './utils';
+import { extractFileText, storeLocalFile, readLocalFile } from './localFiles';
 
 // Drag-and-drop file upload onto the graph canvas. Signed-in only, full
 // stop - dropping while signed out redirects to sign-up (a signed-out
@@ -70,7 +72,7 @@ export async function handleDrop(event) {
 	const files = Array.from(event.dataTransfer?.files || []);
 	if (files.length === 0) return;
 
-	if (!store.user) {
+	if (processingMode.value !== 'local' && !store.user) {
 		window.location.href = signUpUrl();
 		return;
 	}
@@ -95,9 +97,10 @@ export async function handleAddFileSelected(event) {
 	event.target.value = '';
 	if (files.length === 0) return;
 
-	// Same signed-in-only rule as handleDrop: uploading without a session
-	// used to POST the file anyway and only bounce on the server's 401.
-	if (!store.user) {
+	// Same rule as handleDrop: Cloud mode uploads need a session (without
+	// one the file used to be POSTed anyway and bounce on the server's 401).
+	// Local mode reads files on this device and needs no account.
+	if (processingMode.value !== 'local' && !store.user) {
 		window.location.href = signUpUrl();
 		return;
 	}
@@ -108,21 +111,58 @@ export async function handleAddFileSelected(event) {
 	}
 }
 
+async function addFileLocally(file) {
+	const placeholderNode = addProcessingPlaceholder({ metadata: { title: file.name } });
+	let text;
+	try {
+		text = await extractFileText(file);
+	} catch (err) {
+		console.error('Local file read failed:', err);
+		rocusAlert(`Couldn't read "${file.name}". The file may be damaged or password-protected.`);
+		return;
+	} finally {
+		removeProcessingPlaceholder(placeholderNode.id);
+	}
+
+	if (text.length < 20) {
+		rocusAlert(`"${file.name}" has no selectable text (it may be a scanned image). Local mode can't read those yet.`);
+		return;
+	}
+
+	const key = generateId();
+	try {
+		await storeLocalFile(key, file);
+	} catch (err) {
+		// Still add it to the graph; "View File" will say it isn't stored.
+		console.error('Could not keep a local copy of the file:', err);
+	}
+
+	await processWebsite({
+		url: `local-file://${key}/${encodeURIComponent(file.name)}`,
+		metadata: {
+			title: file.name,
+			domain: 'This device',
+			description: '',
+			keywords: '',
+		},
+		content: text,
+		album: effectiveAlbumId(),
+		is_file: true,
+		local_file_key: key,
+	});
+}
+
 export async function uploadFile(file) {
 	if (!ACCEPTED_MIMETYPES.has(file.type)) {
 		rocusAlert(`Rocus doesn't support "${file.name}" yet - PDF and DOCX only for now.`);
 		return;
 	}
 
-	// Files are always processed in the cloud: the backend stores the file
-	// and sends its text to Anthropic for the summary. In Local mode the user
-	// has been told nothing leaves the device, so ask first, every time.
+	// Local mode: read and summarize the file on this device. Nothing is
+	// uploaded; the original is kept in this browser for "View File".
 	if (processingMode.value === 'local') {
-		const ok = await rocusConfirm(
-			`Files are processed in the cloud, even in Local mode.\n\n"${file.name}" will be stored on rocus.io and its text sent to Anthropic (Claude Haiku) to summarize it.`,
-			{ title: 'Upload this file?', confirmText: 'Upload', cancelText: 'Cancel' }
-		);
-		if (!ok) return;
+		await addFileLocally(file);
+		return;
 	}
 
 	// Shown immediately, for the whole upload+Claude-analysis network round-
@@ -254,7 +294,20 @@ export function toggleUploadsPanel() {
 // nodes/members/public-link calls already use) to route the owner's own
 // shared-album downloads through the shared-graph-scoped route too, which
 // authorizes by graph role rather than by who happened to upload the file.
-export function downloadFile(fileId) {
+export async function downloadFile(fileId, websiteId = null) {
+	const localKey = websiteId ? websites.value[websiteId]?.local_file_key : null;
+	if (localKey) {
+		const blob = await readLocalFile(localKey);
+		if (!blob) {
+			rocusAlert("This file was added in Local mode and is only kept on the device it was added from, so it can't be opened here.");
+			return;
+		}
+		const url = URL.createObjectURL(blob);
+		window.open(url, '_blank');
+		setTimeout(() => URL.revokeObjectURL(url), 60000);
+		return;
+	}
+
 	const graphId = remoteGraphId.value || activeShareGraphId.value;
 	const url = graphId
 		? `${API_BASE}/api/shared/${graphId}/uploads/${fileId}/download`

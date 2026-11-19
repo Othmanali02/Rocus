@@ -286,7 +286,7 @@ Rocus was released under the MIT License until 26 September 2026 and is licensed
 | Cloud mode processing | Chosen at first run. Nothing is processed before you choose; pages saved from the extension wait on your device. | The page's title and text go to rocus.io, then to Anthropic (Claude Haiku) for the summary. Not stored, and not used for training. |
 | Web suggestions / Discover Similar | **Off** | A saved page's topic or search phrase goes to rocus.io, then to Serper (web search). It is only sent after you turn it on in Settings or click "Search once". |
 | Sharing a graph | Off | The shared album's graph data goes to rocus.io, so collaborators can load it. |
-| File uploads | Only when you add a file (signed in) | The file is stored on rocus.io, and its text goes to Anthropic (Claude Haiku) for the summary. This happens in Local mode too, so Local mode asks before every upload. |
+| Adding a PDF/DOCX file | Only when you add one | **Local mode:** nothing. The file is read and summarized in your browser and kept only there. **Cloud mode** (signed in): the file is stored on rocus.io and its text goes to Anthropic (Claude Haiku) for the summary. |
 | Analytics | **Off (opt-in)** | Anonymous usage events go to self-hosted Umami. See below. |
 
 Your graph is always stored in your browser's IndexedDB, and Settings → Export saves all of it.

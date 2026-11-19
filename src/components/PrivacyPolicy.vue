@@ -188,10 +188,10 @@ License along with this program. If not, see
                             click "Search once" in Discover Similar), the topic or search phrase of a saved page is
                             sent to rocus.io, which looks it up with our search provider, Serper. Nothing else about
                             your saved pages is sent.</p>
-                        <p class="mb-3"><strong :style="{ color: currentTheme.colors.text }">File uploads:</strong> When
-                            you add a PDF or DOCX file, it is stored on rocus.io and its text is sent to Anthropic
-                            (Claude Haiku) to summarize it. This happens in both modes, so in Local mode Rocus asks
-                            before every upload.</p>
+                        <p class="mb-3"><strong :style="{ color: currentTheme.colors.text }">Files:</strong> In Local mode, a
+                            PDF or DOCX file you add is read and summarized in your browser, and the file is kept only
+                            in your browser. In Cloud mode, the file is stored on rocus.io and its text is sent to
+                            Anthropic (Claude Haiku) to summarize it.</p>
                         <p class="mb-3"><strong :style="{ color: currentTheme.colors.text }">Before you choose a
                             mode:</strong> pages saved from the browser extension are kept on your device and are not
                             processed until you pick Local or Cloud.</p>
@@ -239,7 +239,7 @@ License along with this program. If not, see
                             </li>
                             <li>
                                 <strong :style="{ color: currentTheme.colors.text }">Anthropic:</strong>
-                                Writes page summaries in Cloud mode, and summaries of uploaded files in either mode.
+                                Writes summaries of pages and files in Cloud mode.
                                 Requests are made by rocus.io, not your browser.
                             </li>
                             <li>
