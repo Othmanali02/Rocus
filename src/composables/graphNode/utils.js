@@ -209,6 +209,9 @@ export function topicsMatch(topic1, topic2) {
 	const n1 = normalize(topic1);
 	const n2 = normalize(topic2);
 
+	// Labels with no Latin letters or digits (Arabic, CJK, ...) normalise to
+	// "", and two empty strings used to count as a match for every pair.
+	if (!n1 || !n2) return false;
 	if (n1 === n2) return true;
 
 	const words1 = n1.split(" ").filter((w) => w && !STOPWORDS.has(w));
