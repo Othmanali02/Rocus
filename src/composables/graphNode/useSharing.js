@@ -37,7 +37,7 @@ import {
 	renderRemoteCursors,
 } from "./useGraphEngine";
 import { createAlbum, iconOptions, albums } from "./useAlbums";
-import { generateId, currentIdentityKey } from "./utils";
+import { generateId, currentIdentityKey, normalizeEmbeddingRecord } from "./utils";
 import { API_BASE } from "../../components/constants/config";
 import { openPremiumModal, signInUrl, signUpUrl } from "./usePremium";
 import { store } from "../../router/store";
@@ -1031,7 +1031,10 @@ async function mergeRemoteNodesIntoLocalAlbum(nodes) {
 				websites.value[node.id] = websiteFields;
 				changed = true;
 			}
-			if (embedding) embeddings.value[node.id] = embedding;
+			// Same normalisation as every other load path: a legacy payload
+			// holding a bare array would otherwise leave `.v` undefined, and
+			// clustering reads embedding.v.
+			if (embedding) embeddings.value[node.id] = normalizeEmbeddingRecord(embedding);
 		} else if (node.type === "cluster") {
 			const clusterData = localOwnerSocketAlbumId
 				? { ...node.data, album_id: localOwnerSocketAlbumId }
