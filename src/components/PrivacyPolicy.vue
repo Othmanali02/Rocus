@@ -40,7 +40,7 @@ License along with this program. If not, see
             }">
 
                 <p class="text-sm mb-6" :style="{ color: currentTheme.colors.textSecondary }">
-                    Last updated: December 2025
+                    Last updated: November 2026
                 </p>
 
                 <section class="mb-8">
@@ -188,8 +188,15 @@ License along with this program. If not, see
                             click "Search once" in Discover Similar), the topic or search phrase of a saved page is
                             sent to rocus.io, which looks it up with our search provider, Serper. Nothing else about
                             your saved pages is sent.</p>
-                        <p>Sharing a graph or uploading a file also sends that graph or file to rocus.io, because
-                            it has to be stored there for others to see it.</p>
+                        <p class="mb-3"><strong :style="{ color: currentTheme.colors.text }">File uploads:</strong> When
+                            you add a PDF or DOCX file, it is stored on rocus.io and its text is sent to Anthropic
+                            (Claude Haiku) to summarize it. This happens in both modes, so in Local mode Rocus asks
+                            before every upload.</p>
+                        <p class="mb-3"><strong :style="{ color: currentTheme.colors.text }">Before you choose a
+                            mode:</strong> pages saved from the browser extension are kept on your device and are not
+                            processed until you pick Local or Cloud.</p>
+                        <p>Sharing a graph sends that graph to rocus.io, because it has to be stored there for
+                            others to see it.</p>
                     </div>
                 </section>
 
@@ -231,10 +238,9 @@ License along with this program. If not, see
                                 Self-hosted, GDPR-compliant analytics. No cookies, no personal data.
                             </li>
                             <li>
-                                <strong :style="{ color: currentTheme.colors.text }">Anthropic (Cloud mode
-                                    only):</strong>
-                                Writes page summaries when you use Cloud mode. Requests are made by rocus.io, not
-                                your browser.
+                                <strong :style="{ color: currentTheme.colors.text }">Anthropic:</strong>
+                                Writes page summaries in Cloud mode, and summaries of uploaded files in either mode.
+                                Requests are made by rocus.io, not your browser.
                             </li>
                             <li>
                                 <strong :style="{ color: currentTheme.colors.text }">Serper (optional, off by

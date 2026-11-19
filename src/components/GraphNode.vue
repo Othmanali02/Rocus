@@ -2848,6 +2848,8 @@ import {
 	clearModelCache,
 	processingMode,
 	setProcessingMode,
+	hasChosenProcessingMode,
+	drainPendingSaves,
 } from '../composables/graphNode/useAIModels';
 
 import {
@@ -3363,7 +3365,7 @@ async function handleProfileClick() {
 // default. Shown before the tutorial/compatibility-check flow below, which
 // gets deferred (see proceedWithOnboarding()) until a choice is made so it
 // never renders stacked underneath this overlay.
-const showFirstRunChoice = ref(localStorage.getItem('rocus-processing-mode') === null);
+const showFirstRunChoice = ref(!hasChosenProcessingMode());
 
 // The tutorial-start + What's-New sequencing that used to run unconditionally
 // at the end of onMounted's local branch - pulled into its own function so it
@@ -3409,6 +3411,9 @@ function proceedWithOnboarding() {
 async function handleFirstRunChoice(mode) {
 	setProcessingMode(mode);
 	showFirstRunChoice.value = false;
+	// Extension saves that arrived before this choice (held on this device by
+	// setupMessageListener) get processed now, under the mode just picked.
+	drainPendingSaves();
 	if (processingMode.value === 'local') {
 		await runCompatibilityCheckIfNeeded();
 	}

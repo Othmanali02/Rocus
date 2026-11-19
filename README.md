@@ -26,9 +26,10 @@ Rocus Extension Github Repo: https://github.com/Othmanali02/rocus-extension
 
 **Browser Support**: **Local mode** needs a browser with **WebGPU support** for the summarization model. Cloud mode and the embedding model work in any modern browser. Check your browser:
 
-- **Chrome/Edge**: Version 113+ ✅
-- **Firefox**: Version 121+ (experimental) ⚠️
-- **Safari**: Version 18+ (macOS Sequoia+) ⚠️
+- **Chrome/Edge** on Windows, macOS and ChromeOS: works ✅
+- **Chrome on Linux**: may need flags (see [Browser Compatibility](#browser-compatibility)) ⚠️
+- **Firefox**: Windows and Apple Silicon Macs only; **not on Linux** yet ❌
+- **Safari**: untested with Rocus ⚠️
 
 **Check WebGPU Support**: Visit [WebGPU Report](https://webgpureport.org/) to verify your browser and GPU compatibility.
 
@@ -180,13 +181,24 @@ Cloud mode, web suggestions, sharing, file uploads and accounts use the hosted b
 
 Embeddings and Cloud mode work in any modern browser. The table is about **Local mode**, which needs WebGPU.
 
-| Browser | Version | WebGPU Support | Local mode |
-|---------|---------|----------------|--------|
-| Chrome  | 113+    | ✅ Stable      | ✅ Recommended |
-| Edge    | 113+    | ✅ Stable      | ✅ Recommended |
-| Firefox | 121+    | ⚠️ Experimental | ⚠️ Limited |
-| Safari  | 18+     | ⚠️ Beta        | ⚠️ Limited |
-| Opera   | 99+     | ✅ Stable      | ✅ Supported |
+| Browser | Platform | Local mode |
+|---------|----------|------------|
+| Chrome / Edge | Windows, macOS, ChromeOS | ✅ Recommended |
+| Chrome / Chromium | Linux | ⚠️ May need flags (below) |
+| Firefox 141+ | Windows | ✅ Per Mozilla, untested with Rocus |
+| Firefox 145+ | macOS 26 on Apple Silicon | ✅ Per Mozilla, untested with Rocus |
+| Firefox | Linux, Android, Intel Macs | ❌ No WebGPU yet (Mozilla says in progress) |
+| Safari | macOS, iOS | ⚠️ Untested with Rocus |
+
+Checked on 19 Nov 2026: Firefox 160 on Linux does not expose `navigator.gpu`, so Local mode can't run there. Use Cloud mode, or Chrome.
+
+**Chrome or Chromium on Linux:** on our test laptop (Intel UHD 620, Mesa, Wayland) WebGPU only came up with:
+
+```
+chromium --enable-unsafe-webgpu --enable-features=Vulkan --ozone-platform=x11
+```
+
+`--ozone-platform=x11` is needed under Wayland, where Vulkan can't be enabled. Then open `chrome://gpu`: WebGPU should say "Hardware accelerated", not "Software only".
 
 **Check compatibility**: [Can I Use WebGPU](https://caniuse.com/webgpu)
 
@@ -271,10 +283,10 @@ Rocus was released under the MIT License until 26 September 2026 and is licensed
 | Feature | Default | What is sent, and where |
 |---|---|---|
 | Local mode processing | — | Nothing. The models run in your browser. They are downloaded once: MiniLM from Hugging Face, Qwen2.5 from models.rocus.io. |
-| Cloud mode processing | Chosen at first run | The page's title and text go to rocus.io, then to Anthropic (Claude Haiku) for the summary. Not stored, and not used for training. |
+| Cloud mode processing | Chosen at first run. Nothing is processed before you choose; pages saved from the extension wait on your device. | The page's title and text go to rocus.io, then to Anthropic (Claude Haiku) for the summary. Not stored, and not used for training. |
 | Web suggestions / Discover Similar | **Off** | A saved page's topic or search phrase goes to rocus.io, then to Serper (web search). It is only sent after you turn it on in Settings or click "Search once". |
 | Sharing a graph | Off | The shared album's graph data goes to rocus.io, so collaborators can load it. |
-| File uploads | Off | The uploaded file goes to rocus.io for text extraction. |
+| File uploads | Only when you add a file (signed in) | The file is stored on rocus.io, and its text goes to Anthropic (Claude Haiku) for the summary. This happens in Local mode too, so Local mode asks before every upload. |
 | Analytics | **Off (opt-in)** | Anonymous usage events go to self-hosted Umami. See below. |
 
 Your graph is always stored in your browser's IndexedDB, and Settings → Export saves all of it.

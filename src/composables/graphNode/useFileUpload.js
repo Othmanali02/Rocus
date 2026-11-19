@@ -20,9 +20,9 @@ import { ref, computed } from 'vue';
 import { store } from '../../router/store';
 import { API_BASE } from '../../components/constants/config';
 import { signUpUrl, openPremiumModal } from './usePremium';
-import { rocusAlert } from '../useRocusDialog';
+import { rocusAlert, rocusConfirm } from '../useRocusDialog';
 import { websites, clusters, addProcessingPlaceholder, removeProcessingPlaceholder, remoteGraphId, activeShareGraphId, effectiveAlbumId, isReadOnlySharedView } from './useGraphEngine';
-import { processWebsite } from './useAIModels';
+import { processWebsite, processingMode } from './useAIModels';
 
 // Drag-and-drop file upload onto the graph canvas. Signed-in only, full
 // stop - dropping while signed out redirects to sign-up (a signed-out
@@ -61,7 +61,7 @@ export function handleDragLeave() {
 	if (dragCounter === 0) showDropOverlay.value = false;
 }
 
-export function handleDrop(event) {
+export async function handleDrop(event) {
 	dragCounter = 0;
 	showDropOverlay.value = false;
 
@@ -75,8 +75,10 @@ export function handleDrop(event) {
 		return;
 	}
 
+	// One at a time: each upload may show a confirm dialog, and the dialog
+	// holds one prompt at a time.
 	for (const file of files) {
-		uploadFile(file);
+		await uploadFile(file);
 	}
 }
 
@@ -88,11 +90,21 @@ export function triggerAddFilePicker() {
 	addFileInput.value?.click();
 }
 
-export function handleAddFileSelected(event) {
+export async function handleAddFileSelected(event) {
 	const files = Array.from(event.target.files || []);
 	event.target.value = '';
+	if (files.length === 0) return;
+
+	// Same signed-in-only rule as handleDrop: uploading without a session
+	// used to POST the file anyway and only bounce on the server's 401.
+	if (!store.user) {
+		window.location.href = signUpUrl();
+		return;
+	}
+	// One at a time: each upload may show a confirm dialog, and the dialog
+	// holds one prompt at a time.
 	for (const file of files) {
-		uploadFile(file);
+		await uploadFile(file);
 	}
 }
 
@@ -100,6 +112,17 @@ export async function uploadFile(file) {
 	if (!ACCEPTED_MIMETYPES.has(file.type)) {
 		rocusAlert(`Rocus doesn't support "${file.name}" yet - PDF and DOCX only for now.`);
 		return;
+	}
+
+	// Files are always processed in the cloud: the backend stores the file
+	// and sends its text to Anthropic for the summary. In Local mode the user
+	// has been told nothing leaves the device, so ask first, every time.
+	if (processingMode.value === 'local') {
+		const ok = await rocusConfirm(
+			`Files are processed in the cloud, even in Local mode.\n\n"${file.name}" will be stored on rocus.io and its text sent to Anthropic (Claude Haiku) to summarize it.`,
+			{ title: 'Upload this file?', confirmText: 'Upload', cancelText: 'Cancel' }
+		);
+		if (!ok) return;
 	}
 
 	// Shown immediately, for the whole upload+Claude-analysis network round-
